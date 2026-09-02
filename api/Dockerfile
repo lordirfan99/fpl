@@ -5,9 +5,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8080
 
 WORKDIR /app
-COPY services/api/requirements.txt ./requirements.txt
+COPY api/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
-COPY services/api/app ./app
+COPY api/app ./app
+# Snapshot fallback baked from the repo-root data/ (gitignored; supplied by the
+# build context). GCS (FPL_SNAPSHOT_BUCKET) remains the primary store.
 COPY data ./data
 ENV FPL_DATA_DIR=/app/data
 
