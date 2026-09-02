@@ -72,11 +72,11 @@ class TestLeagueTelegramCard(unittest.TestCase):
         for gone in ("prize", "transfers", "registry", "attack", "market_fall"):
             self.assertEqual(telegram_bot.war_room_text(gone, state), overview)
 
-    def test_war_room_callback_contract_is_four_unique_actions(self):
+    def test_war_room_callback_contract_is_seven_unique_actions(self):
         callbacks = [callback for _, callback in telegram_bot.WAR_ROOM_SECTIONS]
-        self.assertEqual(len(callbacks), 4)
+        self.assertEqual(len(callbacks), 7)
         self.assertEqual(len(callbacks), len(set(callbacks)))
-        self.assertEqual(set(callbacks), {"war_rivals", "war_captain", "war_market", "war_refresh"})
+        self.assertEqual(set(callbacks), {"war_catch", "war_captpick", "war_fixtures", "war_rivals", "war_captain", "war_market", "war_refresh"})
         self.assertFalse(hasattr(telegram_bot, "MARKET_SECTIONS"))
 
     def test_market_card_is_bounded_deduplicated_and_squad_aware(self):
