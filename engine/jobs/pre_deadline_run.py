@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.join(BASE, "optimizer"))
 sys.path.insert(0, os.path.join(BASE, "model"))
 sys.path.insert(0, os.path.join(BASE, "execution"))
 
-from squad_solver import SQUAD_QUOTA  # noqa: E402
+from squad_solver import SQUAD_QUOTA, solve_squad, solve_lineup  # noqa: E402
 from plan_validation import validate_plan  # noqa: E402
 from proposal_binding import (  # noqa: E402
     canonical_plan_hash, input_fingerprint, settings_fingerprint)
@@ -140,6 +140,25 @@ def fdr_maps(fixtures, gw_ids):
     return out
 
 
+def detected_transfer_chip(team, gw):
+    """Return a live, already-active transfer chip for this GW, else None.
+
+    `my-team.active_chip` is unreliable once a chip is selected in the official
+    UI; the account payload records it under `chips[].played_by_entry` /
+    `status_for_entry`. Only Wildcard and Free Hit take the full-squad rebuild
+    route, and only for the target gameweek.
+    """
+    for chip in team.get("chips") or []:
+        name = str(chip.get("name") or chip.get("chip_type") or "").lower()
+        played = {int(event) for event in (chip.get("played_by_entry") or [])
+                  if str(event).isdigit()}
+        active = str(chip.get("status_for_entry") or "").lower() == "active"
+        if (name in {"wildcard", "freehit"} and active
+                and (int(gw) in played or bool(chip.get("is_pending")))):
+            return name
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--notifications-disabled", action="store_true",
@@ -174,7 +193,10 @@ def main():
         return
     gw = next_gw["id"]
     gw_so_far = gw - 1
+    active_transfer_chip = detected_transfer_chip(team, gw)
     print(f"=== PRE-DEADLINE RUN: GW{gw} (deadline {next_gw['deadline_time']}) ===")
+    if active_transfer_chip:
+        print(f"live FPL chip detected: {active_transfer_chip} for GW{gw} — full 15-player rebuild")
 
     # --- xPts for all players: next GW + horizon ---
     gw_ids = list(range(gw, min(gw + 3, 39)))
@@ -407,9 +429,11 @@ def main():
                 "eligible_template_ids": sorted(template_ids),
             }
             print(f"competitive candidate gate: template-only ({len(template_ids)} eligible IDs)")
-    if refresh_failures or not competitive_context:
+    if (refresh_failures or not competitive_context) and not active_transfer_chip:
         # The current official account can still be optimized for a legal
         # lineup, but a partially refreshed run may not authorize transfers.
+        # A live Wildcard/Free Hit is exempt: the rebuild is a pure xPts squad
+        # optimisation that does not consume competitive/league context.
         owned_ids = {player["id"] for player in squad}
         candidates = [player for player in candidates if player["id"] in owned_ids]
         template_candidate_gate = {
@@ -421,77 +445,130 @@ def main():
     candidate_ids = {player["id"] for player in candidates}
     paid_transfer_min_gws = int(settings.get("v4_paid_transfer_min_gws", 3))
     paid_transfers_calibrated = gw_so_far >= paid_transfer_min_gws
-    try:
-        horizon_plan = optimize_horizon(
-            squad, candidates, bank, free_transfers,
-            horizon=len(gw_ids),
-            risk_penalty=float(settings.get("v4_transfer_risk_penalty", 0.25)),
-            bench_weight=float(settings.get("v4_bench_depth_weight", 0.08)),
-            max_transfers_per_gw=int(settings.get("v4_joint_transfer_limit", 2)),
-            max_paid_transfers=int(settings.get("v4_max_paid_transfers", 1)),
-            paid_transfers_allowed=paid_transfers_calibrated,
-            protected=keep_ids, excluded=exclude_ids,
-            captain_min_start=float(settings.get("v4_captain_min_start", 0.75)),
-            captain_min_minutes=float(settings.get("v4_captain_min_minutes", 65)),
-            transfer_friction=float(settings.get("v4_transfer_friction", 0.15)),
-        )
-    except Exception as error:
-        print(f"!! V4.1 HORIZON MILP FAILED - no plan persisted: {error!r}")
-        sys.exit(1)
-    first_week = horizon_plan["weeks"][0]
     transfers = []
+    first_week = None
+    final_squad = None
     current_utility = squad_horizon_utility(
         squad, float(settings.get("v4_transfer_risk_penalty", 0.25)),
         float(settings.get("v4_bench_depth_weight", 0.08)))
-    first_hits = int(first_week.get("hits") or 0)
-    for index, move in enumerate(first_week.get("transfers") or []):
-        transfers.append({
-            **move,
-            "gain": 0.0,
-            "gain_gw1": round(
-                next(p for p in players if p["id"] == move["element_in"])["xpts"]
-                - next(p for p in squad if p["id"] == move["element_out"])["xpts"], 1),
-            "hit": index >= max(0, len(first_week.get("transfers") or []) - first_hits),
-            "optimizer": "horizon-milp-v4.1",
-        })
-    new_bank = int(first_week.get("bank_after") or bank)
-    used_free = min(max(0, int(free_transfers)), len(transfers))
-    ft_left = max(0, int(free_transfers) - used_free)
-    notes = [
-        f"V4.1 horizon MILP objective {horizon_plan['objective']:.2f}",
-        f"next-GW FT state {first_week.get('free_transfers_after')}",
-    ]
+    if active_transfer_chip:
+        # A live Wildcard / Free Hit is a different problem: all 15 places may
+        # change, with no FT or hit limit. Budget = live selling value + bank,
+        # never the £100m ceiling. No competitive/league context is required.
+        rebuild_budget = sum(p.get("selling_price", p["cost"]) for p in squad) + bank
+        try:
+            final_squad = solve_squad(candidates, budget=rebuild_budget)
+        except Exception as error:
+            print(f"!! {active_transfer_chip} squad solver failed - no plan persisted: {error!r}")
+            sys.exit(1)
+        final_ids = {p["id"] for p in final_squad}
+        missing_keeps = keep_ids - final_ids
+        if missing_keeps:
+            print(f"!! {active_transfer_chip} rebuild conflicts with keep preference(s): {sorted(missing_keeps)}")
+            sys.exit(1)
+        squad_ids = {p["id"] for p in squad}
+        for pos in SQUAD_QUOTA:
+            outs = sorted((p for p in squad if p["position"] == pos and p["id"] not in final_ids),
+                          key=lambda p: p["id"])
+            ins = sorted((p for p in final_squad if p["position"] == pos and p["id"] not in squad_ids),
+                         key=lambda p: p["id"])
+            if len(outs) != len(ins):
+                print(f"!! {active_transfer_chip} position pairing failed for {pos}")
+                sys.exit(1)
+            for out, incoming in zip(outs, ins):
+                transfers.append({
+                    "element_out": out["id"], "element_in": incoming["id"],
+                    "out_name": out["name"], "in_name": incoming["name"],
+                    "selling_price": int(out.get("selling_price", out["cost"])),
+                    "purchase_price": int(incoming["cost"]),
+                    "gain": round(incoming["xpts"] - out["xpts"], 1),
+                    "gain_gw1": round(incoming["xpts"] - out["xpts"], 1),
+                    "package_gain": None, "hit": False,
+                    "optimizer": f"{active_transfer_chip}-full-squad-v1",
+                })
+        new_bank = int(round(rebuild_budget - sum(p["cost"] for p in final_squad)))
+        free_transfers = 99
+        ft_left = 99
+        horizon_plan = {"objective": sum(p["xpts"] for p in final_squad), "weeks": []}
+        notes = [f"{active_transfer_chip.title()} active: full 15-player rebuild, no hits"]
+    else:
+        try:
+            horizon_plan = optimize_horizon(
+                squad, candidates, bank, free_transfers,
+                horizon=len(gw_ids),
+                risk_penalty=float(settings.get("v4_transfer_risk_penalty", 0.25)),
+                bench_weight=float(settings.get("v4_bench_depth_weight", 0.08)),
+                max_transfers_per_gw=int(settings.get("v4_joint_transfer_limit", 2)),
+                max_paid_transfers=int(settings.get("v4_max_paid_transfers", 1)),
+                paid_transfers_allowed=paid_transfers_calibrated,
+                protected=keep_ids, excluded=exclude_ids,
+                captain_min_start=float(settings.get("v4_captain_min_start", 0.75)),
+                captain_min_minutes=float(settings.get("v4_captain_min_minutes", 65)),
+                transfer_friction=float(settings.get("v4_transfer_friction", 0.15)),
+            )
+        except Exception as error:
+            print(f"!! V4.1 HORIZON MILP FAILED - no plan persisted: {error!r}")
+            sys.exit(1)
+        first_week = horizon_plan["weeks"][0]
+        first_hits = int(first_week.get("hits") or 0)
+        for index, move in enumerate(first_week.get("transfers") or []):
+            transfers.append({
+                **move,
+                "gain": 0.0,
+                "gain_gw1": round(
+                    next(p for p in players if p["id"] == move["element_in"])["xpts"]
+                    - next(p for p in squad if p["id"] == move["element_out"])["xpts"], 1),
+                "hit": index >= max(0, len(first_week.get("transfers") or []) - first_hits),
+                "optimizer": "horizon-milp-v4.1",
+            })
+        new_bank = int(first_week.get("bank_after") or bank)
+        used_free = min(max(0, int(free_transfers)), len(transfers))
+        ft_left = max(0, int(free_transfers) - used_free)
+        notes = [
+            f"V4.1 horizon MILP objective {horizon_plan['objective']:.2f}",
+            f"next-GW FT state {first_week.get('free_transfers_after')}",
+        ]
     if not paid_transfers_calibrated and free_transfers <= 0:
         notes.append(
             f"paid transfers disabled until {paid_transfer_min_gws} completed GWs calibrate V4"
         )
     print(f"transfers: {len(transfers)} | bank after {new_bank} | FTs left {ft_left} | {notes}")
 
-    final_squad = list(squad)
-    for t in transfers:
-        final_squad = [next(p for p in players if p["id"] == t["element_in"])
-                       if p["id"] == t["element_out"] else p for p in final_squad]
-    final_utility = squad_horizon_utility(
-        final_squad, float(settings.get("v4_transfer_risk_penalty", 0.25)),
-        float(settings.get("v4_bench_depth_weight", 0.08)))
-    package_gain = round(final_utility - current_utility, 1)
-    for transfer in transfers:
-        transfer["gain"] = package_gain if len(transfers) == 1 else transfer["gain_gw1"]
-        transfer["package_gain"] = package_gain
+    if not active_transfer_chip:
+        final_squad = list(squad)
+        for t in transfers:
+            final_squad = [next(p for p in players if p["id"] == t["element_in"])
+                           if p["id"] == t["element_out"] else p for p in final_squad]
+        final_utility = squad_horizon_utility(
+            final_squad, float(settings.get("v4_transfer_risk_penalty", 0.25)),
+            float(settings.get("v4_bench_depth_weight", 0.08)))
+        package_gain = round(final_utility - current_utility, 1)
+        for transfer in transfers:
+            transfer["gain"] = package_gain if len(transfers) == 1 else transfer["gain_gw1"]
+            transfer["package_gain"] = package_gain
 
     # --- lineup + captain on final squad ---
     # Excluded players are given xPts 0 for the solver -> can never start and
     # can never be captain; their real xPts stay in the players pool for display.
     lineup_squad = [{**p, "xpts": 0.0} if p["id"] in exclude_ids else p for p in final_squad]
-    selected_lineup = set(first_week.get("lineup_ids") or [])
-    selected_bench = list(first_week.get("bench_ids") or [])
-    starters = [p for p in lineup_squad if p["id"] in selected_lineup]
-    bench_by_id = {p["id"]: p for p in lineup_squad if p["id"] not in selected_lineup}
-    bench = [bench_by_id[player_id] for player_id in selected_bench]
+    if active_transfer_chip:
+        # No MILP lineup for a rebuild — solve the XI directly on the new 15.
+        try:
+            starters, bench = solve_lineup(lineup_squad)
+        except Exception as error:
+            print(f"!! {active_transfer_chip} lineup solve failed - no plan persisted: {error!r}")
+            sys.exit(1)
+    else:
+        selected_lineup = set(first_week.get("lineup_ids") or [])
+        selected_bench = list(first_week.get("bench_ids") or [])
+        starters = [p for p in lineup_squad if p["id"] in selected_lineup]
+        bench_by_id = {p["id"]: p for p in lineup_squad if p["id"] not in selected_lineup}
+        bench = [bench_by_id[player_id] for player_id in selected_bench]
     if len(starters) != 11 or len(bench) != 4:
-        print("!! V4.1 MILP returned an incomplete lineup - no plan persisted")
+        print("!! incomplete lineup returned - no plan persisted")
         sys.exit(1)
-    cap = next(p for p in starters if p["id"] == first_week["captain_id"])
+    cap = (max(starters, key=lambda p: p["xpts"]) if active_transfer_chip
+           else next(p for p in starters if p["id"] == first_week["captain_id"]))
     vice = select_vice(
         starters, cap,
         min_start=float(settings.get("v4_captain_min_start", 0.75)),
@@ -616,7 +693,14 @@ def main():
         "bonus_note": bonus_note,
         "prefs": {"keep": sorted(keep_ids), "exclude": sorted(exclude_ids)},
         "model_version": "competitive-v4.0",
-        "engine_note": f"{projection_version} projection + horizon MILP v4.1",
+        "chip": active_transfer_chip,
+        "chip_gw": gw if active_transfer_chip else None,
+        "chip_detected_from_live_fpl": bool(active_transfer_chip),
+        "engine_note": (
+            f"{active_transfer_chip.title()} detected in official FPL - full 15-player "
+            f"rebuild - {projection_version} projection" if active_transfer_chip
+            else f"{projection_version} projection + horizon MILP v4.1"
+        ),
         "status": "pending",
         # Sol GW1 directive W1: proposal identity + provenance
         # (plan_id/input_fp computed below AFTER the dict is complete so the
