@@ -1,0 +1,15 @@
+[tool.ruff]
+# Migration floor: catch real breakage (syntax errors, undefined names,
+# unused imports), not style. Tighten module-by-module in Phase C.
+line-length = 120
+target-version = "py311"
+extend-exclude = ["**/deferred/**"]
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82", "F401", "F811"]
+
+[tool.pytest.ini_options]
+# Grows as modules land (see docs/MIGRATION.md Phase B).
+pythonpath = ["api"]
+testpaths = ["api/tests"]
+addopts = "-q --import-mode=importlib"
