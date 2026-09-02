@@ -12,7 +12,6 @@ RUN pip install --no-cache-dir -r api/requirements.txt
 COPY api/app ./api/app
 COPY infra/scripts ./scripts
 COPY data ./data
-COPY reports ./reports
 
 # The gameweek finalizer writes freshly fetched snapshots, analysis and journal
 # files under data/ and reports/ before publishing them to GCS.
