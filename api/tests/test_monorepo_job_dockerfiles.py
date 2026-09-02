@@ -9,6 +9,8 @@ def test_scheduled_task_image_uses_monorepo_paths():
     assert "COPY api/requirements.txt" in dockerfile
     assert "COPY api/app" in dockerfile
     assert "COPY infra/scripts" in dockerfile
+    assert "COPY reports" not in dockerfile
+    assert "reports/model-validation" in dockerfile
     assert "services/api" not in dockerfile
 
 
