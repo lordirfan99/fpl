@@ -29,6 +29,7 @@ import datetime
 import urllib.request
 import urllib.parse
 
+import telegram_notify
 from project_paths import resolve_project_root
 
 BASE = str(resolve_project_root(__file__))
@@ -88,25 +89,14 @@ def plan_signature(plan):
 
 
 def send_telegram(text, chat_id, token):
-    payload = {
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML",
-        "reply_markup": json.dumps({"inline_keyboard": [[
+    return telegram_notify.send_message(
+        token, chat_id, text, parse_mode="HTML",
+        reply_markup={"inline_keyboard": [[
             {"text": "✅ Approve", "callback_data": "approve"},
             {"text": "❌ Reject", "callback_data": "reject"},
-        ]]})
-    }
-    req = urllib.request.Request(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        data=urllib.parse.urlencode(payload).encode(),
-        headers={"User-Agent": UA})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return json.load(r)
-    except Exception as e:
-        print(f"[reminder] telegram send failed: {repr(e)[:120]}")
-        return None
+        ]]},
+        log_prefix="[reminder] ",
+    )
 
 
 def hours_to_deadline(plan):

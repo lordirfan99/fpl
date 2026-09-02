@@ -16,6 +16,7 @@ import urllib.request
 import sys
 import uuid
 
+import telegram_notify
 from project_paths import resolve_project_root, venv_python
 
 BASE = str(resolve_project_root(__file__))
@@ -73,16 +74,7 @@ def load_creds():
 
 
 def send_telegram(text, chat_id, token):
-    import urllib.parse
-    payload = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
-    req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage",
-                                 data=payload, headers={"User-Agent": UA})
-    try:
-        with urllib.request.urlopen(req, timeout=25) as r:
-            return json.load(r)
-    except Exception as e:
-        print(f"[auto] telegram send failed: {repr(e)[:120]}")
-        return None
+    return telegram_notify.send_message(token, chat_id, text, log_prefix="[auto] ")
 
 
 def run(script, args=None, env=None):
@@ -155,8 +147,11 @@ def main():
                     print(f"[auto] league alert delivery failed: {repr(exc)[:120]}")
             pubrc, pubout, puberr = run("publish_competitive_snapshot.py", env=run_env)
             if pubrc != 0:
-                refresh_failures.append("shared competitive snapshot")
-                print(f"[auto] competitive publish failed rc={pubrc}: {(puberr or pubout)[-500:]}")
+                # Publishing is about SHARING the snapshot to the dashboard/GCS.
+                # It does NOT mean the engine lacks league context, so it must
+                # not push the plan into lineup_only_safe (transfers locked).
+                # The freshness/staleness gate in pre_deadline_run still applies.
+                print(f"[auto] competitive publish failed rc={pubrc} (non-blocking): {(puberr or pubout)[-500:]}")
         else:
             refresh_failures.append("league intelligence")
             print(f"[auto] league intelligence failed rc={lirc}: {(lierr or liout)[-500:]}")
@@ -219,5 +214,30 @@ def main():
         print(f"[auto] done: {', '.join(reported)}")
 
 
+def _run_once_with_lock():
+    """Serialize overlapping auto-runner invocations.
+
+    The timer fires every 2h; `run()` allows a 600s child. A slow run must not
+    have the next invocation race it on data/processed/*.json. A second run
+    that can't get the lock exits quietly (0) — the timer will try again.
+    """
+    lock_path = os.path.join(BASE, "data", "processed", ".fpl_auto.lock")
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    handle = open(lock_path, "w")
+    try:
+        import fcntl
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            print("[auto] another auto-runner holds the lock — skipping this tick")
+            return
+    except ImportError:
+        pass  # non-POSIX (local dev on Windows): best-effort, no lock
+    try:
+        main()
+    finally:
+        handle.close()
+
+
 if __name__ == "__main__":
-    main()
+    _run_once_with_lock()

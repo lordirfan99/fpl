@@ -19,6 +19,7 @@ import os
 import sys
 
 import project_paths
+import telegram_notify
 
 BASE = str(project_paths.resolve_project_root(__file__))
 
@@ -39,19 +40,6 @@ def load_settings():
         return json.load(f)
 
 
-def send(token, chat_id, text):
-    import urllib.parse
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = json.dumps(
-        {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
-    ).encode()
-    req = urllib.request.Request(
-        url, data=payload, headers={"Content-Type": "application/json"}
-    )
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return r.status
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tag", default="FPL job")
@@ -64,37 +52,19 @@ def main():
 
     creds = load_creds()
     token = creds.get("TELEGRAM_BOT_TOKEN")
-    if not token:
-        print("deliver_stdout: TELEGRAM_BOT_TOKEN missing", file=sys.stderr)
-        return 1
-
     settings = load_settings()
     chat_id = (settings.get("telegram") or {}).get("chat_id")
     if not chat_id:
         owner = (settings.get("telegram") or {}).get("allowed_user_ids") or []
         chat_id = owner[0] if owner else None
-    if not chat_id:
-        print("deliver_stdout: no chat_id in settings", file=sys.stderr)
-        return 1
 
-    header = f"[{args.tag}]"
-    body = f"{header}\n\n{text}"
-
-    # Telegram hard cap: 4096 chars per message - split on paragraph boundaries.
-    chunks, cur = [], ""
-    for line in body.splitlines():
-        if len(cur) + len(line) + 1 > 3900 and cur:
-            chunks.append(cur)
-            cur = ""
-        cur += line + "\n"
-        if len(cur) >= 3900:
-            chunks.append(cur)
-            cur = ""
-    if cur:
-        chunks.append(cur)
-
-    for c in chunks:
-        send(token, chat_id, c)
+    body = f"[{args.tag}]\n\n{text}"
+    # A delivery failure is logged inside send_long_message and never raises:
+    # the upstream job already did its work; a missing card must not fail the
+    # systemd unit or the whole `job | deliver_stdout` pipeline.
+    telegram_notify.send_long_message(
+        token, chat_id, body, log_prefix=f"[{args.tag}] "
+    )
     return 0
 
 
