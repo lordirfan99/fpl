@@ -147,243 +147,156 @@ def status_message(lines, pending_note=None):
     return "\n".join(output)
 
 
+def _short(name, n=11):
+    name = str(name or "?")
+    return name if len(name) <= n else name[: n - 1] + "…"
+
+
+def _pre(rows):
+    """Fixed-width block: rows are lists of (text, width, align) cells."""
+    out = []
+    for row in rows:
+        cells = []
+        for text, width, align in row:
+            text = esc(text)
+            cells.append(text.rjust(width) if align == "r" else text.ljust(width))
+        out.append("".join(cells).rstrip())
+    return "<pre>" + "\n".join(out) + "</pre>"
+
+
 def plan_card(plan):
-    """Mobile-first weekly decision card without wide fixed-width tables."""
-    lines = [
-        f"🧠 <b>FPL AUTOPILOT • GW{esc(plan.get('gw'))}</b>",
-        "━━━━━━━━━━━━━━━━━━",
-    ]
-
-    mv = plan.get("model_version")
-    if mv:
-        note = plan.get("engine_note") or mv
-        model_line = f"🧠 <b>Model</b>\n   {esc(note)}"
-        lines.append(model_line)
-    candidate = plan.get("model_candidate") or {}
-    if candidate:
-        evaluated = len(candidate.get("evaluated_gws") or [])
-        status = candidate.get("status") or "collecting"
-        eligibility = "owner approval available" if candidate.get(
-            "eligible_for_owner_approval") else "production unchanged"
-        lines.append(
-            f"🧪 <b>V4.2 candidate</b>\n   {esc(status)} • {evaluated}/6 live GWs"
-            f" • {esc(candidate.get('rows', 0))}/500 rows • {esc(eligibility)}"
-        )
-    if plan.get("run_id") or plan.get("plan_id"):
-        lines.append(
-            f"🧾 <b>Decision identity</b>\n   Run <code>{esc(str(plan.get('run_id') or '—')[-21:])}</code>"
-            f" • Plan <code>{esc(str(plan.get('plan_id') or '—')[:8])}</code>"
-            f" • Optimizer {esc(plan.get('optimizer_version') or '—')}"
-        )
-
-    competitive = plan.get("competitive") or {}
-    if competitive:
-        context_status = competitive.get("context_status")
-        phase = competitive.get("phase")
-        alignment = competitive.get("alignment")
-        target_alignment = competitive.get("target_alignment")
-        meta = competitive.get("meta") or {}
-        freshness = meta.get("freshness_hours")
-        freshness_text = f"{float(freshness):.1f}h old" if freshness is not None else "age unknown"
-        if context_status != "ready" or competitive.get("fallback"):
-            lines.append("🛟 <b>SAFE MODE</b>\n   League context unavailable • transfers LOCKED • official-FPL lineup review only")
-        else:
-            lines.append(f"🎯 <b>Competitive V4</b>\n   {esc(phase or '—')} phase • alignment {esc(alignment)}% / target {esc(target_alignment)}% • {freshness_text}")
-        missing = competitive.get("critical_missing") or []
-        edges = competitive.get("model_edges") or []
-        if missing:
-            lines.append("   Core gap: " + ", ".join(esc(p.get("name", "?")) for p in missing[:3]))
-        elif edges:
-            lines.append("   Model edge: " + ", ".join(esc(p.get("name", "?")) for p in edges[:3]))
-
+    """Compact Telegram decision card. Full detail lives in the dashboard."""
+    plan = plan or {}
+    gw = plan.get("gw")
+    chip = str(plan.get("chip") or "").lower()
+    trs = plan.get("transfers") or []
     summary = plan.get("decision_summary") or {}
-    if summary:
-        action = summary.get("recommended_action", "REVIEW")
-        lines.extend([
-            f"\n✅ <b>RECOMMENDED ACTION: {esc(action)}</b>",
-            f"   {esc(summary.get('reason', 'Review the canonical plan.'))}",
-        ])
-        team_diff = summary.get("team_diff") or {}
-        if team_diff:
-            changes = []
-            if team_diff.get("started"):
-                changes.append("Start " + ", ".join(team_diff["started"]))
-            if team_diff.get("benched"):
-                changes.append("Bench " + ", ".join(team_diff["benched"]))
-            if team_diff.get("captain_to"):
-                changes.append(f"Captain {team_diff.get('captain_from') or '—'} → {team_diff['captain_to']}")
-            if team_diff.get("vice_to"):
-                changes.append(f"Vice {team_diff.get('vice_from') or '—'} → {team_diff['vice_to']}")
-            lines.append(f"   <b>Live-team change:</b> {esc(' • '.join(changes) if changes else 'None — no FPL write required')}")
+    competitive = plan.get("competitive") or {}
+    starters = plan.get("target_starters") or []
+    bench = plan.get("bench") or []
+    cap_id = (plan.get("captain") or {}).get("id")
+    vc_id = (plan.get("vice") or {}).get("id")
 
-    target = plan.get("target_xpts")
-    current = plan.get("current_xpts")
-    gain = plan.get("horizon_gain", 0)
-    lines.extend([
-        f"📈 <b>Projection</b>\n   15-player GW pool: target <b>{esc(target)}</b> xPts • current {esc(current)} • 3-GW gain {float(gain):+.1f}",
-    ])
-    horizon = summary.get("horizon") or {}
-    horizon_rows = horizon.get("rows") or []
-    if horizon_rows:
-        lines.append("   Risk-adjusted XI + captain + bench utility: " + " • ".join(
-            f"GW{row.get('gw')} {float(row.get('current', 0)):.1f}→{float(row.get('proposed', 0)):.1f} ({float(row.get('gain', 0)):+.1f})"
-            for row in horizon_rows
-        ))
-    uncertainty = summary.get("uncertainty") or {}
-    if uncertainty:
-        calibration = uncertainty.get("calibration") or {}
-        lines.append(
-            f"   🎲 With captain {float(uncertainty.get('mean_with_captain', 0)):.1f} • "
-            f"80% outcome range {float(uncertainty.get('outcome_low', 0)):.1f}–{float(uncertainty.get('outcome_high', 0)):.1f}"
-            + (f" • calibrated n={int(calibration.get('n', 0))}" if calibration.get("n") else "")
-        )
-        if calibration.get("gw_range") or calibration.get("interval_coverage") is not None:
-            coverage = calibration.get("interval_coverage")
-            lines.append(
-                f"   Calibration GWs {esc(calibration.get('gw_range') or '—')}"
-                + (f" • interval coverage {float(coverage):.0%}" if coverage is not None else "")
-            )
-    lines.append("")
+    # --- headline action (chip-aware; a live rebuild is never "lineup only") ---
+    if chip in ("wildcard", "freehit"):
+        label = "WILDCARD" if chip == "wildcard" else "FREE HIT"
+        action = f"{label} · full 15-player rebuild"
+    else:
+        n = len(trs)
+        action = (summary.get("recommended_action")
+                  or (f"{n} TRANSFER{'S' if n != 1 else ''} + team sheet" if trs
+                      else "TEAM SHEET ONLY"))
+    safe = (not chip) and (competitive.get("context_status") not in (None, "ready")
+                           or competitive.get("fallback"))
 
-    trs = plan.get("transfers", [])
-    lines.append("🔄 <b>Transfers</b>")
+    lines = [
+        f"\U0001f9e0 <b>FPL AUTOPILOT · GW{esc(gw)}</b>",
+        f"✅ <b>RECOMMENDED ACTION: {esc(action)}</b>"
+        + ("  ⚠️ transfers held (safe mode)" if safe and trs else ""),
+    ]
+    reason = summary.get("reason")
+    if reason and not chip:
+        # A chip rebuild is never "transfers locked"; suppress the safe-mode reason.
+        lines.append(f"   {esc(reason)}")
     gate = competitive.get("template_gate") or {}
     if gate:
         decision = str(gate.get("decision") or "HOLD_TEMPLATE").replace("_", " ")
-        lines.append(
-            f"🧭 <b>Strategy:</b> {esc(decision)} • "
-            f"differential {'OPEN' if gate.get('differential_allowed') else 'LOCKED'}"
-        )
+        lines.append(f"\U0001f9ed <b>Strategy:</b> {esc(decision)} · differential "
+                     f"{'OPEN' if gate.get('differential_allowed') else 'LOCKED'}")
+    # V4.2 shadow model — only surface it when it's actually actionable.
+    cand = plan.get("model_candidate") or {}
+    if cand.get("eligible_for_owner_approval"):
+        lines.append(f"\U0001f9ea <b>V4.2 candidate ready for approval</b> "
+                     f"({len(cand.get('evaluated_gws') or [])}/6 GWs) — /promote to review")
+
+    # --- key numbers ---
+    tgt, cur = plan.get("target_xpts"), plan.get("current_xpts")
+    gain = plan.get("horizon_gain")
+    num = f"xPts {esc(tgt)}"
+    if cur is not None:
+        num += f" (now {esc(cur)}"
+        if gain is not None:
+            num += f", 3-GW {float(gain):+.1f}"
+        num += ")"
+    phase = competitive.get("phase")
+    if phase and competitive.get("alignment") is not None:
+        num += (f"  ·  {esc(phase)} align {esc(competitive.get('alignment'))}%"
+                f"/{esc(competitive.get('target_alignment'))}%")
+    lines.append(num)
+
+    # --- transfers table ---
     if trs:
+        rows = []
         for t in trs:
-            hit = " • <b>−4 hit</b>" if t.get("hit") else ""
-            lines.append(
-                f"• <b>{esc(t.get('out_name', '?'))}</b> → <b>{esc(t.get('in_name', '?'))}</b>"
-                f"  •  gain <b>{float(t.get('gain', 0)):+.1f}</b>{hit}"
-            )
-    else:
-        no_move_reason = summary.get("reason") or "No legal transfer cleared the configured threshold."
-        lines.append(f"✅ <b>Transfers:</b> none — {esc(no_move_reason)}")
+            g = f"{float(t.get('gain', 0)):+.1f}"
+            tail = f"{g} -4" if t.get("hit") else g
+            rows.append([
+                (_short(t.get("out_name")), 12, "l"),
+                ("→ ", 2, "l"),
+                (_short(t.get("in_name")), 12, "l"),
+                (tail, 7, "r"),
+            ])
+        lines.append("\U0001f504 <b>Transfers</b>")
+        lines.append(_pre(rows))
 
-    roadmap = summary.get("roadmap") or []
-    if roadmap:
-        lines.append("\n🗺️ <b>THREE-GW ROADMAP</b>")
-        for row in roadmap:
-            route = row.get("route") or {}
-            moves = route.get("moves") or []
-            move_text = ", ".join(f"{move.get('out')} → {move.get('in')}" for move in moves)
-            suffix = f" • {move_text}" if move_text else ""
-            state = f" • FT {row.get('free_transfers_before')}→{row.get('free_transfers_after')} next • bank £{float(row.get('bank_after') or 0):.1f}m"
-            marker = "✅" if row.get("status") == "recommended" else "🔎"
-            lines.append(f"{marker} GW{row.get('gw')}: <b>{esc(row.get('action'))}</b>{esc(suffix + state)}")
-        lines.append("   Future routes are conditional and recalculated from live data.")
-    paid_option = ((summary.get("alternatives") or {}).get("best_paid_transfer") or {})
-    paid_moves = paid_option.get("moves") or []
-    if paid_moves:
-        paid_text = ", ".join(f"{move.get('out')} → {move.get('in')}" for move in paid_moves)
-        allowed = (summary.get("alternatives") or {}).get("paid_transfer_allowed")
-        verdict = "eligible for live threshold review" if allowed else "REJECTED — paid moves locked"
-        lines.append(
-            f"💸 <b>Best paid alternative:</b> {esc(paid_text)} • net after −4 "
-            f"{float(paid_option.get('net_after_hit', 0)):+.1f} • {esc(verdict)}"
-        )
-
-    starters = plan.get("target_starters", [])
-    bench = plan.get("bench", [])
-    cap_id = (plan.get("captain") or {}).get("id")
-    vc_id = (plan.get("vice") or {}).get("id")
+    # --- starting XI table ---
     pos_rank = {"GKP": 0, "DEF": 1, "MID": 2, "FWD": 3}
-
-    ordered = sorted(starters, key=lambda x: (pos_rank.get(x.get("position"), 9), -float(x.get("xpts", 0))))
-    xi_total = sum(float(p.get("xpts", 0)) for p in ordered)
-    lines.extend(["", f"🛡️ <b>STARTING XI</b> • {xi_total:.1f} base xPts"])
-    formation_info = summary.get("formation") or {}
-    if formation_info:
-        lines.append(
-            f"   Shape <b>{esc(formation_info.get('selected'))}</b> • elite route {esc(formation_info.get('template') or '—')}"
-        )
-        if formation_info.get("explanation"):
-            lines.append(f"   {esc(formation_info.get('explanation'))}")
-    last_pos = None
-    for p in ordered:
-        pos = p.get("position", "?")
-        if pos != last_pos:
-            lines.append(f"\n{_position_icon(pos)} <b>{esc(pos)}</b>")
-            last_pos = pos
-        role = "C" if p.get("id") == cap_id else ("VC" if p.get("id") == vc_id else "")
-        lines.append(_player_line(p.get("name", "?"), None, f"{float(p.get('xpts', 0)):.1f}", role, "• "))
-
-    cap_p = next((p for p in starters if p.get("id") == cap_id), None)
-    if cap_p and cap_p.get("p_start") is not None:
-        lines.extend([
-            "",
-            f"👑 <b>Captain confidence • {esc(cap_p.get('name'))}</b>",
-            f"   Start {float(cap_p.get('p_start', 0)):.0%} • Exp mins {float(cap_p.get('expected_minutes', 0)):.0f}",
-            f"   Floor {float(cap_p.get('xpts_floor', 0)):.1f} • Upside {float(cap_p.get('xpts_upside', 0)):.1f}",
+    xi = sorted(starters, key=lambda p: (pos_rank.get(p.get("position"), 9),
+                                         -float(p.get("xpts", 0))))
+    rows = []
+    for p in xi:
+        mark = " (C)" if p.get("id") == cap_id else (" (V)" if p.get("id") == vc_id else "")
+        rows.append([
+            (str(p.get("position", "?")), 4, "l"),
+            (_short(p.get("name"), 14) + mark, 18, "l"),
+            (f"{float(p.get('xpts', 0)):.1f}", 5, "r"),
         ])
-    rankings = summary.get("captain_rankings") or []
-    if rankings:
-        lines.append("   <b>Captain ranking:</b> " + " • ".join(
-            f"{row.get('name')} {float(row.get('xpts') or 0):.1f} xPts/"
-            f"{float(row.get('p_start') or 0):.0%} start"
-            + (" ✅" if row.get("eligible") else " ⚠️")
-            for row in rankings[:3]
-        ))
+    xi_total = sum(float(p.get("xpts", 0)) for p in xi)
+    shape = (summary.get("formation") or {}).get("selected")
+    lines.append(f"\U0001f6e1️ <b>Starting XI</b> — {xi_total:.1f} xPts"
+                 + (f" · {esc(shape)}" if shape else ""))
+    lines.append(_pre(rows))
 
-    lines.extend(["", "🪑 <b>BENCH • autosub order</b>"])
+    # --- bench (one compact line) ---
     if bench:
-        for i, p in enumerate(bench, 1):
-            role = "VC" if p.get("id") == vc_id else ""
-            lines.append(_player_line(p.get("name", "?"), None, f"{float(p.get('xpts', 0)):.1f}", role, f"{i}️⃣ "))
-    else:
-        lines.append("No bench players in plan payload.")
+        b = " · ".join(f"{i}. {_short(p.get('name'), 12)} {float(p.get('xpts', 0)):.1f}"
+                            for i, p in enumerate(bench, 1))
+        lines.append(f"\U0001fa91 <b>Bench</b>  {b}")
 
-    lines.extend(["", "━━━━━━━━━━━━━━━━━━"])
+    # --- captain confidence (one line) ---
+    cap_p = next((p for p in starters if p.get("id") == cap_id), None)
+    if cap_p:
+        bits = [f"\U0001f451 <b>{esc(cap_p.get('name'))}</b> (C)"]
+        if cap_p.get("p_start") is not None:
+            bits.append(f"{float(cap_p.get('p_start', 0)):.0%} start")
+        if cap_p.get("xpts_floor") is not None:
+            bits.append(f"floor {float(cap_p.get('xpts_floor', 0)):.1f}"
+                        f"–{float(cap_p.get('xpts_upside', 0)):.1f}")
+        lines.append("  ·  ".join(bits))
+
+    # --- chip advisor (only if it has something to say) ---
     sug = plan.get("chip_suggestion")
-    if sug:
-        lines.append(f"💡 <b>CHIP ADVISOR</b>\n   {esc(sug.get('reason'))} — {esc(sug.get('detail'))}")
-    else:
-        lines.append("💡 <b>CHIP ADVISOR</b>\n   Hold chips — no DGW/BGW edge detected.")
+    if sug and sug.get("chip"):
+        lines.append(f"\U0001f4a1 Chip: {esc(sug.get('chip'))} — {esc(sug.get('reason'))}")
 
-    # Odds are not a live input anymore. Keep the provenance line useful and
-    # avoid showing a betting-market warning as if it affected the decision.
-    lines.append("\n📐 <b>Data:</b> Official FPL + statistical V4 • betting odds not used")
-    bnote = plan.get("bonus_note")
-    if bnote:
-        lines.append(f"\n⭐ {esc(bnote)}")
-    try:
-        import os as _os
-        import sys as _sys
-        _sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "model"))
-        from plan_context import plan_context_lines as _ctx_lines
-        ctx = _ctx_lines(plan)
-        if ctx:
-            lines.append("\n🧭 <b>DECISION INPUTS & CONTEXT</b>")
-            lines.extend(f"   {c}" for c in ctx)
-    except Exception:
-        pass  # fail-soft: card renders without context lines
-    lines.append(f"\n⏰ <b>Deadline</b>\n   {esc(plan.get('deadline'))}")
+    # --- deadline + one-line health + approve prompt ---
+    lines.append(f"\n⏰ <b>Deadline</b> {esc(plan.get('deadline'))}")
     health = summary.get("data_health") or {}
     if health:
-        league_age = health.get("league_snapshot_age_hours")
-        league_text = f"{float(league_age):.1f}h" if league_age is not None else "unknown"
-        lines.append(
-            "\n🩺 <b>DATA HEALTH</b>\n"
-            f"   FPL/account synced {'✅' if health.get('account_squad_synced') and health.get('free_transfers_synced') else '⚠️'}"
-            f" • FT {esc(health.get('free_transfers'))} • league age {esc(league_text)}"
-            f" • deadline gate {esc(health.get('deadline_safety', 'unknown'))}"
-        )
-    source_manifest = summary.get("source_manifest") or {}
-    if source_manifest:
-        league = source_manifest.get("league") or {}
-        lines.append(
-            f"   Snapshot contract {esc(source_manifest.get('status', 'unknown'))}"
-            f" • league run {esc(str(league.get('run_id') or '—')[-12:])}"
-        )
+        synced = health.get("account_squad_synced") and health.get("free_transfers_synced")
+        lines.append(f"\U0001fa7a account {'✅' if synced else '⚠️'}"
+                     f" · FT {esc(health.get('free_transfers'))}"
+                     f" · <a href=\"https://fpl-scout-intelligence.netlify.app\">full detail → dashboard</a>")
+    else:
+        lines.append("<a href=\"https://fpl-scout-intelligence.netlify.app\">full detail → dashboard</a>")
+    approval_action = ((summary.get("team_diff") or {}).get("approval_action")
+                       or ("EXECUTE REBUILD" if chip else ("APPROVE" if trs else "APPROVE XI")))
     scope = summary.get("approval_scope")
-    approval_action = ((summary.get("team_diff") or {}).get("approval_action") or "APPROVE")
-    lines.append(f"\n<b>Decision required:</b> {esc(approval_action)} or Reject below."
-                 + (f"\n{esc(scope)}" if scope else ""))
+    lines.append(f"\n<b>Decision required:</b> {esc(approval_action)} or Reject below · "
+                 f"<code>{esc(str(plan.get('plan_id') or '')[:8])}</code>")
+    if scope:
+        lines.append(esc(scope))
+
     return _mobile_safe_plan(lines)
 
 

@@ -168,8 +168,18 @@ class PromotionTests(unittest.TestCase):
             "target_starters": [], "bench": [], "transfers": [],
             "captain": {}, "vice": {}, "deadline": "2026-08-28T17:30:00Z",
         })
-        self.assertIn("V4.2 candidate", card)
-        self.assertIn("production unchanged", card)
+        # Not eligible -> the shadow model is NOT shown on the lean card (dashboard only).
+        self.assertNotIn("V4.2 candidate", card)
+
+        ready = plan_card({
+            "gw": 2, "model_version": "competitive-v4.0",
+            "model_candidate": {"version": "competitive-v4.2-shadow",
+                                "evaluated_gws": [1, 2, 3, 4, 5, 6], "rows": 600,
+                                "eligible_for_owner_approval": True},
+            "target_starters": [], "bench": [], "transfers": [],
+            "captain": {}, "vice": {}, "deadline": "2026-08-28T17:30:00Z",
+        })
+        self.assertIn("V4.2 candidate ready for approval", ready)
 
 
 if __name__ == "__main__":

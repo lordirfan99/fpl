@@ -130,8 +130,10 @@ class TestCardIntegration(unittest.TestCase):
             "deadline": "2026-08-21T17:30:00Z",
         }
         card = plan_card(plan)
-        self.assertIn("CONTEXT", card)
+        # DECISION INPUTS / CONTEXT moved to the dashboard; the card stays lean.
         self.assertIn("B.Fernandes", card)
+        self.assertIn("Decision required", card)
+        self.assertLessEqual(len(card), 4096)
 
     def test_plan_card_without_context_data_does_not_crash(self):
         with patch("plan_context._load_bootstrap", return_value=(None, None)):
@@ -159,9 +161,7 @@ class TestCardIntegration(unittest.TestCase):
         }
         card = plan_card(plan)
         self.assertIn("CONVERGE TO TEMPLATE", card)
-        self.assertIn("Top template gaps", card)
-        self.assertIn("Elite captain", card)
-        self.assertIn("Official FPL + statistical V4", card)
+        self.assertIn("differential LOCKED", card)
 
 
 if __name__ == "__main__":
