@@ -1,18 +1,21 @@
 #!/bin/bash
 # FPL Autopilot - GCP VM install script (Debian/Ubuntu). Idempotent.
-# Run as root on a fresh VM after cloning the repo to /opt/fpl-autopilot.
+# FRESH-VM BOOTSTRAP ONLY. For an existing VM use infra/deploy/vm-sync.sh.
 #
-#   git clone https://github.com/lordirfan99/fpl-autopilot.git /opt/fpl-autopilot
-#   cd /opt/fpl-autopilot && bash deploy/gcp/install.sh
+# This repo is PUBLIC and ships NO secrets. Before the bot can run you must
+# place, on the VM only:
+#   /opt/fpl-autopilot/config/credentials.env   (TELEGRAM_BOT_TOKEN=..., FPL_LOGIN=..., FPL_PASSWORD=...)
+#   /opt/fpl-autopilot/config/settings.json     (team_id, telegram.chat_id, allowed_user_ids)
+# then optionally `bash infra/deploy/gcp/secrets-bootstrap.sh` to mirror them to Secret Manager.
 #
-# The repo deliberately SHIPS config/credentials.env + config/fpl_session.json
-# (private repo by design decision). Post-deploy you MUST rotate those secrets
-# and store the NEW values in GCP Secret Manager, then run:
-#   bash deploy/gcp/secrets-bootstrap.sh
+#   git clone https://github.com/lordirfan99/fpl.git /tmp/fpl && sudo mkdir -p /opt/fpl-autopilot
+#   sudo cp -r /tmp/fpl/engine/{model,optimizer,execution,jobs} /tmp/fpl/bot /opt/fpl-autopilot/
+#   sudo bash /tmp/fpl/infra/deploy/gcp/install.sh
 set -euo pipefail
 
 APP_DIR=/opt/fpl-autopilot
 SVC_DIR=/etc/systemd/system
+SYSTEMD_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # infra/deploy/gcp
 VENV="$APP_DIR/.venv"
 PY="$VENV/bin/python"
 LOG_DIR=/var/log/fpl
@@ -39,7 +42,7 @@ if [ ! -x "$PY" ]; then
 fi
 chown -R fpl:fpl "$VENV"
 runuser -u fpl -- "$PY" -m pip install --upgrade pip
-runuser -u fpl -- "$PY" -m pip install -r "$APP_DIR/requirements.txt"
+runuser -u fpl -- "$PY" -m pip install -r "$SYSTEMD_SRC/../../../engine/requirements.txt"
 runuser -u fpl -- "$PY" -m pip install "camoufox[geoip]" playwright
 
 echo "==> [4/7] Browser engine (headless Camoufox/Playwright for FPL OIDC login)"
@@ -48,26 +51,32 @@ runuser -u fpl -- "$PY" -m playwright install firefox
 runuser -u fpl -- "$PY" -m camoufox fetch
 runuser -u fpl -- "$PY" -c "import camoufox, playwright; print('camoufox OK')"
 
-echo "==> [5/7] Secrets (repo-shipped per user decision)"
-chmod 600 "$APP_DIR/config/credentials.env" "$APP_DIR/config/fpl_session.json" 2>/dev/null || true
-chown fpl:fpl "$APP_DIR/config/credentials.env" "$APP_DIR/config/fpl_session.json" 2>/dev/null || true
+echo "==> [5/7] Secrets — must already be on the VM (this repo ships none)"
+for f in config/credentials.env config/settings.json; do
+  if [ ! -s "$APP_DIR/$f" ]; then
+    echo "FATAL: $APP_DIR/$f is missing. Place it on the VM first (see header)." >&2
+    exit 1
+  fi
+  chmod 600 "$APP_DIR/$f"; chown fpl:fpl "$APP_DIR/$f"
+done
+[ -f "$APP_DIR/config/fpl_session.json" ] && { chmod 600 "$APP_DIR/config/fpl_session.json"; chown fpl:fpl "$APP_DIR/config/fpl_session.json"; }
 
 echo "==> [6/7] systemd units + timers"
-cp "$APP_DIR/deploy/gcp/systemd/"*.service "$APP_DIR/deploy/gcp/systemd/"*.timer "$SVC_DIR/"
-install -d -m 0755 /etc/systemd/journald.conf.d /etc/systemd/system/fpl-bot.service.d
+cp "$SYSTEMD_SRC/systemd/"*.service "$SYSTEMD_SRC/systemd/"*.timer "$SVC_DIR/"
+install -d -m 0755 /etc/systemd/journald.conf.d /etc/systemd/system/fpl-telegram.service.d
 install -o root -g root -m 0644 \
-  "$APP_DIR/deploy/gcp/journald/90-fpl-vm-storage.conf" \
+  "$SYSTEMD_SRC/journald/90-fpl-vm-storage.conf" \
   /etc/systemd/journald.conf.d/90-fpl-vm-storage.conf
 install -o root -g root -m 0644 \
-  "$APP_DIR/deploy/gcp/logrotate/fpl" /etc/logrotate.d/fpl
+  "$SYSTEMD_SRC/logrotate/fpl" /etc/logrotate.d/fpl
 install -o root -g root -m 0644 \
-  "$APP_DIR/deploy/gcp/systemd-overrides/fpl-bot-resource-limits.conf" \
-  /etc/systemd/system/fpl-bot.service.d/10-resource-limits.conf
-chmod +x "$APP_DIR/deploy/gcp/fpl-watchdog.sh"
+  "$SYSTEMD_SRC/systemd-overrides/fpl-telegram-resource-limits.conf" \
+  /etc/systemd/system/fpl-telegram.service.d/10-resource-limits.conf
+install -o root -g root -m 0755 "$SYSTEMD_SRC/fpl-watchdog.sh" "$APP_DIR/fpl-watchdog.sh"
 systemctl daemon-reload
 systemctl restart systemd-journald
 
-systemctl enable --now fpl-bot.service
+systemctl enable --now fpl-telegram.service
 for t in fpl-daily-pull.timer fpl-auto-runner.timer fpl-token-keepalive.timer \
          fpl-auth-canary.timer fpl-squad-watch.timer \
          fpl-approval-reminder.timer fpl-bot-watchdog.timer \
@@ -79,10 +88,10 @@ done
 systemctl disable --now fpl-odds-fetch.timer 2>/dev/null || true
 
 echo "==> [7/7] Verification"
-systemctl --no-pager status fpl-bot.service --lines=5 || true
+systemctl --no-pager status fpl-telegram.service --lines=5 || true
 systemctl --no-pager list-timers 'fpl-*' || true
 echo
 echo "INSTALL DONE. Next steps:"
-echo "  1. Watch bot startup:  journalctl -u fpl-bot.service -f"
-echo "  2. After confirmations, run deploy/gcp/secrets-bootstrap.sh to pull rotated secrets."
-echo "  3. See deploy/gcp/README-GCP.md for operations."
+echo "  1. Watch bot startup:  journalctl -u fpl-telegram.service -f"
+echo "  2. Optional: bash infra/deploy/gcp/secrets-bootstrap.sh to mirror secrets to Secret Manager."
+echo "  3. See infra/deploy/gcp/README-GCP.md for operations."

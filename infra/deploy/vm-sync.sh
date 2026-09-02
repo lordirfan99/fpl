@@ -13,6 +13,16 @@ ZONE=us-central1-f
 PROJECT=irfan-374115
 REMOTE=/opt/fpl-autopilot
 
+# The bot systemd template this syncs sets FPL_TELEGRAM_EXECUTION_ENABLED=1 /
+# FPL_TELEGRAM_DRY_RUN=0 — the bot CAN submit real FPL writes (gated by the
+# hash-confirm tap). Abort unless the operator acknowledges.
+if grep -q 'FPL_TELEGRAM_EXECUTION_ENABLED=1' infra/deploy/gcp/systemd/fpl-telegram.service; then
+  echo "⚠️  This sync installs an EXECUTION-ENABLED bot unit (writes to FPL on Approve+Confirm)."
+  echo "    Kill switch after sync: /etc/fpl-telegram.env with FPL_TELEGRAM_DRY_RUN=1 + restart."
+  read -r -p "    Type 'execute' to proceed: " ack
+  [ "$ack" = "execute" ] || { echo "aborted."; exit 1; }
+fi
+
 test "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached)" != "" || true
 echo "Local ref: $(git rev-parse --short HEAD)  (asked: $REF)"
 git rev-parse --verify "$REF^{commit}" >/dev/null
@@ -27,7 +37,7 @@ cp -r engine/optimizer  "$TMP/payload/optimizer"
 cp -r engine/execution  "$TMP/payload/execution"
 cp -r engine/jobs       "$TMP/payload/jobs"
 cp -r bot               "$TMP/payload/bot"
-cp infra/deploy/gcp/systemd/fpl-bot.service "$TMP/payload/systemd/fpl-telegram.service"
+cp infra/deploy/gcp/systemd/fpl-telegram.service "$TMP/payload/systemd/fpl-telegram.service"
 [ -d engine/webapp ] && cp -r engine/webapp "$TMP/payload/webapp" || true
 # public config only; NEVER ship settings.json / credentials.env / *session*
 mkdir -p "$TMP/payload/config"

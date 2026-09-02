@@ -3,7 +3,7 @@
 # The bot touches data/processed/bot_heartbeat.txt every 60s while polling.
 set -u
 HB="/opt/fpl-autopilot/data/processed/bot_heartbeat.txt"
-BOT_SVC="fpl-bot.service"
+BOT_SVC="fpl-telegram.service"
 
 if [ -f "$HB" ]; then
   AGE=$(( $(date +%s) - $(stat -c %Y "$HB") ))

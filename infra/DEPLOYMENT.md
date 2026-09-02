@@ -113,7 +113,7 @@ Invoke-RestMethod https://sportmania.duckdns.org/fpl-autopilot/health
 On the VM:
 
 ```bash
-systemctl is-active fpl-bot.service
+systemctl is-active fpl-telegram.service
 systemctl is-active fpl-dashboard-bridge.service
 systemctl is-active fpl-dashboard-bridge-sync.timer
 systemctl list-timers --all | grep fpl

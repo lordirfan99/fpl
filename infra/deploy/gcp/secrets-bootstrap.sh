@@ -13,8 +13,7 @@
 set -euo pipefail
 
 APP_DIR=/opt/fpl-autopilot
-PROJECT=${GCP_PROJECT_ID:-"swift-rite-497623-c3"}
-REGION=${GCP_REGION:-"asia-southeast1-a"}
+PROJECT=${GCP_PROJECT_ID:-"irfan-374115"}
 CREDS="$APP_DIR/config/credentials.env"
 SESSION="$APP_DIR/config/fpl_session.json"
 TMP=$(mktemp -d)
@@ -70,7 +69,7 @@ chmod 600 "$CREDS"
 chmod 600 "$SESSION"
 
 echo "==> Restarting bot to load fresh secrets"
-systemctl restart fpl-bot.service || true
+systemctl restart fpl-telegram.service || true
 
 echo "DONE. Secrets are now in Secret Manager and config/. Remember to DELETE"
 echo "the old tokens from the repo history once rotation is complete."
