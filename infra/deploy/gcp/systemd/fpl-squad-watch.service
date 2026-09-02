@@ -1,0 +1,15 @@
+[Unit]
+Description=FPL squad watch (daily 09:00, silent unless flags)
+
+[Service]
+Type=oneshot
+User=fpl
+Group=fpl
+WorkingDirectory=/opt/fpl-autopilot
+Environment=HOME=/home/fpl
+Environment=FPL_AUTOPILOT_HOME=/opt/fpl-autopilot
+Environment=TZ=Asia/Kuala_Lumpur
+TimeoutStartSec=300
+ExecStart=/bin/bash -c '/opt/fpl-autopilot/.venv/bin/python /opt/fpl-autopilot/jobs/squad_watch.py | /opt/fpl-autopilot/.venv/bin/python /opt/fpl-autopilot/jobs/deliver_stdout.py --tag "squad watch"'
+StandardOutput=append:/var/log/fpl/jobs.log
+StandardError=append:/var/log/fpl/jobs.log

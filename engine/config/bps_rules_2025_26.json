@@ -1,0 +1,11 @@
+{
+  "cbi_per_bps": 2.0,
+  "tackle_penalty_per_loss": 0.0,
+  "gk_save_rework": 0.0,
+  "meta": {
+    "season": "2025-26",
+    "source": "official 2025/26 FPL rules",
+    "retrieved": "2026-08-12",
+    "notes": "Baseline BPS coefficients. CBI earned 1 BPS per 2 clearances/blocks/interceptions."
+  }
+}

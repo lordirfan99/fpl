@@ -1,0 +1,15 @@
+[Unit]
+Description=FPL odds fetcher (every 6h)
+
+[Service]
+Type=oneshot
+User=fpl
+Group=fpl
+WorkingDirectory=/opt/fpl-autopilot
+Environment=HOME=/home/fpl
+Environment=FPL_AUTOPILOT_HOME=/opt/fpl-autopilot
+Environment=TZ=Asia/Kuala_Lumpur
+TimeoutStartSec=600
+ExecStart=/bin/bash -c '/opt/fpl-autopilot/.venv/bin/python /opt/fpl-autopilot/jobs/fetch_odds.py | /opt/fpl-autopilot/.venv/bin/python /opt/fpl-autopilot/jobs/deliver_stdout.py --tag "odds fetch"'
+StandardOutput=append:/var/log/fpl/jobs.log
+StandardError=append:/var/log/fpl/jobs.log

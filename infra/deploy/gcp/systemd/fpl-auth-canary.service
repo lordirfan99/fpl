@@ -1,0 +1,15 @@
+[Unit]
+Description=FPL auth canary (forced full re-login on 1st & 15th, 04:00)
+
+[Service]
+Type=oneshot
+User=fpl
+Group=fpl
+WorkingDirectory=/opt/fpl-autopilot
+Environment=HOME=/home/fpl
+Environment=FPL_AUTOPILOT_HOME=/opt/fpl-autopilot
+Environment=TZ=Asia/Kuala_Lumpur
+TimeoutStartSec=600
+ExecStart=/bin/bash -c '/opt/fpl-autopilot/.venv/bin/python /opt/fpl-autopilot/jobs/auth_canary.py | /opt/fpl-autopilot/.venv/bin/python /opt/fpl-autopilot/jobs/deliver_stdout.py --tag "auth canary"'
+StandardOutput=append:/var/log/fpl/jobs.log
+StandardError=append:/var/log/fpl/jobs.log

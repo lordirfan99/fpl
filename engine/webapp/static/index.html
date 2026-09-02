@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>FPL Autopilot</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root{--bg:#0d1117;--panel:#151b23;--panel2:#1b2430;--text:#f4f7fb;--muted:#97a3b6;--line:#293241;--accent:#7c3aed;--good:#22c55e;--warn:#f59e0b;--bad:#ef4444}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow-x:hidden}.app{width:100%;max-width:760px;margin:0 auto;padding:14px 14px 28px;overflow-x:hidden}.top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px}.eyebrow{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}.title{font-size:24px;font-weight:800;margin-top:3px}.chip{padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--panel);font-size:12px;color:var(--muted)}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:12px}.metric{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px}.metric span{display:block;color:var(--muted);font-size:11px}.metric b{display:block;font-size:19px;margin-top:4px;overflow-wrap:anywhere}.tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:12px}.tab{min-width:0;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:12px;padding:10px 8px;font-weight:700}.tab.active{color:white;border-color:var(--accent);background:#24143e}.panel{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:12px}.panel h2{font-size:15px;margin:0 0 10px}.pitch{background:linear-gradient(180deg,#173a28,#102d21);border:1px solid #28533e;border-radius:18px;padding:14px;min-height:420px;display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden}.pitch:before{content:"";position:absolute;inset:50% 0 auto;border-top:1px solid rgba(255,255,255,.18)}.row{display:flex;justify-content:center;gap:8px;z-index:1;min-width:0}.player{width:23%;min-width:0;text-align:center}.shirt{width:46px;height:46px;border-radius:14px;margin:0 auto 5px;display:flex;align-items:center;justify-content:center;background:#f1f5f9;color:#111827;font-weight:900;border:2px solid rgba(255,255,255,.6)}.player .name{font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.player .meta{font-size:11px;color:#d4dce8;margin-top:2px}.badge{display:inline-block;font-size:10px;padding:2px 5px;border-radius:999px;background:var(--accent);color:white;margin-left:3px}.bench{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.bench-card,.list-card{min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:13px;padding:10px}.bench-card b,.list-card b{font-size:12px;overflow-wrap:anywhere}.bench-card span,.list-card span{display:block;min-width:0;font-size:11px;color:var(--muted);margin-top:3px;overflow-wrap:anywhere}.list{display:grid;gap:8px;min-width:0}.list-card{display:flex;justify-content:space-between;gap:10px;align-items:center}.list-card>*{min-width:0}.list-card>span{text-align:right;max-width:68%}.right{text-align:right}.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.action{min-width:0;border:none;border-radius:13px;padding:12px;font-weight:800}.approve{background:var(--good);color:#052e16}.reject{background:#3f1820;color:#fecaca;border:1px solid #6e2430}.hidden{display:none}.status{font-size:12px;color:var(--muted);text-align:center;padding:8px}.error{color:#fecaca;background:#3a171d;border:1px solid #61222b;padding:12px;border-radius:12px;overflow-wrap:anywhere}.skeleton{opacity:.6;animation:pulse 1.2s infinite}@keyframes pulse{50%{opacity:.3}}@media(max-width:560px){.metrics{grid-template-columns:1fr 1fr}.tabs{grid-template-columns:1fr 1fr}.pitch{min-height:390px;padding:10px}.player{width:24%;min-width:0}.shirt{width:40px;height:40px}.bench{grid-template-columns:1fr 1fr}.list-card{align-items:flex-start}.list-card>span{max-width:62%}}
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="top">
+      <div><div class="eyebrow">FPL Autopilot</div><div class="title" id="headline">Loading squad…</div></div>
+      <div class="chip" id="deadline">Connecting</div>
+    </section>
+
+    <section class="metrics">
+      <div class="metric"><span>Projected</span><b id="projected">—</b></div>
+      <div class="metric"><span>Formation</span><b id="formation">—</b></div>
+      <div class="metric"><span>Team value</span><b id="value">—</b></div>
+      <div class="metric"><span>Bank</span><b id="bank">—</b></div>
+    </section>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="squad">Squad</button>
+      <button class="tab" data-tab="players">Players</button>
+      <button class="tab" data-tab="plan">Plan</button>
+      <button class="tab" data-tab="status">Status</button>
+    </nav>
+
+    <section id="squad" class="view">
+      <div class="pitch" id="pitch"></div>
+      <div class="panel"><h2>Bench · autosub order</h2><div class="bench" id="bench"></div></div>
+    </section>
+
+    <section id="players" class="view hidden">
+      <div class="panel"><h2>Player details</h2><div class="list" id="playerList"></div></div>
+    </section>
+
+    <section id="plan" class="view hidden">
+      <div class="panel"><h2>Pending decision</h2><div id="planBody" class="status">No plan loaded.</div><div class="actions hidden" id="planActions"><button class="action approve" id="approveBtn">Approve</button><button class="action reject" id="rejectBtn">Reject</button></div></div>
+    </section>
+
+    <section id="status" class="view hidden">
+      <div class="panel"><h2>System status</h2><div class="list" id="statusList"></div></div>
+    </section>
+
+    <div id="message" class="status">Opening secure Telegram session…</div>
+  </main>
+
+<script>
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+const initData = tg?.initData || '';
+let dashboard = null;
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function api(path, options={}) {
+  const headers = Object.assign({'X-Telegram-Init-Data': initData}, options.headers || {});
+  const res = await fetch(path, {...options, headers});
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+  return data;
+}
+
+function playerNode(p) {
+  const role = p.role ? `<span class="badge">${esc(p.role)}</span>` : '';
+  return `<div class="player"><div class="shirt">${esc(p.position)}</div><div class="name">${esc(p.name)}${role}</div><div class="meta">${p.xpts.toFixed(1)} xPts</div></div>`;
+}
+
+function renderPitch(players) {
+  const starters = players.filter(p => p.starter);
+  const groups = ['GKP','DEF','MID','FWD'].map(pos => starters.filter(p => p.position === pos));
+  $('pitch').innerHTML = groups.map(group => `<div class="row">${group.map(playerNode).join('')}</div>`).join('');
+  const bench = players.filter(p => !p.starter).sort((a,b) => a.pick-b.pick);
+  $('bench').innerHTML = bench.map((p,i) => `<div class="bench-card"><b>${i+1}. ${esc(p.name)}</b><span>${esc(p.position)} · ${p.xpts.toFixed(1)} xPts · £${p.price.toFixed(1)}m</span></div>`).join('');
+}
+
+function renderPlayers(players) {
+  $('playerList').innerHTML = players.map(p => {
+    const chance = p.chance == null ? '—' : `${p.chance}%`;
+    const statusClass = (p.status === 'i' || p.status === 'u') ? 'bad' : (p.chance != null && p.chance < 75 ? 'warn' : 'good');
+    return `<div class="list-card"><div><b>${esc(p.name)} ${p.role ? `· ${esc(p.role)}` : ''}</b><span>${esc(p.club)} · ${esc(p.opponent)} · £${p.price.toFixed(1)}m</span></div><div class="right"><b>${p.xpts.toFixed(1)} xPts</b><span class="${statusClass}">Chance ${chance}</span></div></div>`;
+  }).join('');
+}
+
+function renderStatus(d) {
+  const cap = d.captain ? `${d.captain.name} · ${(d.captain.xpts*2).toFixed(1)} captain xPts` : 'Not set';
+  const vice = d.vice ? `${d.vice.name} · ${d.vice.xpts.toFixed(1)} xPts` : 'Not set';
+  const items = [['Captain',cap],['Vice captain',vice],['Base XI',`${d.base_xpts.toFixed(1)} xPts`],['Team ID',d.team_id],['Telegram user',d.user.first_name || d.user.id]];
+  $('statusList').innerHTML = items.map(([a,b]) => `<div class="list-card"><b>${esc(a)}</b><span>${esc(b)}</span></div>`).join('');
+}
+
+async function loadPlan() {
+  const data = await api('/api/pending');
+  const p = data.pending;
+  if (!p) { $('planBody').innerHTML = 'No plan is waiting for approval.'; $('planActions').classList.add('hidden'); return; }
+  const transfers = p.transfers || [];
+  const s = p.decision_summary || {};
+  const transferHtml = transfers.length ? transfers.map(t => `<div class="list-card"><div><b>${esc(t.out_name)} → ${esc(t.in_name)}</b><span>Gain ${Number(t.gain||0).toFixed(1)} xPts${t.hit ? ' · −4 hit' : ''}</span></div></div>`).join('') : `<div class="list-card"><b>No transfers</b><span>${esc(s.reason || 'No legal move cleared the configured threshold.')}</span></div>`;
+  const horizon = (s.horizon?.rows || []).map(r => `<div class="list-card"><b>GW${esc(r.gw)} decision utility</b><span>${Number(r.current||0).toFixed(1)} → ${Number(r.proposed||0).toFixed(1)} · ${Number(r.gain||0) >= 0 ? '+' : ''}${Number(r.gain||0).toFixed(1)}</span></div>`).join('');
+  const roadmap = (s.roadmap || []).map(r => {
+    const moves = (r.route?.moves || []).map(m => `${m.out} → ${m.in}`).join(', ');
+    return `<div class="list-card"><b>GW${esc(r.gw)} · ${esc(r.action)}</b><span>${esc(moves || (r.status === 'recommended' ? 'Current recommendation' : 'Recalculate from live data'))}</span></div>`;
+  }).join('');
+  const paid = s.alternatives?.best_paid_transfer;
+  const alternatives = paid ? `<div class="list-card"><b>Best paid alternative · rejected</b><span>${esc((paid.moves || []).map(m => `${m.out} → ${m.in}`).join(', '))} · net after −4 ${Number(paid.net_after_hit||0) >= 0 ? '+' : ''}${Number(paid.net_after_hit||0).toFixed(1)}</span></div>` : '';
+  const u = s.uncertainty || {};
+  const uncertainty = u.outcome_low == null ? '' : `<div class="list-card"><b>Outcome uncertainty</b><span>${Number(u.outcome_low).toFixed(1)}–${Number(u.outcome_high).toFixed(1)} xPts · approximate 80% range</span></div>`;
+  const f = s.formation || {};
+  const formation = f.selected ? `<div class="list-card"><b>Formation</b><span>${esc(f.selected)} this GW · ${esc(f.template || '—')} elite destination</span></div>` : '';
+  const tc = s.template_comparison || {};
+  const templateOwned = (tc.owned || []).length ? `<div class="list-card"><b>Template owned</b><span>${esc(tc.owned.map(x => x.name).join(', '))}</span></div>` : '';
+  const templateMissing = (tc.missing || []).map(x => `<div class="list-card"><b>Missing · ${esc(x.name)}</b><span>${esc(x.position || '')} · ${Number(x.elite_percentage||0).toFixed(0)}% elite${x.cash_affordable_with_one_move === true ? ' · cash-fit' : (x.cash_affordable_with_one_move === false ? ' · needs funding' : '')}</span></div>`).join('');
+  const templateOutside = (tc.outside || []).length ? `<div class="list-card"><b>Outside template</b><span>${esc(tc.outside.map(x => `${x.name} (${x.position})`).join(', '))}</span></div>` : '';
+  const health = s.data_health || {};
+  const healthHtml = Object.keys(health).length ? `<div class="list-card"><b>Data health</b><span>Account ${health.account_squad_synced && health.free_transfers_synced ? 'synced' : 'check required'} · FT ${esc(health.free_transfers)} · league ${health.league_context_ready ? 'ready' : 'pending'} · deadline ${esc(health.deadline_safety || 'unknown')}</span></div>` : '';
+  const candidate = p.model_candidate || {};
+  const candidateHtml = candidate.version ? `<div class="list-card"><b>🧪 ${esc(candidate.version)}</b><span>${esc(candidate.status || 'collecting')} · ${(candidate.evaluated_gws || []).length}/6 GWs · ${Number(candidate.rows || 0)}/500 rows · ${candidate.eligible_for_owner_approval ? 'owner approval available' : 'production unchanged'}</span></div>` : '';
+  $('planBody').innerHTML = `<div class="list"><div class="list-card"><b>Recommended: ${esc(s.recommended_action || 'REVIEW')}</b><span>${esc(s.reason || '')}</span></div>${candidateHtml}${transferHtml}<div class="list-card"><b>Approval scope</b><span>${esc(s.approval_scope || 'Persisted plan only')}</span></div>${formation}<div class="list-card"><b>15-player GW pool</b><span>${esc(p.target_xpts)} xPts · GW${esc(p.gw)}</span></div>${horizon}${uncertainty}${roadmap}${alternatives}${templateOwned}${templateMissing}${templateOutside}${healthHtml}</div>`;
+  $('planActions').classList.remove('hidden');
+}
+
+async function act(path, button) {
+  button.disabled = true;
+  try { const data = await api(path,{method:'POST'}); $('message').textContent = data.message || 'Done'; tg?.HapticFeedback?.notificationOccurred(data.ok ? 'success':'warning'); await loadPlan(); }
+  catch(e){ $('message').innerHTML = `<span class="bad">${esc(e.message)}</span>`; tg?.HapticFeedback?.notificationOccurred('error'); }
+  finally { button.disabled = false; }
+}
+
+async function load() {
+  if (!initData) { $('message').innerHTML = '<div class="error">Open this dashboard from the Telegram bot. Direct browser access is intentionally blocked.</div>'; return; }
+  try {
+    dashboard = await api('/api/dashboard');
+    $('headline').textContent = `GW${dashboard.gw} · ${dashboard.formation}`;
+    $('projected').textContent = `${dashboard.projected_xpts.toFixed(1)}`;
+    $('formation').textContent = dashboard.formation;
+    $('value').textContent = `£${dashboard.team_value.toFixed(1)}m`;
+    $('bank').textContent = `£${dashboard.bank.toFixed(1)}m`;
+    const hrs = dashboard.deadline?.hours;
+    $('deadline').textContent = hrs == null ? 'Deadline TBC' : `${hrs.toFixed(1)}h to deadline`;
+    renderPitch(dashboard.players); renderPlayers(dashboard.players); renderStatus(dashboard); await loadPlan();
+    $('message').textContent = `Secure session · ${dashboard.user.first_name || 'Telegram user'}`;
+  } catch(e) { $('message').innerHTML = `<div class="error">${esc(e.message)}</div>`; }
+}
+
+document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active')); btn.classList.add('active');
+  document.querySelectorAll('.view').forEach(v => v.classList.add('hidden')); $(btn.dataset.tab).classList.remove('hidden');
+}));
+$('approveBtn').addEventListener('click', () => act('/api/approve',$('approveBtn')));
+$('rejectBtn').addEventListener('click', () => act('/api/reject',$('rejectBtn')));
+load();
+</script>
+</body>
+</html>

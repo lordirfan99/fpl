@@ -1,0 +1,9 @@
+[Unit]
+Description=FPL bot heartbeat watchdog (every 15m, restarts bot if heartbeat stale)
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/fpl-autopilot/deploy/gcp/fpl-watchdog.sh
+StandardOutput=append:/var/log/fpl/watchdog.log
+StandardError=append:/var/log/fpl/watchdog.log

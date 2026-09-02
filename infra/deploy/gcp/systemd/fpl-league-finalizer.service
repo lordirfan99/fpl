@@ -1,0 +1,17 @@
+[Unit]
+Description=FPL prize-league deadline registry and picks finalizer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=fpl
+Group=fpl
+WorkingDirectory=/opt/fpl-autopilot
+Environment=HOME=/home/fpl
+Environment=FPL_AUTOPILOT_HOME=/opt/fpl-autopilot
+Environment=TZ=Asia/Kuala_Lumpur
+TimeoutStartSec=600
+ExecStart=/bin/bash -o pipefail -c '/opt/fpl-autopilot/.venv/bin/python /opt/fpl-autopilot/jobs/league_intelligence.py --finalize-if-due 2>&1 | /opt/fpl-autopilot/.venv/bin/python /opt/fpl-autopilot/jobs/deliver_stdout.py --tag "league-finalizer"'
+StandardOutput=append:/var/log/fpl/jobs.log
+StandardError=append:/var/log/fpl/jobs.log
