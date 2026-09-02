@@ -5,6 +5,7 @@ Commands:
   /start  - welcome + mode explanation
   /status - squad value, bank, free transfers, next deadline countdown
   /team   - starting XI + bench with this-GW xPts
+  /lineup - advisory best XI + captain from the current 15 (no writes)
   /simulate - run the pre-deadline pipeline now and show the plan
   /approve  - execute the pending plan (transfers + lineup + captain)
   /reject   - discard the pending plan, keep squad as-is
@@ -327,6 +328,148 @@ def team_text():
         rows.append((str(p["position"]), POS_MAP[e["element_type"]], e["web_name"], f"£{e['now_cost'] / 10:.1f}m", f"{xp:.1f}", role))
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
     return team_message(gw, rows) + f"\n\n📐 <i>V4 projection snapshot • {stamp} UTC</i>"
+
+
+_VALID_FORMATIONS = [
+    (d, m, f)
+    for d in range(3, 6)
+    for m in range(2, 6)
+    for f in range(1, 4)
+    if d + m + f == 10
+]
+_LINEUP_POS_RANK = {"GKP": 0, "DEF": 1, "MID": 2, "FWD": 3}
+
+
+def _sh(name, k=13):
+    name = str(name)
+    return name if len(name) <= k else name[: k - 1] + "…"
+
+
+def _best_xi(squad):
+    """Pick the best 11 from a 15-man squad.
+
+    Each entry is a dict with ``pos`` in GKP/DEF/MID/FWD and a numeric ``xp``.
+    Returns (starters, bench, formation). Bench = reserve GK first, then the
+    outfield reserves by xPts (FPL autosub order). Pure; no FPL writes.
+    """
+    by_pos = {
+        pos: sorted((s for s in squad if s["pos"] == pos), key=lambda s: -s["xp"])
+        for pos in ("GKP", "DEF", "MID", "FWD")
+    }
+    if not by_pos["GKP"]:
+        return sorted(squad, key=lambda s: -s["xp"])[:11], [], "?"
+    best = None
+    for d, m, f in _VALID_FORMATIONS:
+        if len(by_pos["DEF"]) < d or len(by_pos["MID"]) < m or len(by_pos["FWD"]) < f:
+            continue
+        chosen = (by_pos["GKP"][:1] + by_pos["DEF"][:d]
+                  + by_pos["MID"][:m] + by_pos["FWD"][:f])
+        total = sum(s["xp"] for s in chosen)
+        if best is None or total > best[0]:
+            best = (total, chosen, f"{d}-{m}-{f}")
+    if best is None:
+        return sorted(squad, key=lambda s: -s["xp"])[:11], [], "?"
+    _, starters, formation = best
+    start_ids = {s["id"] for s in starters}
+    reserves = [s for s in squad if s["id"] not in start_ids]
+    bench = ([s for s in reserves if s["pos"] == "GKP"]
+             + sorted((s for s in reserves if s["pos"] != "GKP"), key=lambda s: -s["xp"]))
+    starters.sort(key=lambda s: (_LINEUP_POS_RANK[s["pos"]], -s["xp"]))
+    return starters, bench, formation
+
+
+def lineup_text():
+    """Advisory best XI + captain from the current 15. Never writes to FPL."""
+    import glob as _glob
+
+    client = FPLClient()
+    settings = load_settings()
+    bootstrap = fetch("https://fantasy.premierleague.com/api/bootstrap-static/")
+    fixtures = fetch("https://fantasy.premierleague.com/api/fixtures/")
+    els = {e["id"]: e for e in bootstrap["elements"]}
+    gw = next((ev["id"] for ev in bootstrap["events"] if not ev["finished"]), 1)
+    gw_so_far = max(0, gw - 1)
+    fdr = {}
+    for fx in fixtures:
+        if fx.get("event") == gw:
+            fdr[fx["team_h"]] = fx["team_h_difficulty"]
+            fdr[fx["team_a"]] = fx["team_a_difficulty"]
+
+    proj = {}
+    try:
+        preds = sorted(_glob.glob(os.path.join(BASE, "data", "processed", "predictions_gw*.json")))
+        if preds:
+            with open(preds[-1], encoding="utf-8") as fh:
+                proj = {int(p["id"]): float(p.get("xpts") or 0)
+                        for p in (json.load(fh).get("players") or [])
+                        if p.get("id") is not None}
+    except Exception:
+        proj = {}
+
+    team = client.my_team(settings["team_id"])
+    picks = team.get("picks", [])
+    if len(picks) < 15:
+        return "🧩 <b>LINEUP</b>\nCould not read a full 15-man squad — try again shortly."
+
+    squad = []
+    for p in picks:
+        e = els.get(p["element"])
+        if not e:
+            continue
+        f = fdr.get(e["team"], 3)
+        if p["element"] in proj:
+            xp = proj[p["element"]]
+        elif gw_so_far == 0:
+            xp = preseason_xpts(e, f)
+        else:
+            xp = inseason_xpts_from_bootstrap(e, f, gw_so_far)
+        squad.append({
+            "id": p["element"], "name": e["web_name"],
+            "pos": POS_MAP[e["element_type"]], "xp": float(xp),
+            "was_starter": p.get("multiplier", 0) > 0,
+            "was_captain": bool(p.get("is_captain")),
+        })
+
+    starters, bench, formation = _best_xi(squad)
+    if not starters:
+        return "🧩 <b>LINEUP</b>\nNot enough data to build an XI right now."
+    cap = max(starters, key=lambda s: s["xp"])
+    vice = max((s for s in starters if s["id"] != cap["id"]), key=lambda s: s["xp"], default=cap)
+
+    start_ids = {s["id"] for s in starters}
+    cur_start_ids = {s["id"] for s in squad if s["was_starter"]}
+    cur_cap = next((s["id"] for s in squad if s["was_captain"]), None)
+    optimal = start_ids == cur_start_ids and cur_cap == cap["id"]
+
+    rows = [("POS", "PLAYER", "xPts", "")]
+    for s in starters:
+        mark = "▲" if s["id"] not in cur_start_ids else ""
+        tag = "C" if s["id"] == cap["id"] else ("V" if s["id"] == vice["id"] else "")
+        rows.append((s["pos"], _sh(s["name"]), f"{s['xp']:.1f}", (mark + tag)))
+    widths = [max(len(str(r[i])) for r in rows) for i in range(4)]
+    body = "\n".join(
+        f"{r[0]:<{widths[0]}}  {r[1]:<{widths[1]}}  {r[2]:>{widths[2]}}  {r[3]}".rstrip()
+        for r in rows
+    )
+
+    cur_xp = sum(s["xp"] for s in squad if s["id"] in cur_start_ids)
+    new_xp = sum(s["xp"] for s in starters)
+
+    lines = [f"🧩 <b>LINEUP — GW{gw}</b> · {formation}"]
+    if optimal:
+        lines.append("✅ Your XI and captain already match the projection.")
+    lines.append(f"<pre>{html.escape(body)}</pre>")
+    lines.append(
+        f"<b>Captain:</b> {html.escape(cap['name'])} ({cap['xp']:.1f})  ·  "
+        f"<b>Vice:</b> {html.escape(vice['name'])}"
+    )
+    lines.append("<b>Bench:</b> " + " · ".join(
+        f"{i}.{html.escape(_sh(b['name'], 12))}" for i, b in enumerate(bench, 1)))
+    if not optimal:
+        lines.append(f"Δ XI projection: <b>{new_xp - cur_xp:+.1f}</b> xPts")
+    lines.append("\n<i>Advisory only — set it in the FPL app or via your pending "
+                 "plan. One-tap apply lands after the GW3 deadline.</i>")
+    return _safe_card(lines)
 
 
 def run_pipeline():
@@ -1578,6 +1721,7 @@ def main():
     MENU_LABELS = {
         "📊 Status": "menu_status",
         "🛡️ Team": "menu_team",
+        "🧩 Lineup": "menu_lineup",
         "🧠 Simulate": "menu_simulate",
         "📜 History": "menu_history",
         "✅ Approve": "menu_approve",
@@ -1592,7 +1736,7 @@ def main():
     def main_kb():
         """Main navigation menu - docked reply keyboard (input-bar style)."""
         labels = list(MENU_LABELS.keys())
-        rows = [labels[0:2], labels[2:4], labels[4:6], labels[6:8], labels[8:10], labels[10:11]]
+        rows = [labels[0:2], labels[2:4], labels[4:6], labels[6:8], labels[8:10], labels[10:12]]
         return ReplyKeyboardMarkup(
             rows,
             resize_keyboard=True,
@@ -1691,6 +1835,7 @@ def main():
         await update.message.reply_text(
             "📊 Status — squad, bank, transfers, deadline\n"
             "🛡️ Team — XI + bench with xPts\n"
+            "🧩 Lineup — best XI + captain from your current 15 (advisory)\n"
             "🧠 Simulate — run the full pipeline now\n"
             "✅ Approve — execute the pending plan\n"
             "❌ Reject — discard the pending plan\n"
@@ -1726,6 +1871,14 @@ def main():
             await update.message.reply_text(team_text(), parse_mode="HTML", reply_markup=main_kb())
         except Exception as e:
             await update.message.reply_text(_error_card("Team"), parse_mode="HTML", reply_markup=main_kb())
+
+    async def cmd_lineup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        if not await guard(update):
+            return
+        try:
+            await update.message.reply_text(lineup_text(), parse_mode="HTML", reply_markup=main_kb())
+        except Exception:
+            await update.message.reply_text(_error_card("Lineup"), parse_mode="HTML", reply_markup=main_kb())
 
     async def cmd_simulate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not await guard(update):
@@ -1806,6 +1959,11 @@ def main():
                 await reply(team_text(), parse_mode="HTML", reply_markup=main_kb())
             except Exception as e:
                 await reply(_error_card("Team"), parse_mode="HTML", reply_markup=main_kb())
+        elif data == "menu_lineup":
+            try:
+                await reply(lineup_text(), parse_mode="HTML", reply_markup=main_kb())
+            except Exception:
+                await reply(_error_card("Lineup"), parse_mode="HTML", reply_markup=main_kb())
         elif data == "menu_simulate":
             await simulate_and_reply(reply)
         elif data == "menu_approve":
@@ -1989,6 +2147,7 @@ def main():
             app.add_handler(CommandHandler("requestleague", cmd_requestleague))
             app.add_handler(CommandHandler("status", cmd_status))
             app.add_handler(CommandHandler("team", cmd_team))
+            app.add_handler(CommandHandler("lineup", cmd_lineup))
             app.add_handler(CommandHandler("simulate", cmd_simulate))
             app.add_handler(CommandHandler("approve", cmd_approve))
             app.add_handler(CommandHandler("reject", cmd_reject))
