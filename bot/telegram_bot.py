@@ -436,7 +436,15 @@ def plan_staleness(plan):
         if expected_ids and live_ids != expected_ids:
             return "live squad changed after simulation (transfer or edit detected)"
         live_transfers = live_team.get("transfers") or {}
-        if live_transfers.get("status") != "unlimited" and plan.get("free_transfers_before") is not None:
+        chip = str(plan.get("chip") or "").lower()
+        # A Wildcard / Free Hit rebuild does not consume free transfers and the
+        # executor plays the chip itself (chip= on the transfers POST), so the
+        # FT count is not a staleness signal for a chip plan. FPL also only sets
+        # transfers.status = "unlimited" once the wildcard editing session is
+        # entered in the UI, which is not required to execute.
+        if (chip not in ("wildcard", "freehit")
+                and live_transfers.get("status") != "unlimited"
+                and plan.get("free_transfers_before") is not None):
             limit = int(live_transfers.get("limit") or 1)
             made = int(live_transfers.get("made") or 0)
             live_ft = max(0, limit - made)
