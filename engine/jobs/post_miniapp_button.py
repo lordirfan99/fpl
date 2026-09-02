@@ -9,8 +9,8 @@ InlineKeyboardButton web_app payload which is private-chat only.
 """
 import json
 import os
-import urllib.request
 
+import telegram_notify
 from project_paths import resolve_project_root
 
 BASE = str(resolve_project_root(__file__))
@@ -47,28 +47,15 @@ def main():
         raise SystemExit("TELEGRAM_BOT_TOKEN is missing")
 
     chat_id = settings["telegram"]["chat_id"]
-    payload = {
-        "chat_id": chat_id,
-        "text": "📱 <b>FPL Autopilot Dashboard</b>\nOpen the full Mini App for squad, xPts, fixtures and pending plans.",
-        "parse_mode": "HTML",
-        "reply_markup": {
-            "inline_keyboard": [[{
-                "text": "📱 Open FPL Dashboard",
-                "url": app_url
-            }]]
-        }
-    }
-
-    req = urllib.request.Request(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
+    result = telegram_notify.send_message(
+        token, chat_id,
+        "📱 <b>FPL Autopilot Dashboard</b>\nOpen the full Mini App for squad, xPts, fixtures and pending plans.",
+        parse_mode="HTML",
+        reply_markup={"inline_keyboard": [[{"text": "📱 Open FPL Dashboard", "url": app_url}]]},
+        log_prefix="[miniapp] ",
     )
-    with urllib.request.urlopen(req, timeout=30) as response:
-        result = json.load(response)
-    if not result.get("ok"):
-        raise SystemExit(f"Telegram rejected launcher message: {result}")
+    if not result:
+        raise SystemExit("Telegram launcher message was not delivered (see log above)")
     print(f"Mini App launcher posted. message_id={result['result']['message_id']}")
 
 
