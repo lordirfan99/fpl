@@ -1,0 +1,8 @@
+requests>=2.31
+pulp>=2.7
+python-telegram-bot>=21.0
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pandas>=2.0
+scipy>=1.11
+# camoufox / playwright (OIDC browser login) are runtime-only, not installed in CI

@@ -1,0 +1,3 @@
+{ "source": "your league prize posters", "currency": "XXX",
+  "leagues": [ {"league_id": 0, "priority": 1, "name": "Example",
+    "overall": [ {"rank_from": 1, "rank_to": 1, "prize": "…", "cash": 0, "importance": 100} ] } ] }

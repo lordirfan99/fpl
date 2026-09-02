@@ -1,0 +1,2 @@
+{ "version": 1, "max_active": 10,
+  "leagues": [ {"league_id": 0, "name": "Example", "official_name": "", "status": "active", "tracking_mode": "full"} ] }

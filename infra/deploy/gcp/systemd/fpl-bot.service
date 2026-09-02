@@ -1,0 +1,22 @@
+[Unit]
+Description=FPL Autopilot Telegram bot (polling service)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fpl
+Group=fpl
+WorkingDirectory=/opt/fpl-autopilot
+Environment=PYTHONUTF8=1
+Environment=HOME=/home/fpl
+Environment=FPL_AUTOPILOT_HOME=/opt/fpl-autopilot
+Environment=TZ=Asia/Kuala_Lumpur
+ExecStart=/opt/fpl-autopilot/.venv/bin/python -u /opt/fpl-autopilot/bot/telegram_bot.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/fpl/bot.log
+StandardError=append:/var/log/fpl/bot.log
+
+[Install]
+WantedBy=multi-user.target

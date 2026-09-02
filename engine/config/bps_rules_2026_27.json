@@ -1,0 +1,11 @@
+{
+  "cbi_per_bps": 3.0,
+  "tackle_penalty_per_loss": 0.0,
+  "gk_save_rework": 0.0,
+  "meta": {
+    "season": "2026-27",
+    "source": "onsidearena.com/bps-impact (snapshot 2026-07-27) + official 2026/27 FPL rules",
+    "retrieved": "2026-08-12",
+    "notes": "CBI now 1 BPS per 3 actions (was 1 per 2) -> defenders lose BPS = CBI * (1/2 - 1/3) = CBI/6. Tackle-penalty removal and GK save rework are NOT officially quantified (FPL publishes neither times-dribbled-past nor shot classification), so they stay 0-delta per orchestrator constraint: never invent weights."
+  }
+}

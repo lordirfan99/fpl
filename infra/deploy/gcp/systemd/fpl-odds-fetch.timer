@@ -1,0 +1,9 @@
+[Unit]
+Description=Timer for FPL odds fetch
+
+[Timer]
+OnCalendar=*-*-* 00/6:45:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -10,6 +10,6 @@ select = ["E9", "F63", "F7", "F82", "F401", "F811"]
 
 [tool.pytest.ini_options]
 # Grows as modules land (see docs/MIGRATION.md Phase B).
-pythonpath = ["api"]
-testpaths = ["api/tests"]
+pythonpath = ["api", "engine/jobs", "engine/model", "engine/optimizer", "engine/execution", "bot"]
+testpaths = ["api/tests", "engine/tests"]
 addopts = "-q --import-mode=importlib"

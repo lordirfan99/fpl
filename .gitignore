@@ -52,3 +52,8 @@ dist/
 .idea/
 .vscode/
 *.swp
+
+# ---- engine runtime config (real values live on the VM) ----
+engine/config/*
+!engine/config/*.example.json
+!engine/config/bps_rules_*.json
