@@ -182,21 +182,30 @@ def main():
     competitive_error = None
     try:
         competitive_cfg = settings.get("competitive_v4", {}) or {}
+        # Competitive context = the rivals' CURRENT (last-finalized) squads. Their
+        # picks for the upcoming GW are hidden until its deadline and never
+        # available before it, so asking for `gw` here always yields a safe_hold
+        # packet. Ask for the last finalized GW instead — that is the only
+        # competitor data that exists at planning time.
+        context_gw = max(1, gw - 1)
         competitive_context = fetch_competitive_v4(
             int(competitive_cfg.get("league_id", 58005)),
-            gw,
+            context_gw,
             require_executable_plan=False,
         )
-        max_age = float(competitive_cfg.get("max_snapshot_age_hours", 10 / 60))
+        # A finalized-GW context is expected to be hours/days old and is valid
+        # for the whole planning window until the next GW finalizes. Only reject
+        # it if it is older than the configured horizon (default one week) or if
+        # the API returned an older GW than requested.
+        max_age = float(competitive_cfg.get("max_snapshot_age_hours", 168.0))
         freshness = competitive_context["meta"].get("freshness_hours")
-        if (competitive_context["meta"].get("stale")
-                or (freshness is not None and float(freshness) > max_age)):
+        snap_gw = competitive_context["meta"].get("snapshot_gameweek")
+        if freshness is not None and float(freshness) > max_age:
             raise CompetitiveV4Error(
-                f"V4 snapshot is stale ({freshness}h old; max {max_age:g}h)")
-        context_run_id = competitive_context["meta"].get("run_id")
-        if os.getenv("FPL_RUN_ID") and context_run_id != run_id:
+                f"V4 context is {freshness}h old; max {max_age:g}h")
+        if snap_gw is not None and int(snap_gw) < context_gw:
             raise CompetitiveV4Error(
-                f"V4 snapshot belongs to run {context_run_id!r}, expected {run_id!r}")
+                f"V4 context is GW{snap_gw}, expected GW{context_gw}")
     except CompetitiveV4Error as error:
         competitive_context = None
         competitive_error = error
