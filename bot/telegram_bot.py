@@ -1277,32 +1277,38 @@ def war_room_text(section="overview", state=None):
             mine = next((r for r in rows if r.get("entry") == our_entry), None)
             if not mine:
                 continue
-            lines.append(f"\n<b>L{lg}</b> · you rank {mine.get('rank')} · {mine.get('total')} pts")
             ahead = [r for r in rows if (r.get("rank") or 10 ** 9) < (mine.get("rank") or 0)]
+            lines.append(f"\n━━ <b>L{lg}</b> ━━")
             if not ahead:
-                lines.append("  🥇 you lead this league.")
+                lines.append(f"rank {mine.get('rank')} · {mine.get('total')} pts · 🥇 you lead")
                 continue
             tgt = ahead[-1]
             tied = sum(1 for r in ahead if r.get("rank") == tgt.get("rank"))
             gap = _safe_number(tgt.get("total")) - _safe_number(mine.get("total"))
-            gap_txt = "level on points (tiebreak behind)" if abs(gap) < 0.5 else f"{gap:+.0f} pts"
-            lines.append(
-                f"  target <b>{html.escape(str(tgt.get('entry_name')))}</b> · rank {tgt.get('rank')}"
-                f"{f' (+{tied - 1} tied)' if tied > 1 else ''} · {gap_txt}"
-            )
+            gap_txt = "level (tiebreak)" if abs(gap) < 0.5 else f"{gap:+.0f} pts"
+            lines.append(f"you rank {mine.get('rank')} · target "
+                         f"<b>{html.escape(str(tgt.get('entry_name')))}</b> rank {tgt.get('rank')}"
+                         f"{f' (+{tied - 1})' if tied > 1 else ''} · {gap_txt}")
             t_ids, t_cap = _picks(tgt.get("entry"))
             if t_ids is None or my_ids is None:
-                lines.append("  <i>squad compare needs post-deadline picks</i>")
+                lines.append("<i>squad compare needs post-deadline picks</i>")
                 continue
-            if t_cap and my_cap and t_cap != my_cap:
-                lines.append(f"  (C) them {html.escape(str(t_cap))} · you {html.escape(str(my_cap))}")
-            theirs = [els.get(i, str(i)) for i in list(t_ids - my_ids)[:5]]
-            mine_only = [els.get(i, str(i)) for i in list(my_ids - t_ids)[:5]]
-            if theirs:
-                lines.append("  they own / you don't: " + ", ".join(html.escape(x) for x in theirs))
-            if mine_only:
-                lines.append("  your differentials: " + ", ".join(html.escape(x) for x in mine_only))
-        lines.append(f"\n<i>vs locked GW{last_gw} squads. Keep your differentials; only chase theirs if it also lifts your xPts.</i>")
+            if t_cap and my_cap:
+                same = " (same)" if t_cap == my_cap else ""
+                lines.append(f"(C)  them <b>{html.escape(str(t_cap))}</b>  ·  you <b>{html.escape(str(my_cap))}</b>{same}")
+            theirs = [els.get(i, str(i)) for i in list(t_ids - my_ids)[:6]]
+            mine_only = [els.get(i, str(i)) for i in list(my_ids - t_ids)[:6]]
+            if theirs or mine_only:
+                pad = max((len(x) for x in theirs), default=0)
+                pad = min(max(pad, 8), 15)
+                head = "THEY OWN".ljust(pad + 3) + "YOU OWN"
+                body = [head]
+                for a, b in zip(theirs + [""] * 6, mine_only + [""] * 6):
+                    if not a and not b:
+                        break
+                    body.append(a.ljust(pad + 3) + b)
+                lines.append("<pre>" + html.escape("\n".join(body)) + "</pre>")
+        lines.append(f"\n<i>vs locked GW{last_gw} squads. Your differentials are the climb — cover theirs only if it also lifts your xPts.</i>")
         return _safe_card(lines)
 
     if section == "captpick":
