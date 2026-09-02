@@ -21,11 +21,13 @@ git rev-parse --verify "$REF^{commit}" >/dev/null
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/payload"
+mkdir -p "$TMP/payload/systemd"
 cp -r engine/model      "$TMP/payload/model"
 cp -r engine/optimizer  "$TMP/payload/optimizer"
 cp -r engine/execution  "$TMP/payload/execution"
 cp -r engine/jobs       "$TMP/payload/jobs"
 cp -r bot               "$TMP/payload/bot"
+cp infra/deploy/gcp/systemd/fpl-bot.service "$TMP/payload/systemd/fpl-telegram.service"
 [ -d engine/webapp ] && cp -r engine/webapp "$TMP/payload/webapp" || true
 # public config only; NEVER ship settings.json / credentials.env / *session*
 mkdir -p "$TMP/payload/config"
@@ -46,6 +48,11 @@ done
 echo \"backed up to \$BK\"
 sudo tar -xzf /tmp/fpl-sync.tgz -C $REMOTE
 sudo chown -R fpl:fpl $REMOTE/model $REMOTE/optimizer $REMOTE/execution $REMOTE/jobs $REMOTE/bot
+# Runtime behavior lives in this tagged template; the token remains only in
+# /etc/fpl-telegram.env and is never copied from the checkout.
+sudo install -m 0644 $REMOTE/systemd/fpl-telegram.service /etc/systemd/system/fpl-telegram.service
+sudo rm -rf $REMOTE/systemd
+sudo systemctl daemon-reload
 # syntax gate before restarting anything
 $REMOTE/.venv/bin/python -c \"import ast,glob,sys; [ast.parse(open(f).read(),f) for f in glob.glob('$REMOTE/jobs/*.py')+glob.glob('$REMOTE/bot/*.py')]; print('syntax OK')\"
 sudo systemctl restart fpl-telegram.service

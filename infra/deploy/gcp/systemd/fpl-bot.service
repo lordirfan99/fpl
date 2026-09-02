@@ -1,5 +1,5 @@
 [Unit]
-Description=FPL Autopilot Telegram bot (polling service)
+Description=FPL Autopilot Telegram owner bot (confirmed execution)
 After=network-online.target
 Wants=network-online.target
 
@@ -12,11 +12,18 @@ Environment=PYTHONUTF8=1
 Environment=HOME=/home/fpl
 Environment=FPL_AUTOPILOT_HOME=/opt/fpl-autopilot
 Environment=TZ=Asia/Kuala_Lumpur
+Environment=FPL_TELEGRAM_EXECUTION_ENABLED=1
+Environment=FPL_TELEGRAM_DRY_RUN=0
+EnvironmentFile=-/etc/fpl-telegram.env
 ExecStart=/opt/fpl-autopilot/.venv/bin/python -u /opt/fpl-autopilot/bot/telegram_bot.py
 Restart=always
 RestartSec=10
 StandardOutput=append:/var/log/fpl/bot.log
 StandardError=append:/var/log/fpl/bot.log
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
 
 [Install]
 WantedBy=multi-user.target
