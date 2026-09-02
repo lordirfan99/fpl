@@ -1,37 +1,20 @@
-# NOT MONOREPO-READY. Paths still point at the old scout layout
-# (services/api/, COPY data, COPY scripts). Rewrite for api/ per
-# docs/MIGRATION.md Phase D decision 1 before any deploy.
+# Monorepo: build + deploy the read-only API to Cloud Run (fpl-scout-api).
+# Scheduled-tasks / live-refresh jobs are NOT handled here — they are rebuilt
+# separately when the scheduler machinery is un-frozen (docs/MIGRATION.md).
+#
+# data/ is supplied by the build context (repo-root, gitignored) as a snapshot
+# fallback; GCS (FPL_SNAPSHOT_BUCKET) is the primary store.
 steps:
   - name: gcr.io/cloud-builders/docker
     args:
       - build
-      - --file=services/api/Dockerfile
+      - --file=api/Dockerfile
       - --tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-scout-api:$BUILD_ID
-      - .
-  - name: gcr.io/cloud-builders/docker
-    args:
-      - build
-      - --file=services/api/Dockerfile.live-refresh
-      - --tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-live-refresh:$BUILD_ID
-      - .
-  - name: gcr.io/cloud-builders/docker
-    args:
-      - build
-      - --file=services/api/Dockerfile.tasks
-      - --tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-scheduled-tasks:$BUILD_ID
       - .
   - name: gcr.io/cloud-builders/docker
     args:
       - push
       - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-scout-api:$BUILD_ID
-  - name: gcr.io/cloud-builders/docker
-    args:
-      - push
-      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-live-refresh:$BUILD_ID
-  - name: gcr.io/cloud-builders/docker
-    args:
-      - push
-      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-scheduled-tasks:$BUILD_ID
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
     args:
@@ -43,87 +26,14 @@ steps:
       - --platform=managed
       - --allow-unauthenticated
       - --set-env-vars=FPL_MY_TEAM_ID=2797967,FPL_DEFAULT_LEAGUE_ID=58005,FPL_SNAPSHOT_BUCKET=irfan-374115-fpl-snapshots,FPL_GIT_SHA=${_GIT_SHA}
-      # The Autopilot bridge is retired: drop the stale fpl-dashboard-read-token
-      # secret binding so no deployed revision references it.
-      - --clear-secrets
-  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: gcloud
-    args:
-      - run
-      - jobs
-      - deploy
-      - fpl-live-league-refresh
-      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-live-refresh:$BUILD_ID
-      - --region=${_REGION}
-      - --service-account=fpl-live-refresh@$PROJECT_ID.iam.gserviceaccount.com
-      - --set-env-vars=FPL_SNAPSHOT_BUCKET=irfan-374115-fpl-snapshots
-      - --task-timeout=20m
-      - --max-retries=2
-  # Scheduled tasks migrated off GitHub Actions crons onto Cloud Scheduler +
-  # Cloud Run Jobs (provisioned once by scripts/provision_scheduled_tasks.ps1).
-  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: gcloud
-    args:
-      - run
-      - jobs
-      - deploy
-      - fpl-refresh-fixtures
-      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-scheduled-tasks:$BUILD_ID
-      - --region=${_REGION}
-      - --service-account=fpl-scheduled-tasks@$PROJECT_ID.iam.gserviceaccount.com
-      - --set-env-vars=FPL_SNAPSHOT_BUCKET=irfan-374115-fpl-snapshots
-      - --args=fixtures
-      - --task-timeout=10m
-      - --max-retries=2
-  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: gcloud
-    args:
-      - run
-      - jobs
-      - deploy
-      - fpl-capture-journal
-      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-scheduled-tasks:$BUILD_ID
-      - --region=${_REGION}
-      - --service-account=fpl-scheduled-tasks@$PROJECT_ID.iam.gserviceaccount.com
-      - --set-env-vars=FPL_SNAPSHOT_BUCKET=irfan-374115-fpl-snapshots
-      - --args=capture-journal
-      - --task-timeout=10m
-      - --max-retries=1
-  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: gcloud
-    args:
-      - run
-      - jobs
-      - deploy
-      - fpl-refresh-gameweek
-      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-scheduled-tasks:$BUILD_ID
-      - --region=${_REGION}
-      - --service-account=fpl-scheduled-tasks@$PROJECT_ID.iam.gserviceaccount.com
-      - --set-env-vars=FPL_SNAPSHOT_BUCKET=irfan-374115-fpl-snapshots
-      - --args=finalize-gameweek
-      - --task-timeout=30m
-      - --max-retries=1
-  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: gcloud
-    args:
-      - run
-      - jobs
-      - deploy
-      - fpl-monitor
-      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-scheduled-tasks:$BUILD_ID
-      - --region=${_REGION}
-      - --service-account=fpl-scheduled-tasks@$PROJECT_ID.iam.gserviceaccount.com
-      - --set-env-vars=FPL_SNAPSHOT_BUCKET=irfan-374115-fpl-snapshots
-      - --args=monitor
-      - --task-timeout=10m
-      - --max-retries=1
+
 images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-scout-api:$BUILD_ID
-  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-live-refresh:$BUILD_ID
-  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-scheduled-tasks:$BUILD_ID
+
 substitutions:
   _REGION: us-central1
   _REPOSITORY: fpl-scout
   _GIT_SHA: unknown
+
 options:
   logging: CLOUD_LOGGING_ONLY
