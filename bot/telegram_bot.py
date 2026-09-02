@@ -341,6 +341,9 @@ def run_pipeline():
     /simulate is an operator-requested full refresh: official bootstrap/fixture
     data, league intelligence, and finally the planner. Refresh failures are
     retained as a short diagnostic; they never cause a transfer write.
+
+    The competitive context is read live from the shared read-only API by
+    pre_deadline_run itself — there is no VM->API publish step any more.
     """
     refresh_failures = []
     run_id = "v41-" + datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:8]
@@ -349,7 +352,6 @@ def run_pipeline():
     refresh_steps = [
         ("official FPL data", [PYTHON, os.path.join(BASE, "jobs", "daily_pull.py")]),
         ("league intelligence", [PYTHON, os.path.join(BASE, "jobs", "league_intelligence.py"), "--notifications-disabled"]),
-        ("shared competitive snapshot", [PYTHON, os.path.join(BASE, "jobs", "publish_competitive_snapshot.py")]),
     ]
     for label, command in refresh_steps:
         try:
