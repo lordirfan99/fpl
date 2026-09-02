@@ -37,35 +37,49 @@ class TestLeagueTelegramCard(unittest.TestCase):
             "market_signals": [{"name": "P < Q", "now_cost": 7.5, "projection": [{"projected_percent": "80", "likelihood": 70}], "net_transfers_event": 1000, "chance_next": 100, "status": "a"}],
         }
 
-    def test_full_card_is_html_safe_and_under_telegram_limit(self):
+    def test_overview_card_is_lean_html_safe_and_bounded(self):
         state = self.sample_state()
         card = telegram_bot.league_text(state)
-        self.assertIn("A &lt; B &amp; C", card)
-        self.assertIn("Registry: <b>FINAL</b>", card)
-        self.assertIn("P(top 10) 64.2%", card)
+        self.assertIn("A &lt; B &amp; C", card)          # cohort name HTML-escaped
+        self.assertIn("X &amp; Y", card)                 # sharp-money name HTML-escaped
+        self.assertIn("P(top10) 64.2%", card)
+        self.assertIn("registry FINAL", card)            # only when status == final
+        self.assertNotIn("Deep cohort", card)            # internal telemetry removed
+        self.assertNotIn("open Market Watch", card)      # teaser removed
+        self.assertLess(len(card), 900)                  # genuinely lean now
         self.assertLessEqual(len(card), 4096)
 
-    def test_every_war_room_section_is_html_safe_and_bounded(self):
+    def test_monthly_placeholder_is_suppressed_until_it_has_data(self):
         state = self.sample_state()
-        for section in ("prize", "rivals", "transfers", "captain", "market", "registry", "attack"):
+        state["monthly_status"] = [{"league_id": 131997, "rank": None, "prize": {"prize": "RM100 monthly"}}]
+        card = telegram_bot.league_text(state)
+        self.assertNotIn("awaiting", card)
+        self.assertNotIn("RM100 monthly", card)
+
+    def test_remaining_war_room_sections_are_html_safe_and_bounded(self):
+        state = self.sample_state()
+        for section in ("rivals", "captain", "market"):
             with self.subTest(section=section):
                 card = telegram_bot.war_room_text(section, state)
                 self.assertLessEqual(len(card), 4096)
                 self.assertNotIn("A < B & C", card)
         self.assertIn("A &lt; B &amp; C", telegram_bot.war_room_text("rivals", state))
         self.assertIn("Cap &lt; One", telegram_bot.war_room_text("captain", state))
-        self.assertIn("only your Approve", telegram_bot.war_room_text("attack", state))
 
-    def test_war_room_callback_contract_has_unique_actions(self):
+    def test_retired_sections_fall_back_to_overview(self):
+        state = self.sample_state()
+        overview = telegram_bot.war_room_text("overview", state)
+        for gone in ("prize", "transfers", "registry", "attack", "market_fall"):
+            self.assertEqual(telegram_bot.war_room_text(gone, state), overview)
+
+    def test_war_room_callback_contract_is_four_unique_actions(self):
         callbacks = [callback for _, callback in telegram_bot.WAR_ROOM_SECTIONS]
-        self.assertEqual(len(callbacks), 8)
+        self.assertEqual(len(callbacks), 4)
         self.assertEqual(len(callbacks), len(set(callbacks)))
-        self.assertIn("war_refresh", callbacks)
-        market_callbacks = [callback for _, callback in telegram_bot.MARKET_SECTIONS]
-        self.assertEqual(market_callbacks, ["war_market_fall", "war_market_rise", "war_market_availability"])
-        self.assertEqual(len(market_callbacks), len(set(market_callbacks)))
+        self.assertEqual(set(callbacks), {"war_rivals", "war_captain", "war_market", "war_refresh"})
+        self.assertFalse(hasattr(telegram_bot, "MARKET_SECTIONS"))
 
-    def test_market_card_is_mobile_bounded_deduplicated_and_squad_aware(self):
+    def test_market_card_is_bounded_deduplicated_and_squad_aware(self):
         state = self.sample_state()
         state["market_signals"] = [
             {"element": 1, "name": "Owned Faller", "now_cost": 6.5,
@@ -81,28 +95,9 @@ class TestLeagueTelegramCard(unittest.TestCase):
         ]
         with patch.object(telegram_bot, "load_pending", return_value={"pre_transfer_squad_ids": [1]}):
             card = telegram_bot.war_room_text("market", state)
-        self.assertIn("Review sale", card)
-        self.assertIn("Avoid buying", card)
-        self.assertIn("Monitor before price update", card)
         self.assertIn("🏠 owned", card)
         self.assertEqual(card.count("<b>Riser</b>"), 1)
         self.assertLessEqual(len(card), 4096)
-
-    def test_market_filters_only_show_matching_rows(self):
-        state = self.sample_state()
-        state["market_signals"] = [
-            {"element": 1, "name": "Faller", "projection": {"direction": "fall"}, "chance_next": 100},
-            {"element": 2, "name": "Riser", "projection": {"direction": "rise"}},
-            {"element": 3, "name": "Doubt", "projection": {"direction": "fall"}, "chance_next": 75},
-        ]
-        fall = telegram_bot.war_room_text("market_fall", state)
-        rise = telegram_bot.war_room_text("market_rise", state)
-        availability = telegram_bot.war_room_text("market_availability", state)
-        self.assertIn("Faller", fall)
-        self.assertNotIn("Riser", fall)
-        self.assertIn("Riser", rise)
-        self.assertNotIn("Faller", rise)
-        self.assertIn("Doubt", availability)
 
     def test_safe_card_never_cuts_html_line(self):
         card = telegram_bot._safe_card(["<b>Header</b>"] + [f"<b>Player {i}</b>" for i in range(500)])
@@ -122,7 +117,7 @@ class TestLeagueTelegramCard(unittest.TestCase):
         original = telegram_bot.LEAGUE_STATE_FILE
         telegram_bot.LEAGUE_STATE_FILE = os.path.join(BASE, "does-not-exist.json")
         try:
-            self.assertIn("No intelligence snapshot", telegram_bot.war_room_text("registry"))
+            self.assertIn("No intelligence snapshot", telegram_bot.war_room_text("rivals"))
         finally:
             telegram_bot.LEAGUE_STATE_FILE = original
 
