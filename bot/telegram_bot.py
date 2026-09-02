@@ -133,8 +133,11 @@ def request_league(uid, league_id, friendly_name=None):
 # Kept outside main() so the callback contract can be unit-tested without
 # creating a Telegram Application or requiring live credentials.
 WAR_ROOM_SECTIONS = (
+    ("⚔️ Catch Up", "war_catch"),
+    ("🧢 Captain Pick", "war_captpick"),
+    ("📅 Fixtures", "war_fixtures"),
     ("🕵️ Rivals", "war_rivals"),
-    ("👑 Rival Captains", "war_captain"),
+    ("👑 Rival Caps", "war_captain"),
     ("💷 Market", "war_market"),
     ("🔄 Refresh", "war_refresh"),
 )
@@ -1245,6 +1248,160 @@ def war_room_text(section="overview", state=None):
         elif our_name:
             lines.append(f"\n<b>{html.escape(our_name)}</b> is not a common rival captain — full differential.")
         return _safe_card(lines)
+
+    if section == "catch":
+        lines = [f"⚔️ <b>CATCH UP — GW{event}</b>"]
+        standings = state.get("standings") or []
+        our_entry = state.get("our_entry")
+        last_gw = int(state.get("completed_gws") or max(1, int(event) - 1))
+        try:
+            bs = fetch("https://fantasy.premierleague.com/api/bootstrap-static/")
+            els = {e["id"]: e.get("web_name", str(e["id"])) for e in bs.get("elements", [])}
+        except Exception:
+            els = {}
+        client = FPLClient()
+
+        def _picks(entry):
+            try:
+                raw = client.entry_picks(entry, last_gw).get("picks") or []
+                ids = {p["element"] for p in raw}
+                cap = next((els.get(p["element"], "?") for p in raw if p.get("is_captain")), "?")
+                return ids, cap
+            except Exception:
+                return None, None
+
+        my_ids, my_cap = _picks(our_entry)
+        for lg in state.get("league_ids") or []:
+            rows = sorted((r for r in standings if r.get("league_id") == lg),
+                          key=lambda r: r.get("rank") or 10 ** 9)
+            mine = next((r for r in rows if r.get("entry") == our_entry), None)
+            if not mine:
+                continue
+            lines.append(f"\n<b>L{lg}</b> · you rank {mine.get('rank')} · {mine.get('total')} pts")
+            ahead = [r for r in rows if (r.get("rank") or 10 ** 9) < (mine.get("rank") or 0)]
+            if not ahead:
+                lines.append("  🥇 you lead this league.")
+                continue
+            tgt = ahead[-1]
+            tied = sum(1 for r in ahead if r.get("rank") == tgt.get("rank"))
+            gap = _safe_number(tgt.get("total")) - _safe_number(mine.get("total"))
+            gap_txt = "level on points (tiebreak behind)" if abs(gap) < 0.5 else f"{gap:+.0f} pts"
+            lines.append(
+                f"  target <b>{html.escape(str(tgt.get('entry_name')))}</b> · rank {tgt.get('rank')}"
+                f"{f' (+{tied - 1} tied)' if tied > 1 else ''} · {gap_txt}"
+            )
+            t_ids, t_cap = _picks(tgt.get("entry"))
+            if t_ids is None or my_ids is None:
+                lines.append("  <i>squad compare needs post-deadline picks</i>")
+                continue
+            if t_cap and my_cap and t_cap != my_cap:
+                lines.append(f"  (C) them {html.escape(str(t_cap))} · you {html.escape(str(my_cap))}")
+            theirs = [els.get(i, str(i)) for i in list(t_ids - my_ids)[:5]]
+            mine_only = [els.get(i, str(i)) for i in list(my_ids - t_ids)[:5]]
+            if theirs:
+                lines.append("  they own / you don't: " + ", ".join(html.escape(x) for x in theirs))
+            if mine_only:
+                lines.append("  your differentials: " + ", ".join(html.escape(x) for x in mine_only))
+        lines.append(f"\n<i>vs locked GW{last_gw} squads. Keep your differentials; only chase theirs if it also lifts your xPts.</i>")
+        return _safe_card(lines)
+
+    if section == "captpick":
+        import glob as _glob
+        import json as _json
+        import os as _os
+        preds = sorted(_glob.glob(_os.path.join(BASE, "data", "processed", "predictions_gw*.json")))
+        lines = [f"🧢 <b>CAPTAIN PICK — GW{event}</b>"]
+        if not preds:
+            return _safe_card(lines + ["No projection yet — run /simulate."])
+        try:
+            pr = _json.load(open(preds[-1], encoding="utf-8"))
+        except (OSError, ValueError):
+            return _safe_card(lines + ["Projection file unreadable."])
+        exposure = {str(v.get("name") or "").lower(): v
+                    for v in (state.get("player_exposure") or {}).values()}
+        modeword = str((state.get("mode") or {}).get("mode", "Neutral"))
+        cands = sorted((p for p in pr.get("players") or [] if p.get("pos") in ("MID", "FWD", "DEF")),
+                       key=lambda p: -_safe_number(p.get("xpts")))[:8]
+        if not cands:
+            return _safe_card(lines + ["No candidates in the projection."])
+        table = [("PLAYER", "xPts", "start", "rivC%")]
+        for p in cands:
+            exp = exposure.get(str(p.get("name") or "").lower(), {})
+            table.append((str(p.get("name"))[:13], f"{_safe_number(p.get('xpts')):.1f}",
+                          f"{_safe_number(p.get('p_start')) * 100:.0f}",
+                          f"{_safe_number(exp.get('captain_share')):.0f}"))
+        w = [max(len(str(c)) for c in col) for col in zip(*table)]
+        body = "\n".join("  ".join(str(c).ljust(w[i]) if i == 0 else str(c).rjust(w[i])
+                                   for i, c in enumerate(r)) for r in table)
+        lines.append(f"<pre>{html.escape(body)}</pre>")
+
+        def _cshare(p):
+            return _safe_number(exposure.get(str(p.get("name") or "").lower(), {}).get("captain_share"))
+        safe_pick = max(cands, key=_cshare)
+        punt = max(cands, key=lambda p: _safe_number(p.get("upside")) - _cshare(p) * 0.1)
+        our = str((load_pending() or {}).get("captain", {}).get("name") or "")
+        lean = ("lean the Punt to gain ground" if modeword == "Chase"
+                else "lean the Safe pick to protect" if modeword == "Protect"
+                else "take the highest xPts")
+        lines.extend([
+            f"\n<b>Highest xPts:</b> {html.escape(str(cands[0].get('name')))} ({_safe_number(cands[0].get('xpts')):.1f})",
+            f"<b>Safe (crowd):</b> {html.escape(str(safe_pick.get('name')))} · {_cshare(safe_pick):.0f}% of rivals",
+            f"<b>Punt (ceiling):</b> {html.escape(str(punt.get('name')))} · upside {_safe_number(punt.get('upside')):.1f}",
+            f"\nMode <b>{html.escape(modeword)}</b>: {lean}. Pending (C): {html.escape(our) or '—'}",
+        ])
+        return _safe_card(lines)
+
+    if section == "fixtures":
+        lines = [f"📅 <b>FIXTURES — GW{event}+</b>"]
+        try:
+            fx = fetch("https://fantasy.premierleague.com/api/fixtures/")
+            bs = fetch("https://fantasy.premierleague.com/api/bootstrap-static/")
+        except Exception as exc:
+            return _safe_card(lines + [f"FPL fixtures unavailable ({repr(exc)[:60]})."])
+        tshort = {t["id"]: t["short_name"] for t in bs.get("teams", [])}
+        gws = list(range(int(event), int(event) + 6))
+        cnt, fdr = {}, {}
+        for f in fx:
+            ev = f.get("event")
+            if ev not in gws:
+                continue
+            for side, diff in (("team_h", "team_h_difficulty"), ("team_a", "team_a_difficulty")):
+                tid = f.get(side)
+                cnt[(tid, ev)] = cnt.get((tid, ev), 0) + 1
+                fdr.setdefault((tid, ev), []).append(f.get(diff) or 3)
+        flagged = False
+        for ev in gws:
+            dgw = sorted({tshort.get(t, "?") for (t, e) in cnt if e == ev and cnt[(t, e)] >= 2})
+            bgw = sorted({tshort.get(t, "?") for t in tshort if cnt.get((t, ev), 0) == 0})
+            if dgw:
+                lines.append(f"🟢 <b>GW{ev} DGW</b>: {', '.join(dgw[:10])}")
+                flagged = True
+            if len(bgw) >= 3:
+                lines.append(f"🔴 <b>GW{ev} BGW</b>: {', '.join(bgw[:10])}")
+                flagged = True
+        if not flagged:
+            lines.append("No DGW/BGW in the next 6 — standard planning.")
+        run = {}
+        for t in tshort:
+            vals = [min(fdr.get((t, ev), [3])) for ev in gws[:3]]
+            run[t] = sum(vals) / max(1, len(vals))
+        best = sorted(run, key=run.get)[:4]
+        worst = sorted(run, key=run.get, reverse=True)[:4]
+        lines.append("\n<b>Easiest next-3:</b> " + ", ".join(f"{tshort[t]} {run[t]:.1f}" for t in best))
+        lines.append("<b>Toughest next-3:</b> " + ", ".join(f"{tshort[t]} {run[t]:.1f}" for t in worst))
+        try:
+            my = FPLClient().my_team(load_settings()["team_id"])
+            elem = {e["id"]: e for e in bs.get("elements", [])}
+            my_teams = {elem[p["element"]]["team"] for p in my.get("picks", []) if p.get("element") in elem}
+            if my_teams:
+                ez = min(my_teams, key=lambda t: run.get(t, 3))
+                hd = max(my_teams, key=lambda t: run.get(t, 3))
+                lines.append(f"\nYour squad: best run {tshort.get(ez)} ({run.get(ez, 3):.1f}) · "
+                             f"worst {tshort.get(hd)} ({run.get(hd, 3):.1f})")
+        except Exception:
+            pass
+        return _safe_card(lines)
+
 
     if section == "market":
         return _market_card(state, "market")
