@@ -1147,22 +1147,52 @@ def war_room_text(section="overview", state=None):
         return league_text(state)
 
     if section == "rivals":
-        rivals = sorted(
-            state.get("cohort") or [],
-            key=lambda row: -_safe_number(row.get("live_sharpness", row.get("historical_score", 50)), 50),
-        )
-        lines = [f"🕵️ <b>SHARP RIVALS — GW{event}</b>", f"Deep-scout cohort: {len(rivals)} managers"]
-        for index, row in enumerate(rivals[:10], 1):
-            score = _safe_number(row.get("live_sharpness", row.get("historical_score", 50)), 50)
-            activity = row.get("activity") or {}
-            lines.append(
-                f"{index}. <b>{html.escape(str(row.get('team_name') or 'Unknown'))}</b> • "
-                f"{score:.1f} {html.escape(str(row.get('tier') or '?'))} • "
-                f"{html.escape(str(activity.get('archetype_live') or row.get('archetype') or 'unclassified'))}"
-            )
-        if not rivals:
+        cohort = state.get("cohort") or []
+        standings = state.get("standings") or []
+        our_entry = state.get("our_entry")
+        total_by_entry, rank_by_key = {}, {}
+        for r in standings:
+            total_by_entry.setdefault(r.get("entry"), r.get("total"))
+            rank_by_key[(r.get("entry"), r.get("league_id"))] = r.get("rank")
+        our_total = _safe_number(total_by_entry.get(our_entry))
+
+        wc = sum(1 for r in cohort if "wildcard" in ((r.get("activity") or {}).get("chips_unseen") or []))
+        fh = sum(1 for r in cohort if "freehit" in ((r.get("activity") or {}).get("chips_unseen") or []))
+        lines = [f"🕵️ <b>SHARP RIVALS — GW{event}</b>",
+                 f"{len(cohort)} tracked · {wc} still hold Wildcard · {fh} hold Free Hit"]
+
+        # the ones actually in your prize places
+        threats = []
+        for row in cohort:
+            leagues = [int(x.split("_league_")[-1]) for x in (row.get("reasons") or [])
+                       if x.startswith("top_") and "_league_" in x]
+            if not leagues:
+                continue
+            best_rank = min((rank_by_key.get((row.get("entry"), lg)) or 9999) for lg in leagues)
+            tot = _safe_number(total_by_entry.get(row.get("entry")))
+            threats.append((tot, best_rank, row.get("team_name") or "?", leagues))
+        threats.sort(key=lambda t: -t[0])
+
+        if threats:
+            lines.append(f"\n🎯 <b>In your prize places</b> ({len(threats)})")
+            rows = [("#", "TEAM", "TOTAL", "vs you")]
+            for tot, rank, name, _lg in threats[:8]:
+                rows.append((str(rank), str(name)[:15], f"{tot:.0f}", f"{tot - our_total:+.0f}"))
+            w = [max(len(str(c)) for c in col) for col in zip(*rows)]
+            body = "\n".join("  ".join(str(c).ljust(w[i]) if i == 1 else str(c).rjust(w[i])
+                                       for i, c in enumerate(r)) for r in rows)
+            lines.append(f"<pre>{html.escape(body)}</pre>")
+
+        # sharpest of the rest (evidence, not the race)
+        rest = sorted(
+            (r for r in cohort if not any(x.startswith("top_") for x in (r.get("reasons") or []))),
+            key=lambda r: -_safe_number(r.get("live_sharpness", r.get("historical_score", 50)), 50),
+        )[:4]
+        if rest:
+            lines.append("\n<b>Also sharp</b> (evidence, not chasing you): "
+                         + ", ".join(html.escape(str(r.get("team_name") or "?")) for r in rest))
+        if not cohort:
             lines.append("No rival cohort available yet.")
-        lines.append("\n<i>Scores combine previous-season evidence with live behaviour; they are not copied blindly.</i>")
         return _safe_card(lines)
 
     if section == "captain":
@@ -1170,27 +1200,50 @@ def war_room_text(section="overview", state=None):
             (state.get("player_exposure") or {}).values(),
             key=lambda row: (-_safe_number(row.get("captain_share")), -_safe_number(row.get("effective_ownership"))),
         )
-        lines = [f"👑 <b>RIVAL CAPTAINS — GW{state.get('exposure_event') or event}</b>"]
         pending = load_pending() or {}
-        captain = pending.get("captain") or {}
-        if captain:
-            lines.append(
-                f"Our pending captain: <b>{html.escape(str(captain.get('name') or captain.get('id')))}</b> "
-                f"({_safe_number(captain.get('xpts')):.1f} xPts)"
-            )
+        our_cap = pending.get("captain") or {}
+        our_name = str(our_cap.get("name") or our_cap.get("id") or "")
+        locked = state.get("exposure_event")
+        lines = [f"👑 <b>RIVAL CAPTAINS — GW{event}</b>"]
+        if locked and locked != event:
+            lines.append(f"<i>from rivals' locked GW{locked} squads</i>")
         if not exposure:
-            lines.extend([
-                "No trusted locked captain sample yet.",
-                f"Trusted squads: {state.get('trusted_pick_count', 0)}/{state.get('cohort_count', 0)}.",
-            ])
-        for row in exposure[:10]:
-            lines.append(
-                f"• <b>{html.escape(str(row.get('name') or row.get('element')))}</b> • "
-                f"captain {_safe_number(row.get('captain_share')):.1f}% • "
-                f"EO {_safe_number(row.get('effective_ownership')):.1f}% • "
-                f"owned {_safe_number(row.get('ownership')):.1f}%"
-            )
-        lines.append(f"\nMode <b>{html.escape(str(mode.get('mode', 'Neutral')))}</b>: adjustment stays inside xPts guardrails.")
+            lines.append(f"No trusted locked-squad sample yet "
+                         f"({state.get('trusted_pick_count', 0)}/{state.get('cohort_count', 0)} squads).")
+            return _safe_card(lines)
+
+        rows = [("", "PLAYER", "C%", "EO%")]
+        our_row = None
+        for row in exposure[:8]:
+            name = str(row.get("name") or row.get("element"))
+            mark = "►" if our_name and name.lower() == our_name.lower() else " "
+            r = (mark, name[:14], f"{_safe_number(row.get('captain_share')):.0f}",
+                 f"{_safe_number(row.get('effective_ownership')):.0f}")
+            rows.append(r)
+            if mark == "►":
+                our_row = row
+        widths = [max(len(str(c)) for c in col) for col in zip(*rows)]
+        body = "\n".join("  ".join(str(c).ljust(widths[i]) if i < 2 else str(c).rjust(widths[i])
+                                   for i, c in enumerate(r)) for r in rows)
+        lines.append(f"<pre>{html.escape(body)}</pre>")
+
+        # verdict on our captain vs the field
+        if our_name and our_row is not None:
+            share = _safe_number(our_row.get("captain_share"))
+            eo = _safe_number(our_row.get("effective_ownership"))
+            if share >= 40:
+                verdict = (f"You're on the crowd captain ({share:.0f}%). Low variance vs the field — "
+                           f"a blank costs little, a haul gains little.")
+            elif share >= 15:
+                verdict = f"Semi-differential ({share:.0f}% of rivals). Moderate swing either way."
+            else:
+                verdict = (f"Differential captain ({share:.0f}% of rivals). High variance — "
+                           f"a haul gains ground on most rivals, a blank loses it.")
+            if eo >= 130:
+                verdict += f" EO {eo:.0f}%: most rivals rise/fall with him too."
+            lines.append("\n" + verdict)
+        elif our_name:
+            lines.append(f"\n<b>{html.escape(our_name)}</b> is not a common rival captain — full differential.")
         return _safe_card(lines)
 
     if section == "market":
