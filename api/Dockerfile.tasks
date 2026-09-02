@@ -1,0 +1,23 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app:/app/services/api \
+    FPL_DATA_DIR=/app/data
+
+WORKDIR /app
+COPY services/api/requirements.txt ./services/api/requirements.txt
+RUN pip install --no-cache-dir -r services/api/requirements.txt
+
+COPY services/api/app ./services/api/app
+COPY scripts ./scripts
+COPY data ./data
+COPY reports ./reports
+
+# The gameweek finalizer writes freshly fetched snapshots, analysis and journal
+# files under data/ and reports/ before publishing them to GCS.
+RUN mkdir -p data/journal/2026-27/exports data/journal-raw reports/model-validation \
+    && chown -R 65532:65532 /app
+
+USER 65532:65532
+ENTRYPOINT ["python", "scripts/run_scheduled_task.py"]
