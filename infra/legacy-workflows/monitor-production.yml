@@ -1,0 +1,29 @@
+name: Monitor production
+
+# Scheduled on GCP Cloud Scheduler -> Cloud Run Job `fpl-monitor`.
+# Kept here as a manual fallback only.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monitor-fpl-production
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Check readiness, contracts and payload budgets
+        run: python scripts/monitor_production.py
+      - name: Check bounded API latency percentiles
+        run: python scripts/load_smoke.py "https://fpl-scout-api-bztsnhv3ea-uc.a.run.app/v1/leagues/58005/summary?page=1&page_size=50" --requests 20 --concurrency 4 --p95-ms 5000 --byte-limit 250000
+      - name: Check bounded dashboard latency percentiles
+        run: python scripts/load_smoke.py "https://fpl-scout-intelligence.netlify.app/league" --requests 10 --concurrency 2 --p95-ms 8000 --byte-limit 1500000

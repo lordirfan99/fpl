@@ -15,13 +15,19 @@ secret buried in old history. Legacy repos are archived read-only for reference.
 - [ ] Verify a throwaway PR is blocked until CI passes
 
 ### Phase B — code in (one PR per module, CI green each time)
-- [ ] `api/`  ← scout `services/api/`  (drop any deploy secrets; env-only config)
-- [ ] `web/`  ← scout `web-next/`
-- [ ] `engine/` ← autopilot `model/` `optimizer/` `execution/` `jobs/`
-- [ ] `bot/`  ← autopilot `bot/`
-- [ ] `infra/` ← both `cloudbuild*.yaml`, autopilot `deploy/` + systemd units + provision scripts, scheduler defs
-- [ ] `tests/` ← merge both suites; make `pytest` pass from repo root
-- [ ] Secret scan every module before its PR: `git grep -nE '(AA[A-Za-z0-9_-]{30}|BEGIN .*PRIVATE KEY|xoxb-|[0-9]{8,10}:AA)'` + eyeball `config/`
+- [x] `api/`  ← scout `services/api/`  (PR #1). Ruff floor + pytest paths added.
+- [x] `web/`  ← scout `web-next/`  (PR #3). typecheck + build in CI.
+- [x] `engine/` + `bot/` ← autopilot `model/optimizer/execution/jobs`, `telegram_bot.py`  (PR #2)
+- [x] `infra/` ← scout `cloudbuild.api.yaml`/`netlify.toml`/`scripts/`, autopilot `deploy/`; old scout workflows parked in `infra/legacy-workflows/`
+- [ ] `tests/` — per-module `*/tests/` for now; a repo-root suite is Phase C
+- [x] Secret scan run on every module PR. Scrubbed for the public repo:
+      owner Telegram user/chat ids; `league_registry.json` + `prize_targets.json`
+      (real league names + real-money prizes) → `.example` stubs only.
+
+**Quarantined tests** (`*/tests/deferred/`), rejoin in Phase C:
+- `api/`: 5 need bulk `data/` snapshot fixtures; 4 need scout-root scripts (now in `infra/scripts/`, still need fixtures)
+- `engine/`: 9 need fixtures / browser deps / exact-string introspection / scrubbed-id asserts
+- The 141 MB committed `data/` from scout was **not** migrated — needs a small synthetic fixture set under `*/tests/fixtures/`
 
 ### Phase C — carry-forward fixes (own PRs, not bundled)
 - [ ] One `telegram_notify` helper — replace the 3 divergent senders; retry once, never raise

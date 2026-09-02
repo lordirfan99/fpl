@@ -1,0 +1,136 @@
+name: Refresh completed gameweek
+
+# Scheduled on GCP Cloud Scheduler -> Cloud Run Job `fpl-refresh-gameweek`
+# (which publishes to GCS `snapshots/`). This workflow is kept as a manual
+# fallback and additionally commits the finalized artifacts back to git.
+on:
+  workflow_dispatch:
+    inputs:
+      gameweek:
+        description: "Optional GW override; blank uses latest finished and data-checked GW"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: refresh-completed-gameweek
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install google-cloud-storage
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - name: Select latest final gameweek
+        id: event
+        env:
+          GW_OVERRIDE: ${{ inputs.gameweek }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os, urllib.request
+          override = os.environ.get("GW_OVERRIDE", "").strip()
+          if override:
+              gw = int(override)
+          else:
+              request = urllib.request.Request(
+                  "https://fantasy.premierleague.com/api/bootstrap-static/",
+                  headers={"User-Agent": "Fantasy-Scout-CI/1.0"},
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  bootstrap = json.load(response)
+              final = [event["id"] for event in bootstrap["events"] if event.get("finished") and event.get("data_checked")]
+              gw = max(final, default=0)
+          required = [
+              f"data/gw{gw}_league{league}_{kind}.json"
+              for league in (58005, 131997)
+              for kind in ("data", "compact")
+          ] if gw else []
+          refresh = bool(gw and not all(os.path.isfile(path) for path in required))
+          print(f"gw={gw}")
+          print(f"refresh={'true' if refresh else 'false'}")
+          PY
+      - name: Fetch both tracked leagues
+        if: steps.event.outputs.refresh == 'true'
+        run: |
+          python scripts/fetch_fixture_horizon.py
+          python scripts/fetch_gw_data_fixed.py --gw "${{ steps.event.outputs.gw }}" --league 58005 131997 --max 3000 --workers 16
+      - name: Generate league and elite reports
+        if: steps.event.outputs.refresh == 'true'
+        run: |
+          python scripts/generate_analysis.py --gw "${{ steps.event.outputs.gw }}" --league 58005
+          python scripts/generate_analysis.py --gw "${{ steps.event.outputs.gw }}" --league 131997
+      - name: Finalize season journal
+        if: steps.event.outputs.refresh == 'true'
+        env:
+          FPL_JOURNAL_BUCKET: ${{ vars.FPL_JOURNAL_BUCKET }}
+        run: python scripts/build_gameweek_journal.py --gw "${{ steps.event.outputs.gw }}"
+      - name: Recompute walk-forward model evidence
+        if: steps.event.outputs.refresh == 'true'
+        run: >-
+          python scripts/audit_model_backtest.py
+          --season 2026-27
+          --output reports/model-validation/2026-27.json
+      - name: Validate snapshot integrity
+        if: steps.event.outputs.refresh == 'true'
+        env:
+          GW: ${{ steps.event.outputs.gw }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          gw = int(os.environ["GW"])
+          for league in (58005, 131997):
+              path = Path(f"data/gw{gw}_league{league}_data.json")
+              compact_path = Path(f"data/gw{gw}_league{league}_compact.json")
+              full = json.loads(path.read_text(encoding="utf-8"))
+              compact = json.loads(compact_path.read_text(encoding="utf-8"))
+              assert full["gw"] == gw and full["league_id"] == league
+              assert full["total_entries"] == len(full["competitors"]) > 0
+              assert compact["total_entries"] == len(compact["competitors"]) == full["total_entries"]
+              assert full.get("errors", 0) == 0, f"league {league}: fetch errors={full.get('errors')}"
+              for manager in full["competitors"]:
+                  squad = manager.get("squad", [])
+                  assert len(squad) == 15, f"entry {manager.get('entry_id')} has {len(squad)} players"
+                  # After a completed GW, auto-subs leave exactly 11 active picks;
+                  # a Bench Boost gameweek activates all 15.
+                  active = sum(1 for pick in squad if pick.get("multiplier", 0) > 0)
+                  assert active in (11, 15), f"entry {manager.get('entry_id')} has {active} active picks"
+              print(f"GW{gw} league {league}: {len(full['competitors'])} valid managers")
+          PY
+      - name: Commit final snapshots
+        if: steps.event.outputs.refresh == 'true'
+        env:
+          GW: ${{ steps.event.outputs.gw }}
+        run: |
+          python scripts/frozen_artifacts.py --add \
+            "data/gw${GW}_league58005_data.json" "data/gw${GW}_league58005_compact.json" \
+            "data/gw${GW}_league131997_data.json" "data/gw${GW}_league131997_compact.json" \
+            "data/journal/2026-27/gw$(printf '%02d' "${GW}").json"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "data/gw${GW}_league58005_data.json" "data/gw${GW}_league58005_compact.json" \
+                  "data/gw${GW}_league131997_data.json" "data/gw${GW}_league131997_compact.json" \
+                  data/bootstrap_cache.json data/frozen_artifacts.json "reports/GW${GW}"
+          git add "data/journal"
+          git add "reports/model-validation/2026-27.json"
+          git commit -m "data: finalize GW${GW} league snapshots"
+          git push
+      - name: Nothing to refresh
+        if: steps.event.outputs.refresh != 'true'
+        run: echo "No new finished and data-checked gameweek is waiting for collection."
