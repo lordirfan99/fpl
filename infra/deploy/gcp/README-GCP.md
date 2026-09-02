@@ -13,7 +13,7 @@ gcloud access can execute it end-to-end.
 
 | Component | Local (Windows) equivalent | GCP equivalent |
 |---|---|---|
-| Telegram bot (polling, approval flow) | Task Scheduler + VBScript | `fpl-bot.service` (systemd) |
+| Telegram bot (polling, approval flow) | Task Scheduler + VBScript | `fpl-telegram.service` (systemd) |
 | Data pull every 4h | Hermes cron `fpl-daily-pull` | `fpl-daily-pull.timer` |
 | Pre-deadline + post-GW auto-runner every 2h | Hermes cron `fpl-auto-runner` | `fpl-auto-runner.timer` |
 | OIDC token keepalive every 2h | Hermes cron `fpl-token-keepalive` | `fpl-token-keepalive.timer` |
@@ -89,7 +89,7 @@ gcloud compute ssh instance-20260412-121200 --project=irfan-374115 --zone=us-cen
 
 # on the VM:
 sudo apt-get update && sudo apt-get install -y git
-sudo git clone https://github.com/lordirfan99/fpl-autopilot.git /opt/fpl-autopilot
+sudo git clone https://github.com/lordirfan99/fpl.git /opt/fpl-autopilot
 cd /opt/fpl-autopilot
 sudo bash deploy/gcp/install.sh
 ```
@@ -103,8 +103,8 @@ idempotent — safe to re-run.
 
 ```bash
 # Bot process up?
-systemctl status fpl-bot.service
-journalctl -u fpl-bot.service -f            # watch startup: "🤖 @Fplnaf_bot polling started"
+systemctl status fpl-telegram.service
+journalctl -u fpl-telegram.service -f            # watch startup: "🤖 @Fplnaf_bot polling started"
 
 # Timers armed?
 systemctl list-timers 'fpl-*'
@@ -159,14 +159,14 @@ in the repo acceptable.
 systemctl --no-pager list-units 'fpl-*' --all
 
 # Logs
-journalctl -u fpl-bot.service -n 200
+journalctl -u fpl-telegram.service -n 200
 tail -f /var/log/fpl/jobs.log /var/log/fpl/bot.log
 
 # Restart bot
-sudo systemctl restart fpl-bot.service
+sudo systemctl restart fpl-telegram.service
 
 # Stop everything (suspension)
-sudo systemctl stop fpl-bot.service
+sudo systemctl stop fpl-telegram.service
 sudo systemctl disable --now fpl-daily-pull.timer fpl-auto-runner.timer \
   fpl-token-keepalive.timer fpl-auth-canary.timer \
   fpl-squad-watch.timer fpl-approval-reminder.timer fpl-bot-watchdog.timer
@@ -177,7 +177,7 @@ cd /opt/fpl-autopilot && sudo git pull && sudo bash deploy/gcp/install.sh
 
 ### Failure modes
 
-- **Bot dies repeatedly:** check `journalctl -u fpl-bot.service`; the bot logs
+- **Bot dies repeatedly:** check `journalctl -u fpl-telegram.service`; the bot logs
   polling errors and reconnects itself (8s backoff). Heartbeat watchdog
   (`fpl-bot-watchdog.timer`) restarts it if the heartbeat file is >5 min old.
 - **Auth failures:** `journalctl -u fpl-token-keepalive.service` — a re-login
@@ -203,7 +203,7 @@ trycloudflare tunnel — that dies on reboot and is NOT valid on GCP. Options:
 ## 8. Checklist before GW1 deadline (2026-08-21 17:30 UTC)
 
 - [ ] VM deployed, `install.sh` completed with zero errors
-- [ ] `fpl-bot.service` active and /status answers in Telegram
+- [ ] `fpl-telegram.service` active and /status answers in Telegram
 - [ ] `systemctl list-timers 'fpl-*'` shows all 9 timers
 - [ ] `/league` shows `PROVISIONAL` before GW1 deadline and `FINAL` after deadline +5m
 - [ ] `token_keepalive.py` exits 0, `/api/me/` verified

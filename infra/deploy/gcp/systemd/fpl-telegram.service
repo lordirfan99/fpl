@@ -1,4 +1,8 @@
 [Unit]
+# ⚠️ This bot CAN submit real transfers / lineup / captain to FPL.
+# Execution is gated by the PR #12 hash-confirm tap (Approve -> "Execute this
+# exact plan"). Kill switch without redeploying: create /etc/fpl-telegram.env
+# with  FPL_TELEGRAM_DRY_RUN=1  and restart the service.
 Description=FPL Autopilot Telegram owner bot (confirmed execution)
 After=network-online.target
 Wants=network-online.target
@@ -23,7 +27,10 @@ StandardError=append:/var/log/fpl/bot.log
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
+# The bot spawns a headless browser (camoufox/playwright) for FPL OIDC login,
+# which writes under $HOME (~/.cache, ~/.mozilla). Keep $HOME writable.
 ProtectHome=read-only
+ReadWritePaths=/home/fpl /var/log/fpl /opt/fpl-autopilot/data
 
 [Install]
 WantedBy=multi-user.target

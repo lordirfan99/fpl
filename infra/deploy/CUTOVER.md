@@ -50,11 +50,39 @@ Rollback: relink to `fpl-league-58005-scout`, base `web-next`.
 ```bash
 bash infra/deploy/vm-sync.sh v2026.09.03-cutover
 ```
-The script backs up `model/optimizer/execution/jobs/bot` on the VM, syncs the
-monorepo code, syntax-gates, restarts `fpl-telegram.service`, and does a
-`pre_deadline_run.py --notifications-disabled` dry run (must exit 0).
+Backs up `model/optimizer/execution/jobs/bot` on the VM, syncs the monorepo
+code, installs the `fpl-telegram.service` template, syntax-gates, restarts the
+bot, and dry-runs `pre_deadline_run.py --notifications-disabled` (must exit 0).
+
+> **Execution mode.** The synced unit sets `FPL_TELEGRAM_EXECUTION_ENABLED=1` /
+> `FPL_TELEGRAM_DRY_RUN=0` — the bot **submits real transfers/lineup/captain to
+> FPL** when you tap Approve → "Execute this exact plan" (hash-bound, PR #12).
+> `vm-sync.sh` makes you type `execute` to proceed.
+> **Kill switch (no redeploy):** `echo 'FPL_TELEGRAM_DRY_RUN=1' | sudo tee /etc/fpl-telegram.env && sudo systemctl restart fpl-telegram.service`
+> During an active wildcard the canonical engine only produces an XI/captain
+> plan (`lineup_only_safe`) — build the 15-man wildcard squad yourself in the
+> FPL app; approve→execute covers normal weekly transfers from GW4.
+
 Rollback: restore `/opt/fpl-autopilot/.monorepo-sync-backup-*` and
 `systemctl restart fpl-telegram.service`.
+
+## 3b. Cloud Run job images (before un-freezing schedulers)
+
+Resuming with the old scout-built images works, but to run monorepo code:
+```bash
+SHA=$(git rev-parse HEAD)
+gcloud builds submit --project=irfan-374115 --config=infra/cloudbuild.jobs.yaml \
+  --substitutions=_GIT_SHA=$SHA \
+  --gcs-source-staging-dir=gs://irfan-374115-fpl-github-build-source/source .
+IMG=us-central1-docker.pkg.dev/irfan-374115/fpl-scout
+for j in fpl-refresh-fixtures fpl-refresh-gameweek fpl-capture-journal fpl-monitor \
+         fpl-decision-refresh fpl-decision-final-window; do
+  gcloud run jobs update "$j" --region=us-central1 --project=irfan-374115 \
+    --image="$IMG/fpl-scheduled-tasks:$SHA"
+done
+gcloud run jobs update fpl-live-league-refresh --region=us-central1 --project=irfan-374115 \
+  --image="$IMG/fpl-live-refresh:$SHA"
+```
 
 ## 4. Un-freeze — one at a time
 
@@ -85,5 +113,7 @@ Then update `docs/RUNBOOK.md` *Last known-good*.
 
 - GitHub Actions deploy workflow for the API (needs WIF trust for `lordirfan99/fpl`
   added to `projects/733056042866/.../workloadIdentityPools/github-actions`).
-- Rebuild the `fpl-live-refresh` / `fpl-scheduled-tasks` job images from the monorepo
-  (currently still the scout-built images; fine while paused).
+- Port the wildcard/free-hit rebuild feature from `fpl-autopilot#7` (with the
+  inverted-guard fix) so the engine can produce a 15-man chip squad.
+- `infra/deploy/gcp/install.sh` is fresh-VM bootstrap only; verify it end-to-end
+  on a throwaway VM before trusting it (`ProtectHome` + browser-login interaction).
