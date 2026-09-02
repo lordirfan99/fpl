@@ -145,13 +145,10 @@ def main():
                     # Intelligence notifications are advisory: missing/broken
                     # Telegram credentials must never block plan generation.
                     print(f"[auto] league alert delivery failed: {repr(exc)[:120]}")
-            pubrc, pubout, puberr = run("publish_competitive_snapshot.py", env=run_env)
-            if pubrc != 0:
-                # Publishing is about SHARING the snapshot to the dashboard/GCS.
-                # It does NOT mean the engine lacks league context, so it must
-                # not push the plan into lineup_only_safe (transfers locked).
-                # The freshness/staleness gate in pre_deadline_run still applies.
-                print(f"[auto] competitive publish failed rc={pubrc} (non-blocking): {(puberr or pubout)[-500:]}")
+            # Finalized dashboard snapshots are written directly to GCS by the
+            # Cloud Run finalizer.  Do not call the retired VM -> API publisher
+            # here: the API is read-only and has no snapshot-ingest endpoint.
+            # League intelligence above remains local input to the plan.
         else:
             refresh_failures.append("league intelligence")
             print(f"[auto] league intelligence failed rc={lirc}: {(lierr or liout)[-500:]}")

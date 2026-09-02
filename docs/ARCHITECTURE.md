@@ -33,6 +33,8 @@
 - **Snapshots are the store.** Finalized per-GW league data lands in GCS
   (`irfan-374115-fpl-snapshots`); the API serves from there. Live/in-progress data
   is a separate, slower path and never used for journal/audit.
+- **Only Cloud Run jobs publish finalized snapshots.** The VM consumes league
+  intelligence for planning, but does not POST snapshots to the read-only API.
 
 ## Known weak spots (carry forward)
 
