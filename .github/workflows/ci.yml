@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: engine / api / bot — lint + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff pytest
+          # per-module requirements (present after Phase B); tolerate absence during skeleton
+          for r in api/requirements.txt engine/requirements.txt bot/requirements.txt requirements.txt; do
+            [ -f "$r" ] && pip install -r "$r" || true
+          done
+      - name: Lint
+        run: ruff check . || { echo "::error::ruff failed"; exit 1; }
+      - name: Tests
+        run: |
+          if [ -d tests ] && ls tests/test_*.py >/dev/null 2>&1; then
+            pytest -q
+          else
+            echo "no tests yet (skeleton) — passing"
+          fi
+
+  web:
+    name: web — build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Build
+        run: |
+          if [ -f web/package.json ]; then
+            cd web && npm ci && npm run build
+          else
+            echo "no web/ yet (skeleton) — passing"
+          fi
