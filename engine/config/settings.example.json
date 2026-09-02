@@ -1,6 +1,21 @@
 {
   "team_id": 0,
-  "telegram": { "bot_username": "@YourBot", "chat_id": 0, "allowed_user_ids": [0] },
-  "league_intelligence": { "enabled": false },
-  "v42_candidate": { "shadow_enabled": true }
+  "telegram": {
+    "bot_username": "@YourBot",
+    "chat_id": 0,
+    "allowed_user_ids": [
+      0
+    ]
+  },
+  "league_intelligence": {
+    "enabled": false
+  },
+  "v42_candidate": {
+    "shadow_enabled": true
+  },
+  "competitive_v4": {
+    "enabled": false,
+    "league_id": 0,
+    "max_snapshot_age_hours": 168
+  }
 }

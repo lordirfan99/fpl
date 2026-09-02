@@ -33,7 +33,11 @@ def _exec_semantics(plan):
     JSON ordering and display fields must not affect the identity.
     """
     def _pid(p):
-        return (p or {}).get("id")
+        # element_out/element_in are bare player ids in transfer rows; starters/
+        # bench/captain/vice are player dicts. Accept either.
+        if isinstance(p, dict):
+            return p.get("id")
+        return p
 
     # chip may live at top level or inside chip_suggestion (both shapes occur)
     chip = plan.get("chip")
