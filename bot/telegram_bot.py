@@ -133,19 +133,10 @@ def request_league(uid, league_id, friendly_name=None):
 # Kept outside main() so the callback contract can be unit-tested without
 # creating a Telegram Application or requiring live credentials.
 WAR_ROOM_SECTIONS = (
-    ("🎯 Prize Race", "war_prize"),
-    ("🕵️ Sharp Rivals", "war_rivals"),
-    ("🔄 Transfer Radar", "war_transfers"),
-    ("👑 Captain Battle", "war_captain"),
-    ("💷 Market Watch", "war_market"),
-    ("🔒 Deadline Registry", "war_registry"),
-    ("⚔️ Attack Plan", "war_attack"),
-    ("🔄 Refresh Data", "war_refresh"),
-)
-MARKET_SECTIONS = (
-    ("🔻 Fall risks", "war_market_fall"),
-    ("🔺 Rise watch", "war_market_rise"),
-    ("🚑 Availability", "war_market_availability"),
+    ("🕵️ Rivals", "war_rivals"),
+    ("👑 Rival Captains", "war_captain"),
+    ("💷 Market", "war_market"),
+    ("🔄 Refresh", "war_refresh"),
 )
 _LEAGUE_REFRESH_LOCK = threading.Lock()
 
@@ -874,133 +865,96 @@ def history_text():
 
 
 def league_text(state=None):
-    """League monitor + manager sharpness + beat-them readout."""
-    import glob as _glob
+    """Lean league war-room overview: where you stand, the sharp money, and the
+    closest rivals. Everything else lives behind the Rivals / Captains / Market
+    buttons. Never mutates the FPL team.
+    """
     import json as _json
     import os as _os
-    sys.path.insert(0, _os.path.join(BASE, "model"))
     latest = _os.path.join(BASE, "data", "processed", "league_intelligence", "latest.json")
-    if state is not None or _os.path.exists(latest):
+    if state is None:
+        if not _os.path.exists(latest):
+            return ("🏆 <b>WAR ROOM</b>\n"
+                    "No intelligence snapshot yet — tap <b>Refresh</b>. It only reads "
+                    "public FPL endpoints and cannot change your team.")
         try:
-            state = state or _json.load(open(latest, encoding="utf-8"))
-            mode = state.get("mode", {}) or {}
-            lines = [
-                f"📊 <b>LEAGUE INTELLIGENCE — GW{state.get('event')}</b>",
-                f"Mode: <b>{mode.get('mode', 'Neutral')}</b>",
-                f"Deep cohort: {state.get('cohort_count', 0)} • trusted squads: {state.get('trusted_pick_count', 0)}",
-                f"Registry: <b>{html.escape(str((state.get('registry') or {}).get('status', 'unknown')).upper())}</b>"
-                + (f" • finalized {(state.get('registry') or {}).get('finalized_at', '')[:16]} UTC" if (state.get('registry') or {}).get('finalized_at') else " • accepting late entrants"),
-                "━━━━━━━━━━━━━━━━━━",
-                "🏆 <b>PRIZE TARGETS</b>",
-            ]
-            for target in state.get("prize_status", []) or []:
-                league_label = html.escape(str(target.get("league_id")))
-                if target.get("rank") is None:
-                    lines.append(f"• L{league_label}: standings not live yet")
-                else:
-                    current = html.escape(str((target.get("current_prize") or {}).get("prize", "outside prize bands")))
-                    nxt = target.get("next_target") or {}
-                    text = f"• L{league_label}: rank <b>{int(target.get('rank'))}</b> • {current}"
-                    if nxt:
-                        text += f" → {html.escape(str(nxt.get('prize')))}"
-                        if target.get("gap_to_next_target") is not None:
-                            text += f" ({float(target['gap_to_next_target']):.0f} pts)"
-                    lines.append(text)
-                    probability = target.get("probability") or {}
-                    if probability.get("available"):
-                        lines.append(
-                            f"  🎲 projected rank {float(probability.get('expected_rank', 0)):.0f} • "
-                            f"P(top 10) {float(probability.get('p_top_10', 0)):.1f}% • "
-                            f"P(top 40) {float(probability.get('p_top_40', 0)):.1f}%"
-                        )
-                special = target.get("active_special") or []
-                if special:
-                    lines.append(
-                        f"  ⚡ GW{state.get('event')} special: {html.escape(str(special[0].get('prize')))} "
-                        f"winner • top {special[-1].get('rank_to')} paid"
-                    )
-            monthly = state.get("monthly_status", []) or []
-            if monthly:
-                lines.extend(["", "📅 <b>MONTHLY TARGETS</b>"])
-                for target in monthly[:2]:
-                    prize = html.escape(str((target.get("prize") or {}).get("prize", "monthly prize")))
-                    if target.get("rank") is None:
-                        lines.append(f"• L{target.get('league_id')}: awaiting completed GW data • {prize}")
-                    else:
-                        lines.append(
-                            f"• L{target.get('league_id')}: rank {int(target['rank'])} • "
-                            f"{float(target.get('gap_to_first', 0)):.0f} pts to first • {prize}"
-                        )
-            threats = sorted(
-                state.get("cohort", []) or [],
-                key=lambda row: -float(row.get("live_sharpness", row.get("historical_score", 50)) or 50),
-            )[:5]
-            if threats:
-                lines.extend(["", "🚨 <b>PRIORITY THREATS</b>"])
-                for row in threats:
-                    score = float(row.get("live_sharpness", row.get("historical_score", 50)) or 50)
-                    name = html.escape(str(row.get("team_name") or "Unknown"))
-                    tier = html.escape(str(row.get("tier", "?")))
-                    lines.append(f"• {name} • {score:.1f} • tier {tier}")
-            moves = state.get("transfer_consensus", []) or []
-            if moves:
-                lines.extend(["", "🔄 <b>SHARP TRANSFER CONSENSUS</b>"])
-                for move in moves[:3]:
-                    lines.append(
-                        f"• {html.escape(str(move.get('name')))}: +{float(move.get('weighted_in_pct', 0)):.0f}% / "
-                        f"−{float(move.get('weighted_out_pct', 0)):.0f}% weighted"
-                    )
-            swing = state.get("live_swing") or {}
-            if swing:
-                rivals = swing.get("rivals", []) or []
-                best = rivals[0] if rivals else None
-                text = f"⚡ <b>Live cohort:</b> us {float(swing.get('our_live_points', 0)):.0f} pts"
-                if best:
-                    text += f" • leader {float(best.get('live_points', 0)):.0f} ({float(best.get('swing_vs_us', 0)):+.0f})"
-                lines.extend(["", text])
-            market = state.get("market_signals", []) or []
-            if market:
-                actionable = sum(1 for row in market if _market_direction(row) in {"rise", "fall"} or row.get("chance_next") is not None)
-                lines.extend(["", f"💷 <b>Market:</b> {actionable} actionable signals • open Market Watch for details"])
-            return _safe_card(lines)
-        except Exception:
-            pass  # fall back to the legacy snapshot below
+            state = _json.load(open(latest, encoding="utf-8"))
+        except (OSError, ValueError):
+            return "🏆 <b>WAR ROOM</b>\nSnapshot unreadable — tap <b>Refresh</b>."
 
-    gw = next_gw_id() - 1 or 1
-    # find latest monitor snapshot
-    snaps = sorted(_glob.glob(_os.path.join(BASE, "data", "processed", "league_monitor_gw*.json")))
-    if not snaps:
-        return ("📊 <b>LEAGUE MONITOR</b>\n"
-                "No snapshot yet — standings populate after GW1. "
-                "I'll start tracking opponents live from the first deadline.")
-    snap = _json.load(open(snaps[-1], encoding="utf-8"))
-    lines = [f"📊 <b>LEAGUE MONITOR — GW{snap.get('gw')}</b>",
-             f"Entries tracked: {snap.get('standings_count', 0)}",
-             "━━━━━━━━━━━━━━━━━━"]
-    # our position
-    our = snap.get("entries", {}).get(str(snap.get("our_entry")), {})
-    if our:
-        lines.append(f"🏠 <b>{our.get('entry_name', 'US')}</b> — rank {our.get('rank', '?')} · {our.get('total', 0)} pts")
-    # sharp managers: use manager histories if available; else show threats from snapshot
-    threats = []
-    for eid, entry in (snap.get("entries") or {}).items():
-        gap = entry.get("gap_to_us")
-        if gap is not None and abs(gap) <= 20:
-            threats.append(f"⚠️ {entry.get('entry_name')} — {gap:+.0f} pts vs us")
-    if threats:
-        lines.append("")
-        lines.append("🚨 <b>THREATS</b>")
-        lines.extend(threats)
-    # captain live leaders
-    cap_leaders = sorted(
-        [(e.get("captain_live_pts", 0), e.get("entry_name"), e.get("captain_name"))
-         for e in (snap.get("entries") or {}).values() if e.get("captain_live_pts")],
-        reverse=True)[:5]
-    if cap_leaders:
-        lines.append("")
-        lines.append("👑 <b>CAPTAIN LIVE</b>")
-        for pts, name, cap in cap_leaders:
-            lines.append(f"   {name}: {cap} on {pts} pts")
+    event = state.get("event", "?")
+    mode = (state.get("mode") or {}).get("mode", "Neutral")
+    lines = [f"🏆 <b>WAR ROOM · GW{html.escape(str(event))} · {html.escape(str(mode))}</b>"]
+
+    # --- where you stand, per league ---
+    for row in state.get("prize_status", []) or []:
+        lid = html.escape(str(row.get("league_id")))
+        if row.get("rank") is None:
+            lines.append(f"\n<b>L{lid}</b> · standings not live yet")
+            continue
+        current = html.escape(str((row.get("current_prize") or {}).get("prize") or "outside prize"))
+        lines.append(f"\n<b>L{lid}</b> · rank {int(row['rank'])} · {current}")
+        nxt = row.get("next_target") or {}
+        prob = row.get("probability") or {}
+        if nxt:
+            bit = f"  → {html.escape(str(nxt.get('prize')))}"
+            if row.get("gap_to_next_target") is not None:
+                bit += f" {_safe_number(row.get('gap_to_next_target')):.0f} pts"
+            if prob.get("available"):
+                bit += f" · P(top10) {_safe_number(prob.get('p_top_10')):.1f}%"
+            lines.append(bit)
+
+    # --- monthly, only when there is real data ---
+    for row in (state.get("monthly_status") or [])[:2]:
+        if row.get("rank") is not None:
+            prize = html.escape(str((row.get("prize") or {}).get("prize") or "monthly"))
+            lines.append(f"📅 L{row.get('league_id')} monthly · rank {int(row['rank'])} · "
+                         f"{_safe_number(row.get('gap_to_first')):.0f} to 1st · {prize}")
+
+    # --- live standing ---
+    swing = state.get("live_swing") or {}
+    if swing:
+        rivals = swing.get("rivals") or []
+        text = f"\n⚡ <b>Live:</b> us {_safe_number(swing.get('our_live_points')):.0f} pts"
+        if rivals:
+            top = rivals[0]
+            text += f" · leader {_safe_number(top.get('live_points')):.0f} ({_safe_number(top.get('swing_vs_us')):+.0f})"
+        lines.append(text)
+
+    # --- sharp money (rival transfer consensus) ---
+    moves = state.get("transfer_consensus") or []
+    if moves:
+        lines.append("\n🔄 <b>Sharp money</b>")
+        for m in moves[:5]:
+            lines.append(
+                f"  {html.escape(str(m.get('name') or m.get('element')))}  "
+                f"+{_safe_number(m.get('weighted_in_pct')):.0f}% / −{_safe_number(m.get('weighted_out_pct')):.0f}%"
+            )
+
+    # --- closest sharp rivals ---
+    cohort = sorted(
+        state.get("cohort") or [],
+        key=lambda r: -_safe_number(r.get("live_sharpness", r.get("historical_score", 50)), 50),
+    )[:5]
+    if cohort:
+        lines.append("\n🚨 <b>Sharp rivals</b>")
+        for r in cohort:
+            act = (r.get("activity") or {}).get("archetype_live") or r.get("archetype") or ""
+            score = _safe_number(r.get("live_sharpness", r.get("historical_score", 50)), 50)
+            tail = f" · {html.escape(str(act))}" if act else f" · tier {html.escape(str(r.get('tier') or '?'))}"
+            lines.append(f"  {html.escape(str(r.get('team_name') or 'Unknown'))} · sharp {score:.0f}{tail}")
+
+    # --- footer ---
+    market = state.get("market_signals") or []
+    actionable = sum(1 for row in market
+                     if _market_direction(row) in {"rise", "fall"} or row.get("chance_next") is not None)
+    reg = (state.get("registry") or {}).get("status")
+    foot = f"\n<i>{int(state.get('cohort_count', 0))} rivals tracked · {actionable} market signals"
+    if str(reg).lower() == "final":
+        foot += " · registry FINAL"
+    foot += "</i>"
+    lines.append(foot)
+
     return _safe_card(lines)
 
 
@@ -1177,52 +1131,20 @@ def _projection_label(value):
 
 
 def war_room_text(section="overview", state=None):
-    """Render a compact advisory card; never mutate the user's FPL team."""
+    """Render a compact advisory card; never mutate the user's FPL team.
+
+    Sections: overview (the lean league_text card), rivals, captain, market.
+    Prize race / transfer radar / registry / attack-plan were folded into the
+    overview or dropped in the war-room revamp.
+    """
     state, missing = _league_state_or_message(state)
     if missing:
         return missing
     event = state.get("event", "?")
     mode = state.get("mode") or {}
-    registry = state.get("registry") or {}
-    as_of = html.escape(str(state.get("as_of") or "unknown")[:19].replace("T", " "))
 
     if section == "overview":
         return league_text(state)
-
-    if section == "prize":
-        lines = [f"🎯 <b>PRIZE RACE — GW{event}</b>", f"Strategy: <b>{html.escape(str(mode.get('mode', 'Neutral')))}</b>"]
-        for row in state.get("prize_status", []) or []:
-            lid = html.escape(str(row.get("league_id")))
-            if row.get("rank") is None:
-                lines.append(f"\n<b>L{lid}</b> • standings start after GW1")
-            else:
-                current = html.escape(str((row.get("current_prize") or {}).get("prize") or "outside prize bands"))
-                lines.append(f"\n<b>L{lid}</b> • rank {int(row['rank'])} • {current}")
-                target = row.get("next_target") or {}
-                if target:
-                    lines.append(
-                        f"Next: {html.escape(str(target.get('prize')))} • "
-                        f"gap {_safe_number(row.get('gap_to_next_target')):.0f} pts"
-                    )
-                if row.get("drop_buffer") is not None:
-                    lines.append(f"Safety buffer: {_safe_number(row.get('drop_buffer')):.0f} pts")
-                probability = row.get("probability") or {}
-                if probability.get("available"):
-                    lines.append(
-                        f"Monte Carlo: expected #{_safe_number(probability.get('expected_rank')):.0f} • "
-                        f"top 10 {_safe_number(probability.get('p_top_10')):.1f}% • "
-                        f"top 40 {_safe_number(probability.get('p_top_40')):.1f}%"
-                    )
-            special = row.get("active_special") or []
-            if special:
-                top = html.escape(str(special[0].get("prize")))
-                lines.append(f"⚡ GW{event} special: winner {top}; top {special[-1].get('rank_to')} paid")
-        for row in (state.get("monthly_status") or [])[:2]:
-            prize = html.escape(str((row.get("prize") or {}).get("prize") or "monthly prize"))
-            rank = "awaiting scores" if row.get("rank") is None else f"rank {int(row['rank'])}, {_safe_number(row.get('gap_to_first')):.0f} pts to first"
-            lines.append(f"📅 L{row.get('league_id')}: {rank} • {prize}")
-        lines.append(f"\n<i>Risk model is directional, not a guarantee • updated {as_of} UTC</i>")
-        return _safe_card(lines)
 
     if section == "rivals":
         rivals = sorted(
@@ -1243,31 +1165,12 @@ def war_room_text(section="overview", state=None):
         lines.append("\n<i>Scores combine previous-season evidence with live behaviour; they are not copied blindly.</i>")
         return _safe_card(lines)
 
-    if section == "transfers":
-        moves = state.get("transfer_consensus") or []
-        lines = [f"🔄 <b>SHARP TRANSFER RADAR — GW{state.get('exposure_event') or event}</b>"]
-        if not moves:
-            lines.extend([
-                "Locked rival transfers are not trustworthy yet.",
-                f"Trusted squads: {state.get('trusted_pick_count', 0)}/{state.get('cohort_count', 0)}.",
-                "This unlocks only after the deadline and two identical pick reads.",
-            ])
-        for row in moves[:12]:
-            net = _safe_number(row.get("weighted_in_pct")) - _safe_number(row.get("weighted_out_pct"))
-            lines.append(
-                f"• <b>{html.escape(str(row.get('name') or row.get('element')))}</b> • "
-                f"in {_safe_number(row.get('weighted_in_pct')):.1f}% / out {_safe_number(row.get('weighted_out_pct')):.1f}% "
-                f"(net {net:+.1f})"
-            )
-        lines.append("\n<i>Consensus is evidence, never an automatic transfer instruction.</i>")
-        return _safe_card(lines)
-
     if section == "captain":
         exposure = sorted(
             (state.get("player_exposure") or {}).values(),
             key=lambda row: (-_safe_number(row.get("captain_share")), -_safe_number(row.get("effective_ownership"))),
         )
-        lines = [f"👑 <b>CAPTAIN BATTLE — GW{state.get('exposure_event') or event}</b>"]
+        lines = [f"👑 <b>RIVAL CAPTAINS — GW{state.get('exposure_event') or event}</b>"]
         pending = load_pending() or {}
         captain = pending.get("captain") or {}
         if captain:
@@ -1290,61 +1193,10 @@ def war_room_text(section="overview", state=None):
         lines.append(f"\nMode <b>{html.escape(str(mode.get('mode', 'Neutral')))}</b>: adjustment stays inside xPts guardrails.")
         return _safe_card(lines)
 
-    if section in {"market", "market_fall", "market_rise", "market_availability"}:
-        return _market_card(state, section)
+    if section == "market":
+        return _market_card(state, "market")
 
-    if section == "registry":
-        status = html.escape(str(registry.get("status") or "unknown").upper())
-        lines = [f"🔒 <b>DEADLINE REGISTRY — GW{event}</b>", f"Status: <b>{status}</b>"]
-        for league in state.get("leagues") or []:
-            complete = "✅ complete" if league.get("complete") else "⚠️ partial"
-            lines.append(
-                f"• L{league.get('league_id')} • {int(league.get('member_count', 0)):,} managers • "
-                f"{league.get('pages', 0)} pages • {complete}"
-            )
-        digest = str(registry.get("membership_hash") or "")
-        if digest:
-            lines.append(f"Membership fingerprint: <code>{html.escape(digest[:12])}</code>")
-        if registry.get("finalized_at"):
-            lines.append(f"Finalized: {html.escape(str(registry['finalized_at'])[:19])} UTC")
-        else:
-            lines.append("Late entrants are still accepted and re-read on every scheduled scan.")
-            lines.append("After deadline, membership freezes and locked picks are validated twice.")
-        lines.append(f"Snapshot: {as_of} UTC")
-        return _safe_card(lines)
-
-    if section == "attack":
-        strategy = html.escape(str(mode.get("mode") or "Neutral"))
-        reason = html.escape(str(mode.get("reason") or "No live prize gap yet."))
-        lines = [f"⚔️ <b>ATTACK PLAN — GW{event}</b>", f"Current posture: <b>{strategy}</b>", f"Why: {reason}"]
-        reference = mode.get("reference_rival") or {}
-        if reference:
-            lines.append(
-                f"Reference rival: {html.escape(str(reference.get('team_name') or reference.get('entry')))} "
-                f"({_safe_number(reference.get('gap')):+.0f} pts vs us)"
-            )
-        if strategy == "Protect":
-            lines.extend([
-                "1. Keep the highest-xPts legal plan.",
-                "2. Cover dangerous sharp-manager captain EO only within the 0.5 xPts guardrail.",
-                "3. Avoid unnecessary hits; defend the current prize band and buffer.",
-            ])
-        elif strategy == "Chase":
-            lines.extend([
-                "1. Keep the highest-xPts legal transfer core.",
-                "2. Seek lower-owned captain upside only within the 1.0 xPts guardrail.",
-                "3. Spend variance where it can cross a prize band, not on random differentials.",
-            ])
-        else:
-            lines.extend([
-                "1. Optimize expected points; it is too early for forced differentiation.",
-                "2. Use sharp-manager moves as evidence, not instructions.",
-                "3. Preserve flexibility and wait for trusted post-deadline squads.",
-            ])
-        lines.append("\n🛡️ <b>Safety:</b> this card cannot execute transfers. /simulate builds a fresh plan; only your Approve can submit it.")
-        return _safe_card(lines)
-
-    return war_room_text("overview", state)
+    return league_text(state)
 
 
 def refresh_league_intelligence():
@@ -1573,14 +1425,6 @@ def main():
         rows.append([InlineKeyboardButton("⬅️ Main Menu", callback_data="menu_main")])
         return InlineKeyboardMarkup(rows)
 
-    def market_kb():
-        buttons = [InlineKeyboardButton(label, callback_data=callback) for label, callback in MARKET_SECTIONS]
-        return InlineKeyboardMarkup([
-            buttons[:2],
-            buttons[2:],
-            [InlineKeyboardButton("⬅️ War Room", callback_data="menu_league")],
-        ])
-
     def plan_action_kb():
         plan = load_pending() or {}
         if _plan_is_executable(plan):
@@ -1636,7 +1480,7 @@ def main():
             "❌ Reject — discard the pending plan\n"
             "🎩 Chip — stage a chip (wildcard/freehit/benchboost/triplecaptain)\n"
             "📜 History — last 6 GWs results\n"
-            "🏆 League War Room — prize race, sharp rivals, transfers, captains, market and attack plan\n\n"
+            "🏆 League War Room — where you stand, the sharp money, and your closest rivals\n\n"
             "Semua boleh ditekan terus dari menu.",
             reply_markup=main_kb(),
         )
@@ -1784,7 +1628,7 @@ def main():
                 "❌ Reject — discard the pending plan\n"
                 "🎩 Chip — stage a chip (wildcard/freehit/benchboost/triplecaptain)\n"
                 "📜 History — last 6 GWs results\n"
-                "🏆 League War Room — prize race, sharp rivals, transfers, captains, market and attack plan",
+                "🏆 League War Room — where you stand, the sharp money, and your closest rivals",
                 reply_markup=main_kb(),
             )
         elif data == "menu_main":
@@ -1843,7 +1687,7 @@ def main():
             await query.message.reply_text(
                 war_room_text(section),
                 parse_mode="HTML",
-                reply_markup=market_kb() if section.startswith("market") else war_room_kb(),
+                reply_markup=war_room_kb(),
             )
         elif data.startswith("menu_"):
             await dispatch_menu(data, query.message.reply_text, uid=uid)
