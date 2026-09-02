@@ -2,15 +2,15 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app:/app/services/api \
+    PYTHONPATH=/app:/app/api \
     FPL_DATA_DIR=/app/data
 
 WORKDIR /app
-COPY services/api/requirements.txt ./services/api/requirements.txt
-RUN pip install --no-cache-dir -r services/api/requirements.txt
+COPY api/requirements.txt ./api/requirements.txt
+RUN pip install --no-cache-dir -r api/requirements.txt
 
-COPY services/api/app ./services/api/app
-COPY scripts ./scripts
+COPY api/app ./api/app
+COPY infra/scripts ./scripts
 COPY data ./data
 COPY reports ./reports
 
