@@ -31,20 +31,32 @@ secret buried in old history. Legacy repos are archived read-only for reference.
 
 ### Phase C — carry-forward fixes (own PRs, not bundled)
 - [ ] One `telegram_notify` helper — replace the 3 divergent senders; retry once, never raise
-- [ ] `deliver_stdout` / equivalents never fail the unit on a delivery error
-- [ ] CI wired as a *required* status check (not just present)
-- [ ] Engine run-lock (flock) so overlapping runs can't race `data/processed/*`
-- [ ] Decouple "GCS publish failed" from "no league context" (don't force `lineup_only_safe` on a push 404)
-- [ ] Resolve autopilot draft PR #7 (wildcard rebuild) — the abort guard is inverted; fix + test or drop
+- [x] `deliver_stdout` / equivalents never fail the unit on a delivery error (PR #5)
+- [x] CI wired as a *required* status check (Phase A — strict + both contexts)
+- [x] Engine run-lock (flock) so overlapping runs can't race `data/processed/*` (PR #5)
+- [x] Decouple "GCS publish failed" from "no league context" (PR #5)
+- [ ] `telegram_notify` adopted in `bot/telegram_bot.py` too (PR #5 did the jobs; the bot has its own PTB path)
+- [ ] Resolve autopilot draft PR #7 (wildcard rebuild) — abort guard is inverted. Blocked: the wildcard feature isn't in the monorepo yet; port + fix + test together.
+- [ ] Synthetic fixture set under `*/tests/fixtures/` to un-quarantine the ~18 `deferred/` tests
 
-### Phase D — cutover (after GW3 / post-Thursday)
-- [ ] Point scout `deploy-api.yml` equivalent at `fpl/api` (or new workflow), deploy from a tag
-- [ ] Repoint Netlify build to `fpl/web`
-- [ ] Redeploy VM `engine/` + `bot/` from a tag; re-enable timers one at a time
-- [ ] Resume Cloud Scheduler jobs one at a time, watch one cycle each
-- [ ] Delete orphaned `fpl-scout-dashboard` Cloud Run service
-- [ ] Archive `fpl-league-58005-scout` and `fpl-autopilot` (Settings → Archive)
-- [ ] Update `docs/RUNBOOK.md` *Last known-good*
+### Phase D — cutover (owner-gated: after GW3 / post-Thursday)
+
+**Decisions needed before starting:**
+1. **API `data/` bootstrap.** `api/Dockerfile` currently `COPY data ./data` (the 141 MB fallback, not migrated). Options: (a) GCS-only — drop `COPY data`, API reads everything from `FPL_SNAPSHOT_BUCKET`; (b) build step syncs a minimal bootstrap from GCS into the image. Pick before rewriting `infra/cloudbuild.api.yaml`.
+2. **Artifact Registry repo** — keep `_REPOSITORY: fpl-scout` or rename to `fpl`.
+3. **VM deploy mechanism** — there is no automated one today (manual file copy per the old deploy contract). Add `infra/deploy/vm-sync.sh` (checkout tag → back up → rsync `engine/`+`bot/`+`infra/deploy` to `/opt/fpl-autopilot` → restart units → verify), or keep manual.
+
+**Steps (each reversible until the archive):**
+- [ ] Rewrite `api/Dockerfile*` + `infra/cloudbuild.api.yaml` for monorepo paths (`api/…`), per decision 1
+- [ ] Add `.github/workflows/deploy-api.yml` (adapt `infra/legacy-workflows/deploy-api.yml`: `branches: [main]`, `paths: api/** infra/cloudbuild.api.yaml`, `--config infra/cloudbuild.api.yaml`, keep the verify block)
+- [ ] Set repo vars on `fpl`: `GCP_PROJECT_ID`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_DEPLOY_SERVICE_ACCOUNT` (+ a `production` environment)
+- [ ] Tag `v2026.09.XX`; run the deploy workflow; confirm `/health` `revision` == tag SHA
+- [ ] Netlify: relink the site from `fpl-league-58005-scout` to `fpl`, base `web/` (UI action); redeploy; check the dashboard
+- [ ] VM: `vm-sync.sh` (or manual) from the tag; `systemctl enable --now` the write-timers one at a time
+- [ ] `gcloud scheduler jobs resume …` — one job, watch one cycle, then the next
+- [ ] `gcloud run services delete fpl-scout-dashboard --region us-central1 --project irfan-374115`
+- [ ] Archive `fpl-league-58005-scout` and `fpl-autopilot` (Settings → Archive) — **do this last**
+- [ ] Update `docs/RUNBOOK.md` *Last known-good* table
 
 ## Do NOT migrate
 `config/credentials.env`, `config/settings.json` (chat/user ids), `*session*.json`,

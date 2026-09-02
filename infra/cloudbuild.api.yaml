@@ -1,3 +1,6 @@
+# NOT MONOREPO-READY. Paths still point at the old scout layout
+# (services/api/, COPY data, COPY scripts). Rewrite for api/ per
+# docs/MIGRATION.md Phase D decision 1 before any deploy.
 steps:
   - name: gcr.io/cloud-builders/docker
     args:
