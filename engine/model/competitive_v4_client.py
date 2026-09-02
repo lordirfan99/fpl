@@ -52,10 +52,11 @@ def fetch_competitive_v4(league_id: int, gameweek: int, *, timeout: int = 30,
         if not isinstance(payload.get("plan"), dict):
             raise CompetitiveV4Error("V4 packet has no complete plan")
     else:
-        # A safe-hold packet may still contain a fresh, valid league model.
-        # It must never be treated as executable, but it is the correct input
-        # for constructing the plan that will subsequently bind the packet.
-        if packet_status not in ("safe_hold", "valid", "applied"):
+        # A safe-hold OR advisory packet may still carry a fresh, valid league
+        # model. It must never be treated as executable, but it is the correct
+        # input for constructing the plan. "advisory" is what the API returns
+        # for a finalized-GW decision packet (competitor-aware, not executable).
+        if packet_status not in ("safe_hold", "advisory", "valid", "applied"):
             raise CompetitiveV4Error(f"unexpected V4 packet status: {packet_status!r}")
         if competitive.get("phase") is None or competitive.get("alignment") is None:
             raise CompetitiveV4Error("V4 competitive context is incomplete")

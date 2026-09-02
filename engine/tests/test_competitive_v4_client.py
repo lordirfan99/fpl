@@ -80,6 +80,18 @@ class CompetitiveV4ClientTests(unittest.TestCase):
         self.assertTrue(result["context_only"])
 
     @mock.patch.object(client.urllib.request, "urlopen")
+    def test_planner_accepts_advisory_finalized_gw_context(self, urlopen):
+        # The API returns packet_status "advisory" for a finalized-GW decision
+        # packet — competitor-aware, not executable. Planning must accept it.
+        payload = self.payload()
+        payload.update({"packet_status": "advisory", "executable": False, "plan": None})
+        urlopen.return_value = _Response(payload)
+        result = client.fetch_competitive_v4(58005, 2, require_executable_plan=False)
+        self.assertEqual(result["packet_status"], "advisory")
+        self.assertEqual(result["context_status"], "ready")
+        self.assertTrue(result["context_only"])
+
+    @mock.patch.object(client.urllib.request, "urlopen")
     def test_planner_rejects_incomplete_safe_hold_context(self, urlopen):
         payload = self.payload()
         payload.update({"packet_status": "safe_hold", "executable": False, "plan": None})
