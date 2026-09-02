@@ -1,0 +1,79 @@
+name: Deploy read API to Cloud Run
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "services/api/**"
+      - "cloudbuild.api.yaml"
+      - "data/bootstrap_cache.json"
+      - "data/fixtures_cache.json"
+      - "data/gw*_league*_data.json"
+      - "data/journal/**"
+      - ".github/workflows/deploy-api.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-fpl-api-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Build and deploy Cloud Run API
+        run: >-
+          gcloud builds submit
+          --project "${{ vars.GCP_PROJECT_ID }}"
+          --gcs-source-staging-dir "gs://${{ vars.GCP_PROJECT_ID }}-fpl-github-build-source/source"
+          --substitutions "_GIT_SHA=${{ github.sha }}"
+          --config cloudbuild.api.yaml .
+      - name: Verify production API
+        run: |
+          python - <<'PY'
+          import json, urllib.request
+          base = "https://fpl-scout-api-bztsnhv3ea-uc.a.run.app"
+          with urllib.request.urlopen(base + "/health", timeout=30) as response:
+              payload = json.load(response)
+          assert payload["status"] == "ok", payload
+          assert payload["competitive_model"] == "competitive-v4.0", payload
+          assert payload["dashboard_writes_enabled"] is False, payload
+          assert payload["writes_enabled"] is False, payload
+          assert payload["execution_authority"] == "manual_fpl", payload
+          assert payload["revision"] == "${{ github.sha }}", payload
+          with urllib.request.urlopen(base + "/ready", timeout=60) as response:
+              readiness = json.load(response)
+          assert readiness["ready"] is True, readiness
+          with urllib.request.urlopen(base + "/v1/leagues/58005/summary?page=1&page_size=50", timeout=60) as response:
+              summary = json.load(response)
+          assert summary["managers"] and len(summary["managers"]) <= 50, summary
+          assert all("squad" not in row for row in summary["managers"]), summary
+          with urllib.request.urlopen(base + "/v1/me", timeout=30) as response:
+              identity = json.load(response)
+          gw = identity["current_gameweek"]
+          with urllib.request.urlopen(base + f"/v1/recommendations/current?league_id=58005&gw={gw}", timeout=60) as response:
+              recommendation = json.load(response)
+          assert recommendation["competitive"]["model_version"] == "competitive-v4.0", recommendation
+          assert recommendation["meta"]["quality_status"] == "valid", recommendation["meta"]
+          assert recommendation["competitive"]["writes_enabled"] is False, recommendation["competitive"]
+          with urllib.request.urlopen(base + f"/v1/decision/current?league_id=58005&gw={gw}", timeout=60) as response:
+              decision = json.load(response)
+          assert decision["writes_enabled"] is False, decision
+          assert decision["executable"] is False, decision
+          assert decision["execution_authority"] == "manual_fpl", decision
+          assert decision["plan"] is None, decision
+          print("Cloud Run read-only API is healthy")
+          PY

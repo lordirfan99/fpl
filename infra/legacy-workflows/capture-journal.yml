@@ -1,0 +1,43 @@
+name: Capture pre-deadline journal evidence
+
+# Scheduled on GCP Cloud Scheduler -> Cloud Run Job `fpl-capture-journal`.
+# Kept here as a manual fallback only.
+on:
+  workflow_dispatch:
+    inputs:
+      gameweek:
+        description: "Optional target GW; blank uses the next official event"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: capture-predeadline-journal
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install google-cloud-storage
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - name: Capture immutable deadline evidence
+        env:
+          FPL_JOURNAL_BUCKET: ${{ vars.FPL_JOURNAL_BUCKET }}
+        run: >-
+          python scripts/capture_predeadline_journal.py
+          --require-cloud
+          ${{ inputs.gameweek && format('--gw {0}', inputs.gameweek) || '' }}

@@ -1,0 +1,39 @@
+name: Refresh FPL Fixtures
+
+# Scheduled on GCP Cloud Scheduler -> Cloud Run Job `fpl-refresh-fixtures`.
+# Kept here as a manual fallback only.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: refresh-fpl-fixtures
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Fetch official fixture horizon
+        run: python scripts/fetch_fixture_horizon.py
+      - name: Publish verified live caches
+        run: |
+          gcloud storage cp data/fixtures_cache.json "gs://${{ vars.FPL_JOURNAL_BUCKET }}/snapshots/fixtures_cache.json"
+          gcloud storage cp data/bootstrap_cache.json "gs://${{ vars.FPL_JOURNAL_BUCKET }}/snapshots/bootstrap_cache.json"
+      - name: Verify published provenance
+        run: |
+          gcloud storage cat "gs://${{ vars.FPL_JOURNAL_BUCKET }}/snapshots/bootstrap_cache.json" | python -c "import json,sys; p=json.load(sys.stdin); assert p['_meta']['source']=='official-fpl-api/bootstrap-static'; assert len(p['elements']) >= 400; print(p['_meta'])"
+          gcloud storage cat "gs://${{ vars.FPL_JOURNAL_BUCKET }}/snapshots/fixtures_cache.json" | python -c "import json,sys; p=json.load(sys.stdin); assert p['source']=='official-fpl-api'; assert p['fixture_count'] >= 300; assert len(p['content_sha256'])==64; print({'fetched_at':p['fetched_at'],'fixtures':p['fixture_count'],'sha256':p['content_sha256']})"
