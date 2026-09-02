@@ -23,6 +23,7 @@ import os
 import subprocess
 import sys
 import datetime
+import hmac
 import threading
 import time
 import uuid
@@ -64,6 +65,11 @@ PYTHON = venv_python(BASE)
 # writes 'executing'. data/processed/ is gitignored, so this never ships.
 LOCK_FILE = os.path.join(BASE, "data", "processed", "approve.lock")
 LOCK_STALE_SECONDS = 15 * 60
+# FPL writes are deliberately opt-in at the service boundary.  A missing value
+# is safe: it leaves Telegram fully usable for read-only planning, but prevents
+# an accidental executor call after a new deployment.
+EXECUTION_ENABLED_ENV = "FPL_TELEGRAM_EXECUTION_ENABLED"
+DRY_RUN_ENV = "FPL_TELEGRAM_DRY_RUN"
 # Keep/Exclude player preferences (config/player_prefs.json) - user pins
 # players via bot buttons; the pipeline enforces them in the solver.
 PREFS_FILE = os.path.join(BASE, "config", "player_prefs.json")
@@ -526,7 +532,40 @@ def release_approve_lock():
         pass
 
 
-def approve_plan(uid=None):
+def execution_enabled():
+    """Whether this bot instance is explicitly allowed to submit FPL writes."""
+    return (os.environ.get(EXECUTION_ENABLED_ENV) == "1"
+            and os.environ.get(DRY_RUN_ENV, "1") != "1")
+
+
+def execution_confirmation(uid=None):
+    """Return the confirmation token bound to the current immutable plan.
+
+    `/approve` is intentionally a preview step.  The second Telegram tap must
+    carry this short token; the callback resolves it against the full plan hash
+    immediately before reaching the executor.
+    """
+    if not authorized(uid):
+        return None, "❌ Not authorized to approve plans."
+    if not execution_enabled():
+        return None, "❌ Execution is disabled on this bot. No FPL write was sent."
+    plan = load_pending()
+    if not plan:
+        return None, "No pending plan to approve."
+    if not _plan_is_executable(plan):
+        return None, "❌ This plan is not executable. Run /simulate to generate a fresh V4 plan."
+    plan_id = plan.get("plan_id")
+    if not isinstance(plan_id, str) or canonical_plan_hash(plan) != plan_id:
+        return None, "❌ Plan identity mismatch — run /simulate to regenerate it."
+    return short_id(plan_id), (
+        f"⚠️ <b>CONFIRM FPL EXECUTION</b>\n"
+        f"Plan: <code>{html.escape(short_id(plan_id))}</code> • GW{plan.get('gw')}\n\n"
+        "Tap <b>Execute this exact plan</b> to submit its transfers, lineup and captain to FPL. "
+        "This cannot be undone here."
+    )
+
+
+def approve_plan(uid=None, approved_plan_id=None):
     """Approve the pending plan and execute it.
 
     Sol audit P0-1: REQUIRES an authorized immutable Telegram user id.
@@ -534,6 +573,16 @@ def approve_plan(uid=None):
     """
     if not authorized(uid):
         return "❌ Not authorized to approve plans."
+    if not execution_enabled():
+        return "❌ Execution is disabled on this bot. No FPL write was sent."
+    # A command or old inline button never reaches the executor by itself. The
+    # callback must bind this approval to the exact canonical packet it showed.
+    plan = load_pending()
+    plan_id = plan.get("plan_id") if plan else None
+    if (not isinstance(approved_plan_id, str) or not isinstance(plan_id, str)
+            or not hmac.compare_digest(approved_plan_id, plan_id)):
+        return ("❌ Confirmation is missing or no longer matches the current plan. "
+                "Run /approve again and confirm the displayed plan hash.")
     if not acquire_approve_lock():
         return ("❌ Another approval is already running (lock held).\n"
                 "If a previous run hung, wait up to 15 minutes — the lock "
@@ -1528,10 +1577,10 @@ def main():
             action = ((((plan.get("decision_summary") or {}).get("team_diff") or {})
                        .get("approval_action")) or "APPROVE")
             label = {
-                "ACKNOWLEDGE": "✅ Acknowledge Hold",
-                "APPLY TEAM SHEET": "✅ Apply Team Sheet",
-                "APPROVE TRANSFER + TEAM SHEET": "✅ Approve Transfer + XI",
-            }.get(action, "✅ Approve")
+                "ACKNOWLEDGE": "✅ Review hold",
+                "APPLY TEAM SHEET": "✅ Review team sheet",
+                "APPROVE TRANSFER + TEAM SHEET": "✅ Review execution",
+            }.get(action, "✅ Review execution")
             return InlineKeyboardMarkup([[
                 InlineKeyboardButton(label, callback_data="menu_approve"),
                 InlineKeyboardButton("❌ Reject", callback_data="menu_reject"),
@@ -1616,7 +1665,15 @@ def main():
     async def cmd_approve(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not await guard(update):
             return
-        await update.message.reply_text(approve_plan(update.effective_user.id), reply_markup=main_kb())
+        token, message = execution_confirmation(update.effective_user.id)
+        if token:
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("⚠️ Execute this exact plan", callback_data=f"execute:{token}"),
+                InlineKeyboardButton("Cancel", callback_data="menu_main"),
+            ]])
+            await update.message.reply_text(message, parse_mode="HTML", reply_markup=keyboard)
+        else:
+            await update.message.reply_text(message, reply_markup=main_kb())
 
     async def cmd_reject(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not await guard(update):
@@ -1682,7 +1739,15 @@ def main():
         elif data == "menu_simulate":
             await simulate_and_reply(reply)
         elif data == "menu_approve":
-            await reply(approve_plan(uid), reply_markup=main_kb())
+            token, message = execution_confirmation(uid)
+            if token:
+                keyboard = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("⚠️ Execute this exact plan", callback_data=f"execute:{token}"),
+                    InlineKeyboardButton("Cancel", callback_data="menu_main"),
+                ]])
+                await reply(message, parse_mode="HTML", reply_markup=keyboard)
+            else:
+                await reply(message, reply_markup=main_kb())
         elif data == "menu_reject":
             await reply(reject_plan(uid), reply_markup=main_kb())
         elif data == "menu_chip":
@@ -1772,6 +1837,17 @@ def main():
             )
         elif data.startswith("menu_"):
             await dispatch_menu(data, query.message.reply_text, uid=uid)
+        elif data.startswith("execute:"):
+            token = data.removeprefix("execute:")
+            plan = load_pending() or {}
+            plan_id = plan.get("plan_id")
+            if not isinstance(plan_id, str) or not hmac.compare_digest(token, short_id(plan_id)):
+                await query.message.reply_text(
+                    "❌ This confirmation is stale or does not match the current plan. Run /approve again.",
+                    reply_markup=main_kb(),
+                )
+            else:
+                await query.message.reply_text(approve_plan(uid, plan_id), reply_markup=main_kb())
         elif data.startswith("keep_") or data.startswith("exclude_"):
             if not authorized(uid):
                 await query.message.reply_text("❌ Not authorized to edit keep/exclude prefs.", reply_markup=main_kb())
