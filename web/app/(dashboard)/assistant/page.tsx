@@ -1,8 +1,10 @@
 import { ArrowRight, Clock3, ListChecks, ShieldCheck } from "lucide-react";
+import { ChipNotice } from "@/components/chip-notice";
 import { MetricCard } from "@/components/metric-card";
 import { PageHeader } from "@/components/page-header";
 import { getCompetitiveRecommendation } from "@/lib/competitive";
 import { getDashboardData } from "@/lib/data";
+import { getLiveTeam } from "@/lib/live";
 import { deriveSeasonContext } from "@/lib/season";
 import { formatMYT } from "@/lib/format";
 
@@ -11,9 +13,11 @@ const number = (value?: number) => typeof value === "number" ? value.toFixed(1) 
 export default async function AssistantPage() {
   const review = await getDashboardData().catch(() => null);
   const rec = review ? await getCompetitiveRecommendation(review.leagueId, review.gameweek).catch(() => null) : null;
+  const live = review ? await getLiveTeam(undefined, review.leagueId).catch(() => null) : null;
 
   const season = review ? deriveSeasonContext(review.bootstrap.events, { finalizedGw: review.gameweek }) : null;
   const targetGameweek = season?.nextDeadlineGw;
+  const liveChipForTarget = live && live.gameweek === targetGameweek ? live.active_chip : null;
   const deadline = season?.nextDeadline ? new Date(season.nextDeadline) : null;
   const hoursRemaining = season?.hoursToDeadline ?? null;
 
@@ -32,6 +36,8 @@ export default async function AssistantPage() {
       description="One locally derived, read-only recommendation. Review it, then make every transfer, captain and lineup change yourself in the official FPL app."
       updated={formatMYT(rec?.meta.snapshotAt)}
     />
+
+    <ChipNotice targetGameweek={targetGameweek} liveActiveChip={liveChipForTarget} />
 
     <section className="decision-hero">
       <div>

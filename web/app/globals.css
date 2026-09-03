@@ -128,3 +128,15 @@ html,body{max-width:100%;overflow-x:hidden}
 .nav-section{display:grid;gap:5px;margin-bottom:14px}
 .nav-section-label{padding:0 12px 2px;color:#b79ec0;font-size:8px;font-weight:850;letter-spacing:.14em;text-transform:uppercase}
 @media(max-width:1080px){.nav-section-label{display:none}.nav-section{margin-bottom:10px;justify-items:center}}
+
+/* Chip-active notice (Assistant / My Team) */
+.chip-note{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border:1px solid rgba(0,222,160,.35);border-radius:12px;background:linear-gradient(135deg,#eefdf7,#f3f0ff)}
+.chip-note .status-dot{margin-top:3px;flex:none}
+.chip-note strong{display:block;color:var(--purple);font-size:12px}
+.chip-note p{margin:4px 0 0;color:var(--muted);font-size:10px;line-height:1.5}
+.chip-note p a{color:var(--mint-dark);font-weight:800}
+.chip-undo{padding:0;border:0;background:none;color:var(--mint-dark);font:inherit;font-weight:800;text-decoration:underline;cursor:pointer}
+.chip-ask{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 14px;border:1px dashed var(--line);border-radius:11px;background:var(--surface);color:var(--muted);font-size:10px}
+.chip-ask button{padding:5px 10px;border:1px solid var(--line);border-radius:7px;background:#fafafa;color:var(--purple);font-size:9px;font-weight:800;cursor:pointer}
+.chip-ask button:hover{border-color:var(--mint);background:#effcf7}
+.chip-ask button.quiet{color:var(--muted);font-weight:650}
