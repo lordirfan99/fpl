@@ -162,6 +162,31 @@ class TestCardIntegration(unittest.TestCase):
         card = plan_card(plan)
         self.assertIn("CONVERGE TO TEMPLATE", card)
         self.assertIn("differential LOCKED", card)
+        # the "why": the elite-template player the squad still lacks
+        self.assertIn("Template gap:", card)
+        self.assertIn("Haaland 90%", card)
+
+    def test_plan_card_tags_template_aligned_transfers(self):
+        from templates import plan_card
+        plan = {
+            "gw": 5, "deadline": "2026-09-20T11:00:00Z",
+            "target_starters": [{"id": 1, "name": "X", "position": "MID", "xpts": 5}],
+            "bench": [], "captain": {"id": 1}, "vice": {"id": 1},
+            "transfers": [
+                {"out_name": "Old", "in_name": "Haaland", "element_in": 2, "gain": 1.4},
+                {"out_name": "Old2", "in_name": "Punt", "element_in": 99, "gain": 0.2},
+            ],
+            "competitive": {
+                "elite_template": [{"element": 2, "name": "Haaland", "elite_percentage": 88}],
+                "template_gate": {"decision": "HOLD_TEMPLATE", "differential_allowed": True},
+            },
+        }
+        card = plan_card(plan)
+        self.assertIn("✓ = elite template", card)
+        haaland_line = next(ln for ln in card.splitlines() if "Haaland" in ln)
+        self.assertIn("✓", haaland_line)
+        punt_line = next(ln for ln in card.splitlines() if "Punt" in ln)
+        self.assertNotIn("✓", punt_line)
 
 
 if __name__ == "__main__":
