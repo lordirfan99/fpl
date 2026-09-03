@@ -249,7 +249,7 @@ def main():
     sys.path.insert(0, os.path.join(BASE, "model"))
     from fixture_engine import fixtures_by_team_gw
     from v4_projection import captain_rankings, project_player, select_vice
-    from calibration import calibration_summary, uncertainty_scale
+    from calibration import bias_adjustment, calibration_summary, uncertainty_scale
     fmap = fixtures_by_team_gw(fixtures, gw_ids)
     calibration = calibration_summary(
         os.path.join(BASE, "data", "processed", "residuals.csv"))
@@ -274,8 +274,14 @@ def main():
         v42_calibration = calibration_summary_v42(os.path.join(
             BASE, "data", "processed", "v42_residuals.csv"))
     decision_calibration = v42_calibration if projection_version == "competitive-v4.2" else calibration
+    # Rolling per-position bias correction: subtract the mean (predicted-actual)
+    # residual from the point estimate. Self-activating (0 until enough data),
+    # shrunk by sample size and hard-capped in calibration.bias_adjustment.
+    bias_by_pos = {p: bias_adjustment(decision_calibration, p) for p in ("GKP", "DEF", "MID", "FWD")}
+    _POINT_KEYS = ("xpts", "xpts_horizon", "expected_horizon",
+                   "risk_adjusted_xpts", "xpts_floor", "xpts_upside")
     print(f"projection={projection_version} | V4.1 calibration: {calibration} | "
-          f"uncertainty x{empirical_uncertainty:.2f}")
+          f"uncertainty x{empirical_uncertainty:.2f} | bias adj {bias_by_pos}")
     for el in elements:
         if not el.get("can_select"):
             continue
@@ -302,6 +308,16 @@ def main():
             forecast = project_player(
                 el, fmap, gw_so_far, gw_ids,
                 uncertainty_multiplier=empirical_uncertainty)
+
+        adj = bias_by_pos.get(pos, 0.0)
+        if adj:
+            for _k in _POINT_KEYS:
+                if forecast.get(_k) is not None:
+                    forecast[_k] = round(max(0.0, float(forecast[_k]) + adj), 3)
+            if isinstance(forecast.get("xpts_by_gw"), list):
+                forecast["xpts_by_gw"] = [round(max(0.0, float(v) + adj), 3)
+                                          for v in forecast["xpts_by_gw"]]
+
         players.append({
             "id": el["id"], "name": el["web_name"], "position": pos,
             "club": el["team"], "cost": int(el["now_cost"]),
