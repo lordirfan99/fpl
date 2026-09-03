@@ -1,0 +1,46 @@
+name: deploy · web to Netlify
+
+# Replaces the manual `netlify deploy`. Builds web/ with the Next.js plugin and
+# deploys to production on every merge to main that touches the dashboard.
+# Requires repo secrets: NETLIFY_AUTH_TOKEN, NETLIFY_SITE_ID.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "netlify.toml"
+      - ".github/workflows/deploy-web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Guard — secrets present
+        run: |
+          if [ -z "${NETLIFY_AUTH_TOKEN}" ] || [ -z "${NETLIFY_SITE_ID}" ]; then
+            echo "::error::Set repo secrets NETLIFY_AUTH_TOKEN and NETLIFY_SITE_ID first."
+            exit 1
+          fi
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      - name: Build + deploy (production)
+        run: >-
+          npx --yes netlify-cli@17 deploy --build --prod
+          --message "CI ${{ github.sha }}"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
