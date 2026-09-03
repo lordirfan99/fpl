@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import { getCompetitiveRecommendation } from "@/lib/competitive";
 import { getDashboardData } from "@/lib/data";
 import { deriveSeasonContext } from "@/lib/season";
+import { formatMYT } from "@/lib/format";
 
 const number = (value?: number) => typeof value === "number" ? value.toFixed(1) : "—";
 
@@ -29,7 +30,7 @@ export default async function AssistantPage() {
       eyebrow={`DECISION ASSISTANT · TARGET GW${targetGameweek ?? "—"}`}
       title="Your next deadline, made clear"
       description="One locally derived, read-only recommendation. Review it, then make every transfer, captain and lineup change yourself in the official FPL app."
-      updated={rec?.meta.snapshotAt ? new Date(rec.meta.snapshotAt).toLocaleString("en-MY", { dateStyle: "medium", timeStyle: "short" }) : undefined}
+      updated={formatMYT(rec?.meta.snapshotAt)}
     />
 
     <section className="decision-hero">
@@ -46,7 +47,7 @@ export default async function AssistantPage() {
 
     <section className="metric-grid">
       <MetricCard label="Action now" value={move ? "Transfer" : "Set XI"} detail={move ? "Model-supported candidate below" : "No move clears the model threshold"} tone={move ? "positive" : "default"} />
-      <MetricCard label="Target gameweek" value={`GW${targetGameweek ?? "—"}`} detail={deadline ? deadline.toLocaleString("en-MY", { dateStyle: "medium", timeStyle: "short" }) : "Deadline TBC"} />
+      <MetricCard label="Target gameweek" value={`GW${targetGameweek ?? "—"}`} detail={formatMYT(deadline) ?? "Deadline TBC"} />
       <MetricCard label="Elite alignment" value={alignment == null ? "—" : `${alignment.toFixed(0)}%`} detail={targetAlignment == null ? "Target pending" : `Target ${targetAlignment}%`} tone={alignment != null && targetAlignment != null && alignment >= targetAlignment ? "positive" : "warning"} />
       <MetricCard label="Snapshot quality" value={quality === "valid" ? "Valid" : quality === "unknown" ? "Pending" : "Invalid"} detail={rec ? `Reviewed GW${review?.gameweek}` : "Awaiting snapshot"} tone={quality === "valid" ? "positive" : "warning"} />
     </section>
@@ -79,7 +80,7 @@ export default async function AssistantPage() {
       <div className="section-heading"><div><span>WHY YOU CAN TRUST THIS</span><h2>Decision readiness</h2><p>Each status answers a different question, so &ldquo;valid&rdquo; is never confused with &ldquo;fresh&rdquo;.</p></div></div>
       <div className="validation-grid">
         <div className={quality === "valid" ? "passed" : "failed"}><ShieldCheck /><span>Snapshot: {quality}</span></div>
-        <div className={deadline && hoursRemaining != null && hoursRemaining > 0 ? "passed" : "failed"}><Clock3 /><span>Deadline: {deadline ? deadline.toLocaleString("en-MY", { dateStyle: "medium", timeStyle: "short" }) : "unknown"}</span></div>
+        <div className={deadline && hoursRemaining != null && hoursRemaining > 0 ? "passed" : "failed"}><Clock3 /><span>Deadline: {formatMYT(deadline) ?? "unknown"}</span></div>
         <div className="passed"><ListChecks /><span>Execution: manual — you apply changes in the official FPL app</span></div>
       </div>
     </section>

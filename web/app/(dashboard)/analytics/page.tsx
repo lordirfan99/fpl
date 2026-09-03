@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/page-header";
 import { getLeagueData } from "@/lib/data";
 import { analyzeElite } from "@/lib/elite";
 import type { Manager } from "@/lib/types";
+import { formatMYT } from "@/lib/format";
 
 type Row = { label: string; count: number; percentage: number };
 
@@ -37,7 +38,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const formations = grouped(data.managers.map(formation), data.managers.length).slice(0, 8), captains = grouped(data.managers.map((manager) => manager.captain || "Unknown"), data.managers.length).slice(0, 10);
   const points = histogram(data.managers.map((manager) => manager.gw_points), 10), costs = histogram(data.managers.map((manager) => manager.squad_cost).filter(Boolean), 1, "£");
   const average = data.managers.reduce((sum, manager) => sum + manager.gw_points, 0) / data.managers.length;
-  return <div className="page-stack"><PageHeader eyebrow={`LEAGUE ANALYTICS · GW${data.gameweek} ${data.liveProvisional ? "LIVE" : "SNAPSHOT"}`} title={`${selected.name} data lab`} description={data.liveProvisional ? "Live official FPL standings; final points and ranks may still change." : "Formation, points, value, captaincy and elite-vs-league ownership patterns from one captured gameweek."} updated={data.fetchedAt ? new Date(data.fetchedAt).toLocaleString("en-MY", { dateStyle: "medium", timeStyle: "short" }) : undefined} /><LeagueSwitcher selected={selected.id} pathname="/analytics" />
+  return <div className="page-stack"><PageHeader eyebrow={`LEAGUE ANALYTICS · GW${data.gameweek} ${data.liveProvisional ? "LIVE" : "SNAPSHOT"}`} title={`${selected.name} data lab`} description={data.liveProvisional ? "Live official FPL standings; final points and ranks may still change." : "Formation, points, value, captaincy and elite-vs-league ownership patterns from one captured gameweek."} updated={formatMYT(data.fetchedAt)} /><LeagueSwitcher selected={selected.id} pathname="/analytics" />
     <section className="execution-note"><div><strong>Snapshot, not a season trend</strong><p>This page explains the current captured league state. For weekly decisions, outcomes and lessons over time, use the <Link href="/journal">Season Journal</Link>.</p></div></section>
     <section className="metric-grid"><MetricCard label="Managers analyzed" value={data.managers.length.toLocaleString()} /><MetricCard label="League average" value={average.toFixed(1)} detail="GW points" /><MetricCard label="Elite average" value={elite.averageGw.toFixed(1)} detail={`${elite.elite.length} managers`} /><MetricCard label="Elite advantage" value={`${(elite.averageGw - average).toFixed(1)}`} detail="Points above league" tone="positive" /></section>
     <div className="elite-analysis-grid"><Chart title="Formation distribution" rows={formations} /><Chart title="GW points distribution" rows={points} /><Chart title="Captaincy concentration" rows={captains} /></div>
