@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.join(BASE, "optimizer"))
 sys.path.insert(0, os.path.join(BASE, "model"))
 sys.path.insert(0, os.path.join(BASE, "execution"))
 
-from squad_solver import SQUAD_QUOTA, solve_squad, solve_lineup  # noqa: E402
+from squad_solver import LINEUP_MAX, SQUAD_QUOTA, solve_lineup, solve_squad  # noqa: E402
 from plan_validation import validate_plan  # noqa: E402
 from proposal_binding import (  # noqa: E402
     canonical_plan_hash, input_fingerprint, settings_fingerprint)
@@ -458,13 +458,18 @@ def main():
     current_utility = squad_horizon_utility(
         squad, float(settings.get("v4_transfer_risk_penalty", 0.25)),
         float(settings.get("v4_bench_depth_weight", 0.08)))
+    # Owner preference: cap starting defenders so a 2-game clean-sheet spike
+    # can't lock the rebuild into a 5-4-1. Default 5 = FPL max (no change).
+    max_starting_def = int(settings.get("v4_max_starting_defenders", 5))
+    rebuild_lineup_max = {**LINEUP_MAX, "DEF": max(3, min(5, max_starting_def))}
     if active_transfer_chip:
         # A live Wildcard / Free Hit is a different problem: all 15 places may
         # change, with no FT or hit limit. Budget = live selling value + bank,
         # never the £100m ceiling. No competitive/league context is required.
         rebuild_budget = sum(p.get("selling_price", p["cost"]) for p in squad) + bank
         try:
-            final_squad = solve_squad(candidates, budget=rebuild_budget)
+            final_squad = solve_squad(candidates, budget=rebuild_budget,
+                                      lineup_max=rebuild_lineup_max)
         except Exception as error:
             print(f"!! {active_transfer_chip} squad solver failed - no plan persisted: {error!r}")
             sys.exit(1)
@@ -561,7 +566,7 @@ def main():
     if active_transfer_chip:
         # No MILP lineup for a rebuild — solve the XI directly on the new 15.
         try:
-            starters, bench = solve_lineup(lineup_squad)
+            starters, bench = solve_lineup(lineup_squad, line_max=rebuild_lineup_max)
         except Exception as error:
             print(f"!! {active_transfer_chip} lineup solve failed - no plan persisted: {error!r}")
             sys.exit(1)
