@@ -1,0 +1,54 @@
+name: scheduled · finalize completed gameweek
+
+# Replaces Cloud Run Job `fpl-refresh-gameweek` + Cloud Scheduler.
+# No-ops fast when the latest finished + data-checked GW is already published
+# to gs://<bucket>/snapshots/ (the read API resolves those first).
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+    inputs:
+      gameweek:
+        description: "Optional GW override; blank uses latest finished + data-checked GW"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: scheduled-finalize-gameweek
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install --no-cache-dir -r api/requirements.txt
+      - uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: run_scheduled_task finalize-gameweek
+        env:
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/api
+          FPL_DATA_DIR: ${{ github.workspace }}/data
+          FPL_SNAPSHOT_BUCKET: ${{ vars.FPL_SNAPSHOT_BUCKET }}
+          FPL_JOURNAL_BUCKET: ${{ vars.FPL_SNAPSHOT_BUCKET }}
+          GW_OVERRIDE: ${{ inputs.gameweek }}
+        run: |
+          mkdir -p data data/journal/2026-27/exports data/journal-raw reports/model-validation
+          if [ -n "$GW_OVERRIDE" ]; then
+            python infra/scripts/run_scheduled_task.py finalize-gameweek --gw "$GW_OVERRIDE"
+          else
+            python infra/scripts/run_scheduled_task.py finalize-gameweek
+          fi

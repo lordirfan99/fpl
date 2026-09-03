@@ -1,0 +1,53 @@
+name: scheduled · capture pre-deadline journal
+
+# Replaces Cloud Run Job `fpl-capture-journal` + Cloud Scheduler.
+# Keyless GCS write via Workload Identity Federation.
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+    inputs:
+      gameweek:
+        description: "Optional target GW; blank uses the next official event"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: scheduled-capture-journal
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install --no-cache-dir -r api/requirements.txt
+      - uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: run_scheduled_task capture-journal
+        env:
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/api
+          FPL_DATA_DIR: ${{ github.workspace }}/data
+          FPL_SNAPSHOT_BUCKET: ${{ vars.FPL_SNAPSHOT_BUCKET }}
+          FPL_JOURNAL_BUCKET: ${{ vars.FPL_SNAPSHOT_BUCKET }}
+          GW_OVERRIDE: ${{ inputs.gameweek }}
+        run: |
+          mkdir -p data data/journal-raw
+          if [ -n "$GW_OVERRIDE" ]; then
+            python infra/scripts/run_scheduled_task.py capture-journal --gw "$GW_OVERRIDE"
+          else
+            python infra/scripts/run_scheduled_task.py capture-journal
+          fi

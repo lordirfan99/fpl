@@ -1,0 +1,32 @@
+name: scheduled · monitor production
+
+# Replaces Cloud Run Job `fpl-monitor` + Cloud Scheduler.
+# Pure health/latency smoke test over public URLs - no credentials, no GCS.
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-monitor
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: run_scheduled_task monitor
+        env:
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/api
+          FPL_API_BASE_URL: ${{ vars.FPL_API_BASE_URL }}
+          FPL_SITE_URL: ${{ vars.FPL_SITE_URL }}
+        run: python infra/scripts/run_scheduled_task.py monitor
