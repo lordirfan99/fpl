@@ -1,0 +1,10 @@
+[Unit]
+Description=Timer for the FPL external heartbeat (every 15 min)
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
