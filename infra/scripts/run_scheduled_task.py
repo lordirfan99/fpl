@@ -86,7 +86,10 @@ def task_fixtures() -> None:
 
 
 def task_capture_journal(gameweek: int | None) -> None:
-    args = ["scripts/capture_predeadline_journal.py", "--require-cloud"]
+    # Pass --season explicitly: active_season() reads data/journal/config.json,
+    # which is not part of the repo contract (data/ is gitignored). SEASON is
+    # the same constant the other tasks use.
+    args = ["scripts/capture_predeadline_journal.py", "--require-cloud", "--season", SEASON]
     if gameweek:
         args += ["--gw", str(gameweek)]
     _run(*args)
