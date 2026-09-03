@@ -33,6 +33,7 @@ from league_signals import (  # noqa: E402
     transfer_consensus,
 )
 from opponent_intelligence import (  # noqa: E402
+    elite_template_current_season,
     exposure_from_picks,
     load_scout_priors,
     select_deep_cohort,
@@ -357,6 +358,12 @@ def main():
                 pick_trust[str(entry)] = f"unavailable:{repr(exc)[:80]}"
 
     exposure = exposure_from_picks(cohort, picks_by_entry, element_names)
+    elite_template_live = elite_template_current_season(
+        cohort, picks_by_entry, standings=rows, element_names=element_names,
+        top_fraction=float(cfg.get("elite_template_top_fraction", 0.25)),
+        min_managers=int(cfg.get("elite_template_min_managers", 6)),
+        ownership_floor=float(cfg.get("elite_template_ownership_floor", 50.0)),
+    )
     transfer_moves = transfer_consensus(cohort, transfers_by_entry, exposure_event, element_names) if exposure_event else []
     prize_config = load_prize_config(cfg.get("prize_config") or None)
     prize_leagues = [p for p in prize_config.get("leagues", []) if int(p.get("league_id", -1)) in league_ids]
@@ -425,6 +432,7 @@ def main():
         "pick_trust": pick_trust,
         "trusted_pick_count": len(picks_by_entry),
         "player_exposure": exposure,
+        "elite_template_live": elite_template_live,
         "transfer_consensus": transfer_moves[:20],
         "market_signals": market_signals(bootstrap.get("elements", []), limit=int(cfg.get("market_signal_limit", 20))),
         "set_piece_signals": set_piece_signals(bootstrap.get("elements", [])),

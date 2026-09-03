@@ -76,6 +76,45 @@ class TestLockedPicks(unittest.TestCase):
         self.assertGreater(exposure["1"]["captain_share"], exposure["2"]["captain_share"])
         self.assertGreater(exposure["1"]["effective_ownership"], 100)
 
+    def test_current_season_elite_template_ignores_preseason_prior(self):
+        # Two managers: entry 10 sits TOP of the table this season but has a
+        # weak preseason score; entry 11 is bottom but preseason-elite.
+        cohort = [
+            {"entry": 10, "historical_score": 5},
+            {"entry": 11, "historical_score": 99},
+        ]
+        picks = {
+            10: {"picks": [{"element": i, "is_captain": i == 1} for i in range(1, 16)]},
+            11: {"picks": [{"element": i, "is_captain": i == 90} for i in range(80, 95)]},
+        }
+        standings = [
+            {"entry": 10, "league_id": 1, "rank": 1, "total": 180},
+            {"entry": 11, "league_id": 1, "rank": 40, "total": 90},
+        ]
+        tmpl = oi.elite_template_current_season(
+            cohort, picks, standings, top_fraction=0.5, min_managers=1,
+            ownership_floor=100.0)
+        ids = {p["element"] for p in tmpl["players"]}
+        self.assertEqual(tmpl["manager_count"], 1)          # top 50% of 2 -> 1
+        self.assertIn(1, ids)                               # entry 10's squad
+        self.assertNotIn(80, ids)                           # entry 11 excluded
+        self.assertEqual(tmpl["source"], "current_season")
+
+    def test_current_season_elite_template_ownership_floor(self):
+        cohort = [{"entry": e, "historical_score": 50} for e in (1, 2, 3, 4)]
+        # element 5 in every squad; element 7 in only one
+        picks = {
+            e: {"picks": [{"element": 5, "is_captain": False}]
+                + ([{"element": 7, "is_captain": False}] if e == 1 else [])}
+            for e in (1, 2, 3, 4)
+        }
+        standings = [{"entry": e, "league_id": 1, "rank": e, "total": 200 - e} for e in (1, 2, 3, 4)]
+        tmpl = oi.elite_template_current_season(
+            cohort, picks, standings, top_fraction=1.0, min_managers=1, ownership_floor=75.0)
+        ids = {p["element"] for p in tmpl["players"]}
+        self.assertIn(5, ids)
+        self.assertNotIn(7, ids)
+
     def test_explicit_anonymous_client_does_not_load_cached_session(self):
         from fpl_client import FPLClient
         with mock.patch("fpl_client.load_session", return_value={"access_token": "stale"}):

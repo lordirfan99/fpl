@@ -231,6 +231,18 @@ def main():
     except CompetitiveV4Error as error:
         competitive_context = None
         competitive_error = error
+
+    # Current-season league intelligence snapshot (used to build the elite
+    # template from THIS season's evidence instead of preseason scout priors).
+    li_cfg = settings.get("league_intelligence", {}) or {}
+    league_state = {}
+    try:
+        from opponent_intelligence import load_latest_state
+        league_state = load_latest_state(
+            max_age_hours=float(li_cfg.get("state_max_age_hours", 36))) or {}
+    except Exception:
+        league_state = {}
+
     elements = bootstrap["elements"]
     players = []
     calibration = {}
@@ -418,6 +430,36 @@ def main():
             if row.get("element") is not None
         }
         owned_ids = {player["id"] for player in squad}
+
+        # Owner preference: derive "elite" from THIS season's league standings,
+        # not the preseason scout tiers. When league_intelligence has published
+        # a current-season template with enough players, it replaces the scout
+        # one for the gate (source + alignment recomputed from live evidence).
+        template_source = str(li_cfg.get("elite_template_source", "current_season"))
+        live_template = (league_state or {}).get("elite_template_live") or {}
+        live_ids = {int(p["element"]) for p in (live_template.get("players") or [])
+                    if p.get("element") is not None}
+        if template_source == "current_season" and len(live_ids) >= int(
+                li_cfg.get("elite_template_min_players", 6)):
+            template_ids = live_ids
+            threshold = float(li_cfg.get("elite_template_alignment_threshold", 0.82))
+            alignment = len(owned_ids & template_ids) / len(template_ids)
+            converge = alignment < threshold
+            differential_locked = converge
+            gate = {
+                "decision": "CONVERGE_TO_TEMPLATE" if converge else "HOLD_TEMPLATE",
+                "differential_allowed": not differential_locked,
+                "alignment": round(alignment, 3),
+                "alignment_threshold": threshold,
+                "source": "current_season",
+                "elite_manager_count": live_template.get("manager_count"),
+            }
+            # keep the card / dashboard packet consistent with the decision
+            competitive_context["template_gate"] = gate
+            competitive_context["elite_template"] = live_template.get("players") or []
+            print(f"elite template: current-season ({len(template_ids)} players, "
+                  f"{live_template.get('manager_count')} elite mgrs, "
+                  f"alignment {alignment:.0%}/{threshold:.0%})")
         # A live Wildcard / Free Hit is exempt: a full 15-player rebuild is a
         # pure xPts squad optimisation over the WHOLE pool. Restricting it to
         # the elite template + current 15 would force the solver to return the
@@ -726,7 +768,6 @@ def main():
     # Adaptive league intelligence is allowed to refine captain variance only
     # inside explicit xPts guardrails. It never changes transfers, projections,
     # squad legality, or the approval gate. Missing/stale state fails soft.
-    li_cfg = settings.get("league_intelligence", {}) or {}
     if li_cfg.get("enabled") and li_cfg.get("captain_refinement_enabled", True):
         try:
             from opponent_intelligence import refine_plan_captain
