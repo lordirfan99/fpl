@@ -65,9 +65,43 @@ def calibration_summary(path, limit=1000):
             "interval_coverage": coverage, "interval_n": len(interval_rows)}
 
 
-def uncertainty_scale(summary, min_rows=100):
-    """Translate rolling residual error into an uncertainty scaling factor."""
-    if (not summary or int(summary.get("n") or 0) < min_rows
-            or summary.get("rmse") is None):
+def uncertainty_scale(summary, min_rows=100, target_coverage=0.90):
+    """Variance scaling factor from rolling residuals.
+
+    Prefer empirical interval coverage: if the floor..upside band has been
+    containing the actual less often than ``target_coverage``, widen it (and
+    vice-versa). Fall back to the old rmse/3 heuristic when coverage evidence
+    is thin.
+    """
+    if not summary or int(summary.get("n") or 0) < min_rows:
+        return 1.0
+    coverage = summary.get("interval_coverage")
+    if coverage is not None and int(summary.get("interval_n") or 0) >= min_rows:
+        ratio = float(target_coverage) / max(0.30, float(coverage))
+        return max(0.75, min(2.5, ratio ** 0.6))
+    if summary.get("rmse") is None:
         return 1.0
     return max(0.75, min(1.75, float(summary["rmse"]) / 3.0))
+
+
+def bias_adjustment(summary, position, *, min_n=60, full_trust_n=250, cap=1.5):
+    """Additive xPts correction from rolling residuals (``bias`` = mean of
+    predicted - actual, so the correction subtracts it).
+
+    Returns 0.0 until a position has ``min_n`` residuals; shrinks toward 0 by
+    sample size up to ``full_trust_n``; hard-capped at +/- ``cap`` so a noisy
+    early estimate can never dominate a projection. Falls back to the pooled
+    bias when the per-position sample is thin.
+    """
+    if not summary:
+        return 0.0
+    row = (summary.get("by_position") or {}).get(str(position)) or {}
+    count = int(row.get("n") or 0)
+    value = row.get("bias")
+    if count < min_n or value is None:
+        count = int(summary.get("n") or 0)
+        value = summary.get("bias")
+        if count < min_n or value is None:
+            return 0.0
+    shrink = min(1.0, count / float(full_trust_n))
+    return round(max(-cap, min(cap, -float(value) * shrink)), 3)
