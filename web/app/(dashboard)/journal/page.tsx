@@ -4,13 +4,14 @@ import { MetricCard } from "@/components/metric-card";
 import { PageHeader } from "@/components/page-header";
 import { buildSeasonTimeline, getJournalIndex, JOURNAL_EXPORT_URL } from "@/lib/journal";
 import { getDashboardData } from "@/lib/data";
+import { formatMYT } from "@/lib/format";
 
 export default async function JournalPage() {
   const [journal, dashboard] = await Promise.all([getJournalIndex(), getDashboardData().catch(() => null)]);
   const timeline = buildSeasonTimeline(journal, dashboard?.bootstrap.events ?? []);
   const recorded = timeline.filter((row) => row.record_hash); const latest = recorded.at(-1); const valid = recorded.filter((row) => row.quality.status === "valid").length;
   return <div className="page-stack journal-page">
-    <PageHeader eyebrow="SEASON MEMORY · 2026/27" title="Decision Journal" description="A permanent timeline of what we knew, what we chose, what happened and what the models learned." updated={journal.updated_at ? new Date(journal.updated_at).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur" }) : undefined} />
+    <PageHeader eyebrow="SEASON MEMORY · 2026/27" title="Decision Journal" description="A permanent timeline of what we knew, what we chose, what happened and what the models learned." updated={formatMYT(journal.updated_at)} />
     <section className="journal-hero"><div><span><BookOpenText size={15} /> LIVING SEASON ARCHIVE</span><h2>Turn every gameweek<br />into next season’s edge.</h2><p>Deadline evidence, final outcomes, league behaviour and model accuracy are connected in one research-ready record. The calendar stays visible all season, even before each week is archived.</p><a href={JOURNAL_EXPORT_URL}><Download size={15} /> Download season CSV</a></div><div className="journal-season-progress"><strong>{recorded.length}<small>/38</small></strong><span>Gameweeks archived</span><i style={{ "--journal-progress": `${recorded.length / 38 * 100}%` } as React.CSSProperties} /></div></section>
     <div className="metric-grid"><MetricCard label="Latest score" value={latest ? `${latest.summary.gw_points} pts` : "—"} detail={latest ? `GW${latest.gameweek}` : "Waiting for GW"} /><MetricCard label="Season total" value={String(journal.totals.points)} detail="Official FPL points" tone="positive" /><MetricCard label="Research ready" value={`${valid}/${journal.totals.completed}`} detail="Complete deadline evidence" tone={valid === journal.totals.completed ? "positive" : "warning"} /><MetricCard label="Latest league rank" value={latest ? `#${latest.summary.league_rank.toLocaleString()}` : "—"} detail="League 58005" /></div>
     <JournalTimeline season={journal.season} rows={timeline} />

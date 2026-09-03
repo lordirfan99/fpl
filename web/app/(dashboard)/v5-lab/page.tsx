@@ -7,6 +7,7 @@ import { getDashboardData } from "@/lib/data";
 import { getLiveTeam } from "@/lib/live";
 import { deriveSeasonContext } from "@/lib/season";
 import { getV5Projections } from "@/lib/v5";
+import { formatMYT } from "@/lib/format";
 
 export default async function ModelsPage() {
   const [data, live, v5] = await Promise.all([getDashboardData().catch(() => null), getLiveTeam(), getV5Projections()]);
@@ -14,7 +15,7 @@ export default async function ModelsPage() {
   const top = v5.players[0];
   const ready = v5.players.filter((player) => player.quality_issues.length === 0).length;
   return <div className="page-stack v5-page">
-    <PageHeader eyebrow="MODELS · RESEARCH LANE" title="Models" description="Independent V5 projections and a read-only comparison of your live XI with the model's pick — kept outside the decision path." updated={v5.generated_at ? new Date(v5.generated_at).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur" }) : undefined} />
+    <PageHeader eyebrow="MODELS · RESEARCH LANE" title="Models" description="Independent V5 projections and a read-only comparison of your live XI with the model's pick — kept outside the decision path." updated={formatMYT(v5.generated_at)} />
     <section className="v5-hero">
       <div><span><FlaskConical size={15} /> ISOLATED LABORATORY</span><h2>Predict football first.<br />Fight the league second.</h2><p>V5 separates raw player ability and fixture outcomes from ownership, rank and captaincy pressure. Its low/high ranges are heuristic, not calibrated quantiles. It cannot replace production or execute an FPL action.</p></div>
       <div className={`v5-live-orb ${v5.available ? "online" : "offline"}`}><Activity size={25} /><strong>{v5.available ? "LIVE" : "LOCAL"}</strong><small>{v5.projection_version}</small></div>
