@@ -206,6 +206,18 @@ def main():
             else:
                 print(f"[auto] review failed rc={rc}: {err[-500:]}")
 
+    # --- trigger 2b: manager digest (self-gates on its own state file) ---
+    drc, dout, derr = run("post_gw_digest.py")
+    if drc == 1 and dout.strip():
+        reported.append("digest")
+        if settings:
+            chat = settings.get("telegram", {}).get("chat_id")
+            token = load_creds().get("TELEGRAM_BOT_TOKEN")
+            if chat and token:
+                send_telegram(dout, chat, token)
+    elif drc not in (0, 1):
+        print(f"[auto] digest failed rc={drc}: {(derr or dout)[-400:]}")
+
     save_state(state)
     if reported:
         print(f"[auto] done: {', '.join(reported)}")
