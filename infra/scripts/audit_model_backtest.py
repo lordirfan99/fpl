@@ -30,8 +30,13 @@ def main() -> int:
     parser.add_argument("--season", default="2026-27")
     parser.add_argument("--output")
     args = parser.parse_args()
-    models = {"v5": [], "fpl_ep_next": []}
+    # "v5" is the frozen-journal wire key (the API's live projection, whatever
+    # its internal version). Report it under a name that matches the engine /
+    # bot, which call the live model "competitive-v4.x".
+    PRODUCTION_KEY = "production_model"
+    models = {PRODUCTION_KEY: [], "fpl_ep_next": []}
     evidence = []
+    production_versions = set()
     journal_root = ROOT / "data" / "journal" / args.season
     raw_root = ROOT / "data" / "journal-raw" / args.season
     for outcome_path in sorted(journal_root.glob("gw*.json")):
@@ -49,7 +54,11 @@ def main() -> int:
             evidence.append({"gameweek": gameweek, "status": "integrity_failure"})
             continue
         actual_rows = outcome.get("outcome", {}).get("squad", [])
-        models["v5"].extend(pair_model_rows(
+        version = (prediction.get("source_provenance", {}).get("v5_model")
+                   or prediction.get("v5", {}).get("projection_version"))
+        if version:
+            production_versions.add(str(version))
+        models[PRODUCTION_KEY].extend(pair_model_rows(
             gameweek=gameweek, predictions=prediction.get("v5", {}).get("players", []),
             actual_rows=actual_rows, prediction_field="xpts_mean",
         ))
@@ -62,6 +71,7 @@ def main() -> int:
     result = {
         "schema_version": 1, "season": args.season,
         "method": "walk_forward_frozen_predeadline_to_final_personal_squad",
+        "production_model_version": sorted(production_versions) or None,
         "evidence": evidence,
         "models": {name: score(rows) for name, rows in models.items()},
         "maturity": {
