@@ -13,6 +13,7 @@ Commands:
   /chip <name> - stage a chip (wildcard|freehit|benchboost|triplecaptain)
   /history - last 6 GWs: points, rank, rank change
   /compare A vs B - head-to-head player card (read-only)
+  /plan - the 3-gameweek forward transfer plan (read-only)
 
 Inline Approve/Reject buttons on the plan cards do the same as the commands.
 
@@ -711,6 +712,50 @@ def compare_text(query):
         f"<b>{html.escape(b['web_name'])}</b> next 5: <code>{html.escape(fixstr(b['team']))}</code>",
         "\n<i>Lower FDR = easier. Read-only.</i>",
     ]
+    return _safe_card(lines)
+
+
+def plan_horizon_text():
+    """The 3-GW forward plan from the horizon MILP already on the pending plan."""
+    plan = load_pending() or {}
+    hp = plan.get("horizon_plan") or {}
+    weeks = hp.get("weeks") or []
+    base_gw = int(plan.get("gw") or next_gw_id())
+    if not weeks:
+        chip = str(plan.get("chip") or "")
+        why = (f" (this plan is a {chip} rebuild — no week-by-week sequence)"
+               if chip else " — run /simulate on a normal week")
+        return f"🗺️ <b>3-GW PLAN</b>\nNo multi-week plan available{why}."
+
+    els = {}
+    try:
+        els = {e["id"]: e["web_name"] for e in
+               fetch("https://fantasy.premierleague.com/api/bootstrap-static/")["elements"]}
+    except Exception:
+        els = {}
+
+    lines = [f"🗺️ <b>3-GW PLAN</b> · from GW{base_gw}"
+             f"  <i>(proj {hp.get('objective', '?')})</i>"]
+    for wk in weeks[:3]:
+        gw = base_gw + int(wk.get("gw_offset", 0))
+        moves = wk.get("transfers") or []
+        hits = int(wk.get("hits") or 0)
+        pts = wk.get("robust_points_with_captain", wk.get("mean_points_with_captain"))
+        cap = els.get(wk.get("captain_id"), str(wk.get("captain_id", "?")))
+        head = (f"\n<b>GW{gw}</b> · {wk.get('formation', '?')} · "
+                f"(C) {html.escape(str(cap))} · ~{pts} pts"
+                + (f" · <b>−{4 * hits}</b> hit" if hits else ""))
+        lines.append(head)
+        if moves:
+            for m in moves:
+                lines.append(f"  {html.escape(_sh(m.get('out_name'), 13))} → "
+                             f"{html.escape(_sh(m.get('in_name'), 13))}")
+        else:
+            lines.append("  hold — no transfer")
+        lines.append(f"  FT {wk.get('free_transfers_before')}→{wk.get('free_transfers_after')} · "
+                     f"bank £{(wk.get('bank_after') or 0) / 10:.1f}m")
+    lines.append("\n<i>Forward guidance only — only GW" + str(base_gw)
+                 + " is staged for approval. Later weeks re-plan each /simulate.</i>")
     return _safe_card(lines)
 
 
@@ -2287,6 +2332,14 @@ def main():
         except Exception:
             await update.message.reply_text(_error_card("Live"), parse_mode="HTML", reply_markup=main_kb())
 
+    async def cmd_plan(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        if not await guard(update):
+            return
+        try:
+            await update.message.reply_text(plan_horizon_text(), parse_mode="HTML", reply_markup=main_kb())
+        except Exception:
+            await update.message.reply_text(_error_card("Plan"), parse_mode="HTML", reply_markup=main_kb())
+
     async def cmd_chip(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not await guard(update):
             return
@@ -2552,6 +2605,7 @@ def main():
             app.add_handler(CommandHandler("haaland", cmd_haaland))
             app.add_handler(CommandHandler("compare", cmd_compare))
             app.add_handler(CommandHandler("live", cmd_live))
+            app.add_handler(CommandHandler("plan", cmd_plan))
             # docked reply-keyboard taps arrive as text -> route menu labels
             app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
             app.add_handler(CallbackQueryHandler(on_callback))
