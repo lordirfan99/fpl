@@ -11,6 +11,7 @@ Commands:
   /reject   - discard the pending plan, keep squad as-is
   /chip <name> - stage a chip (wildcard|freehit|benchboost|triplecaptain)
   /history - last 6 GWs: points, rank, rank change
+  /compare A vs B - head-to-head player card (read-only)
 
 Inline Approve/Reject buttons on the plan cards do the same as the commands.
 
@@ -608,6 +609,108 @@ def apply_lineup(uid=None, token=None):
     if matched is None:
         return f"⚠️ Lineup sent (couldn't verify) — check the FPL app. Captain {cap_name}."
     return f"⚠️ Lineup sent but FPL hasn't reflected it yet — check the app in a minute. Captain {cap_name}."
+
+
+def _resolve_player(name, elements):
+    """Best bootstrap element for a free-text name, or None."""
+    q = " ".join(name.lower().split())
+    if not q:
+        return None
+    scored = []
+    for e in elements:
+        web = str(e.get("web_name") or "").lower()
+        full = f"{e.get('first_name', '')} {e.get('second_name', '')}".lower().strip()
+        if q == web or q == full:
+            rank = 0
+        elif web.startswith(q) or full.startswith(q):
+            rank = 1
+        elif q in web or q in full:
+            rank = 2
+        else:
+            continue
+        scored.append((rank, -int(e.get("total_points") or 0), e))
+    if not scored:
+        return None
+    scored.sort(key=lambda t: (t[0], t[1]))
+    return scored[0][2]
+
+
+def compare_text(query):
+    """Head-to-head card for two players. Read-only."""
+    parts = [p.strip() for p in (query or "").lower()
+             .replace(" vs ", "|").replace(" v ", "|").replace(",", "|")
+             .replace(" / ", "|").split("|") if p.strip()]
+    if len(parts) != 2:
+        return ("⚖️ <b>COMPARE</b>\nUsage: <code>/compare salah vs palmer</code> "
+                "(or <code>/compare haaland, isak</code>)")
+    bs = fetch("https://fantasy.premierleague.com/api/bootstrap-static/")
+    fx = fetch("https://fantasy.premierleague.com/api/fixtures/")
+    els = bs["elements"]
+    tshort = {t["id"]: t["short_name"] for t in bs["teams"]}
+    pos_map = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
+    gw = next((ev["id"] for ev in bs["events"] if not ev["finished"]), 1)
+
+    a, b = _resolve_player(parts[0], els), _resolve_player(parts[1], els)
+    missing = [parts[i] for i, p in enumerate((a, b)) if p is None]
+    if missing:
+        return f"⚖️ <b>COMPARE</b>\nCouldn't find: {html.escape(', '.join(missing))}"
+
+    nf = {}
+    for f in fx:
+        ev = f.get("event")
+        if ev and gw <= ev < gw + 5:
+            nf.setdefault(f["team_h"], []).append((ev, tshort[f["team_a"]], f["team_h_difficulty"]))
+            nf.setdefault(f["team_a"], []).append((ev, tshort[f["team_h"]], f["team_a_difficulty"]))
+
+    def fdr_sum(tid):
+        return sum(d for _, _, d in sorted(nf.get(tid, []))[:5])
+
+    def fixstr(tid):
+        return " ".join(f"{o}{d}" for _, o, d in sorted(nf.get(tid, []))[:5]) or "-"
+
+    def sp(e):
+        tags = []
+        if e.get("penalties_order") == 1:
+            tags.append("pens")
+        if e.get("corners_and_indirect_freekicks_order") == 1:
+            tags.append("corners")
+        if e.get("direct_freekicks_order") == 1:
+            tags.append("FK")
+        return ", ".join(tags) or "-"
+
+    def status(e):
+        cop = e.get("chance_of_playing_next_round")
+        if e.get("status") != "a":
+            return f"{e.get('status')} {cop}%" if cop is not None else str(e.get("status"))
+        return f"{cop}%" if cop is not None else "fit"
+
+    rows = [
+        ("", _sh(a["web_name"], 12), _sh(b["web_name"], 12)),
+        ("Team", tshort[a["team"]], tshort[b["team"]]),
+        ("Pos", pos_map[a["element_type"]], pos_map[b["element_type"]]),
+        ("Price", f"£{a['now_cost'] / 10:.1f}", f"£{b['now_cost'] / 10:.1f}"),
+        ("Owned", f"{a['selected_by_percent']}%", f"{b['selected_by_percent']}%"),
+        ("Form", str(a["form"]), str(b["form"])),
+        ("PPG", str(a["points_per_game"]), str(b["points_per_game"])),
+        ("Total", str(a["total_points"]), str(b["total_points"])),
+        ("xGI/90", str(a.get("expected_goal_involvements_per_90", "-")),
+         str(b.get("expected_goal_involvements_per_90", "-"))),
+        ("Set-pc", sp(a), sp(b)),
+        ("Status", status(a), status(b)),
+        ("Next5 FDR", str(fdr_sum(a["team"])), str(fdr_sum(b["team"]))),
+    ]
+    w = [max(len(str(r[i])) for r in rows) for i in range(3)]
+    body = "\n".join(
+        f"{r[0]:<{w[0]}}  {str(r[1]):<{w[1]}}  {r[2]}" for r in rows)
+
+    lines = [
+        f"⚖️ <b>COMPARE — GW{gw}</b>",
+        f"<pre>{html.escape(body)}</pre>",
+        f"<b>{html.escape(a['web_name'])}</b> next 5: <code>{html.escape(fixstr(a['team']))}</code>",
+        f"<b>{html.escape(b['web_name'])}</b> next 5: <code>{html.escape(fixstr(b['team']))}</code>",
+        "\n<i>Lower FDR = easier. Read-only.</i>",
+    ]
+    return _safe_card(lines)
 
 
 def run_pipeline():
@@ -1979,6 +2082,7 @@ def main():
             "❌ Reject — discard the pending plan\n"
             "🎩 Chip — stage a chip (wildcard/freehit/benchboost/triplecaptain)\n"
             "📜 History — last 6 GWs results\n"
+            "⚖️ /compare A vs B — head-to-head player card\n"
             "🏆 League War Room — where you stand, the sharp money, and your closest rivals\n\n"
             "Semua boleh ditekan terus dari menu.",
             reply_markup=main_kb(),
@@ -2054,6 +2158,15 @@ def main():
         if not await guard(update):
             return
         await update.message.reply_text(haaland_decision_text(), parse_mode="HTML", reply_markup=main_kb())
+
+    async def cmd_compare(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        if not await guard(update):
+            return
+        try:
+            await update.message.reply_text(
+                compare_text(" ".join(ctx.args or [])), parse_mode="HTML", reply_markup=main_kb())
+        except Exception:
+            await update.message.reply_text(_error_card("Compare"), parse_mode="HTML", reply_markup=main_kb())
 
     async def cmd_chip(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not await guard(update):
@@ -2313,6 +2426,7 @@ def main():
             app.add_handler(CommandHandler("league", cmd_league))
             app.add_handler(CommandHandler("whoami", cmd_whoami))
             app.add_handler(CommandHandler("haaland", cmd_haaland))
+            app.add_handler(CommandHandler("compare", cmd_compare))
             # docked reply-keyboard taps arrive as text -> route menu labels
             app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
             app.add_handler(CallbackQueryHandler(on_callback))
