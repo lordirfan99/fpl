@@ -199,10 +199,23 @@ def plan_card(plan):
         # A chip rebuild is never "transfers locked"; suppress the safe-mode reason.
         lines.append(f"   {esc(reason)}")
     gate = competitive.get("template_gate") or {}
+    owned_ids = {p.get("id") for p in starters + bench}
+    template = competitive.get("elite_template") or []
     if gate:
         decision = str(gate.get("decision") or "HOLD_TEMPLATE").replace("_", " ")
         lines.append(f"\U0001f9ed <b>Strategy:</b> {esc(decision)} · differential "
                      f"{'OPEN' if gate.get('differential_allowed') else 'LOCKED'}")
+        # The "why": the elite-template players the plan still doesn't own.
+        incoming = {t.get("element_in") for t in trs}
+        gaps = sorted(
+            (t for t in template
+             if t.get("element") not in owned_ids and t.get("element") not in incoming),
+            key=lambda t: -float(t.get("elite_percentage") or 0),
+        )
+        if str(gate.get("decision")) == "CONVERGE_TO_TEMPLATE" and gaps:
+            top = ", ".join(f"{esc(t.get('name'))} {float(t.get('elite_percentage') or 0):.0f}%"
+                            for t in gaps[:3])
+            lines.append(f"\U0001f3af <b>Template gap:</b> {top}")
     # V4.2 shadow model — only surface it when it's actually actionable.
     cand = plan.get("model_candidate") or {}
     if cand.get("eligible_for_owner_approval"):
@@ -226,17 +239,20 @@ def plan_card(plan):
 
     # --- transfers table ---
     if trs:
+        template_ids = {t.get("element") for t in template}
         rows = []
         for t in trs:
             g = f"{float(t.get('gain', 0)):+.1f}"
             tail = f"{g} -4" if t.get("hit") else g
+            if t.get("element_in") in template_ids:
+                tail += " ✓"
             rows.append([
                 (_short(t.get("out_name")), 12, "l"),
                 ("→ ", 2, "l"),
                 (_short(t.get("in_name")), 12, "l"),
-                (tail, 7, "r"),
+                (tail, 9, "r"),
             ])
-        lines.append("\U0001f504 <b>Transfers</b>")
+        lines.append("\U0001f504 <b>Transfers</b>  <i>(✓ = elite template)</i>")
         lines.append(_pre(rows))
 
     # --- starting XI table ---
