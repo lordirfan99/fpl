@@ -457,6 +457,9 @@ def main():
             # keep the card / dashboard packet consistent with the decision
             competitive_context["template_gate"] = gate
             competitive_context["elite_template"] = live_template.get("players") or []
+            competitive_context["alignment"] = round(alignment * 100.0, 1)
+            competitive_context["target_alignment"] = round(threshold * 100.0, 1)
+            competitive_context["alignment_source"] = "current_season"
             print(f"elite template: current-season ({len(template_ids)} players, "
                   f"{live_template.get('manager_count')} elite mgrs, "
                   f"alignment {alignment:.0%}/{threshold:.0%})")
