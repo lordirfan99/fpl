@@ -5,6 +5,7 @@ Commands:
   /start  - welcome + mode explanation
   /status - squad value, bank, free transfers, next deadline countdown
   /team   - starting XI + bench with this-GW xPts
+  /live   - in-gameweek: live points, yet-to-play, autosubs, bonus
   /lineup - best XI + captain; one tap to set it (lineup only, reversible)
   /simulate - run the pre-deadline pipeline now and show the plan
   /approve  - execute the pending plan (transfers + lineup + captain)
@@ -1251,6 +1252,114 @@ def history_text():
     return history_message(rows) + detail
 
 
+def live_text():
+    """In-gameweek tracker: live points, players yet to play, autosubs,
+    captain status, provisional bonus. Read-only."""
+    client = FPLClient()
+    settings = load_settings()
+    team_id = settings["team_id"]
+    bs = fetch("https://fantasy.premierleague.com/api/bootstrap-static/")
+    els = {e["id"]: e for e in bs["elements"]}
+    cur = next((ev for ev in bs["events"] if ev.get("is_current")), None)
+    nxt = next((ev for ev in bs["events"] if ev.get("is_next")), None)
+    if not cur:
+        when = f" — next GW{nxt['id']} {nxt['deadline_time']}" if nxt else ""
+        return f"⚡ <b>LIVE</b>\nNo gameweek is live right now{when}."
+    gw = cur["id"]
+    try:
+        live = fetch(f"https://fantasy.premierleague.com/api/event/{gw}/live/")
+        picks_payload = client.get_json(f"entry/{team_id}/event/{gw}/picks/")
+        fixtures = fetch(f"https://fantasy.premierleague.com/api/fixtures/?event={gw}")
+    except Exception as exc:
+        return f"⚡ <b>LIVE — GW{gw}</b>\nLive feed unavailable ({repr(exc)[:80]})."
+
+    lstats = {e["id"]: e for e in live.get("elements", [])}
+    picks = picks_payload.get("picks") or []
+    eh = picks_payload.get("entry_history") or {}
+    active_chip = picks_payload.get("active_chip")
+
+    fx_by_team = {}
+    for fx in fixtures:
+        started = bool(fx.get("started"))
+        finished = bool(fx.get("finished") or fx.get("finished_provisional"))
+        for side in ("team_h", "team_a"):
+            fx_by_team.setdefault(fx.get(side), []).append((started, finished))
+
+    def played(eid):
+        return int((lstats.get(eid, {}).get("stats") or {}).get("minutes") or 0)
+
+    def team_state(eid):
+        rows = fx_by_team.get(els.get(eid, {}).get("team"), [])
+        if not rows:
+            return "none"
+        if all(f for _, f in rows):
+            return "done"
+        if any(s for s, _ in rows):
+            return "live"
+        return "upcoming"
+
+    xi = [p for p in picks if p.get("position", 99) <= 11]
+    bench = [p for p in picks if p.get("position", 99) > 11]
+    bench_boost = active_chip == "bboost"
+
+    live_pts = 0
+    yet_to_play, autosubs = [], []
+    for p in xi:
+        eid = p["element"]
+        pts = int((lstats.get(eid, {}).get("stats") or {}).get("total_points") or 0)
+        mult = p.get("multiplier", 1)
+        if played(eid) == 0 and team_state(eid) == "done" and not bench_boost:
+            # autosub: first eligible bench player who has appeared
+            starter_pos = els.get(eid, {}).get("element_type")
+            for b in bench:
+                bp = els.get(b["element"], {}).get("element_type")
+                same_gk = (starter_pos == 1) == (bp == 1)
+                if same_gk and played(b["element"]) > 0 and b["element"] not in {a[1] for a in autosubs}:
+                    autosubs.append((eid, b["element"]))
+                    pts = int((lstats.get(b["element"], {}).get("stats") or {}).get("total_points") or 0)
+                    break
+        live_pts += pts * mult
+        if team_state(eid) in ("upcoming", "live") and played(eid) == 0:
+            yet_to_play.append(els.get(eid, {}).get("web_name", str(eid)))
+
+    bench_pts = sum(int((lstats.get(b["element"], {}).get("stats") or {}).get("total_points") or 0)
+                    for b in bench)
+    cap = next((p for p in xi if p.get("is_captain")), None)
+    cap_line = ""
+    if cap:
+        ce = els.get(cap["element"], {})
+        cp = int((lstats.get(cap["element"], {}).get("stats") or {}).get("total_points") or 0)
+        cap_line = (f"\n👑 (C) {html.escape(ce.get('web_name', '?'))}: "
+                    f"{cp} → <b>{cp * cap.get('multiplier', 2)}</b> · {team_state(cap['element'])}")
+
+    avg = cur.get("average_entry_score")
+    lines = [f"⚡ <b>LIVE — GW{gw}</b>" + (f" · {active_chip}" if active_chip else "")]
+    tail = f"  ·  avg {avg} ({live_pts - avg:+d})" if isinstance(avg, int) else ""
+    lines.append(f"You: <b>{live_pts}</b> pts{tail}{cap_line}")
+    if eh.get("overall_rank"):
+        lines.append(f"Overall (live): ~{int(eh['overall_rank']):,}")
+    lines.append(f"Bench: {bench_pts} pts" + (" (boosted, counting)" if bench_boost else " idle"))
+    if autosubs:
+        lines.append("Autosubs: " + " · ".join(
+            f"{html.escape(els.get(i, {}).get('web_name', '?'))} ↑ for "
+            f"{html.escape(els.get(o, {}).get('web_name', '?'))}" for o, i in autosubs))
+    if yet_to_play:
+        lines.append(f"Yet to play ({len(yet_to_play)}): "
+                     + ", ".join(html.escape(n) for n in yet_to_play[:11]))
+    else:
+        lines.append("All your players have played.")
+
+    bps_rows = sorted(
+        ((els.get(p["element"], {}).get("web_name", "?"),
+          int((lstats.get(p["element"], {}).get("stats") or {}).get("bps") or 0))
+         for p in xi), key=lambda r: -r[1])[:3]
+    if bps_rows and bps_rows[0][1] > 0:
+        lines.append("\nYour BPS: " + " · ".join(f"{html.escape(n)} {v}" for n, v in bps_rows)
+                     + "  <i>(bonus provisional)</i>")
+    lines.append("\n<i>Live from the official feed. Refresh with /live.</i>")
+    return _safe_card(lines)
+
+
 def league_text(state=None):
     """Lean league war-room overview: where you stand, the sharp money, and the
     closest rivals. Everything else lives behind the Rivals / Captains / Market
@@ -1962,6 +2071,7 @@ def main():
     MENU_LABELS = {
         "📊 Status": "menu_status",
         "🛡️ Team": "menu_team",
+        "⚡ Live": "menu_live",
         "🧩 Lineup": "menu_lineup",
         "🧠 Simulate": "menu_simulate",
         "📜 History": "menu_history",
@@ -1977,7 +2087,7 @@ def main():
     def main_kb():
         """Main navigation menu - docked reply keyboard (input-bar style)."""
         labels = list(MENU_LABELS.keys())
-        rows = [labels[0:2], labels[2:4], labels[4:6], labels[6:8], labels[8:10], labels[10:12]]
+        rows = [labels[0:3], labels[3:5], labels[5:7], labels[7:9], labels[9:11], labels[11:13]]
         return ReplyKeyboardMarkup(
             rows,
             resize_keyboard=True,
@@ -2076,6 +2186,7 @@ def main():
         await update.message.reply_text(
             "📊 Status — squad, bank, transfers, deadline\n"
             "🛡️ Team — XI + bench with xPts\n"
+            "⚡ Live — in-gameweek points, yet-to-play, autosubs, bonus\n"
             "🧩 Lineup — best XI + captain from your current 15 (advisory)\n"
             "🧠 Simulate — run the full pipeline now\n"
             "✅ Approve — execute the pending plan\n"
@@ -2168,6 +2279,14 @@ def main():
         except Exception:
             await update.message.reply_text(_error_card("Compare"), parse_mode="HTML", reply_markup=main_kb())
 
+    async def cmd_live(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        if not await guard(update):
+            return
+        try:
+            await update.message.reply_text(live_text(), parse_mode="HTML", reply_markup=main_kb())
+        except Exception:
+            await update.message.reply_text(_error_card("Live"), parse_mode="HTML", reply_markup=main_kb())
+
     async def cmd_chip(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not await guard(update):
             return
@@ -2218,6 +2337,11 @@ def main():
                 await reply(team_text(), parse_mode="HTML", reply_markup=main_kb())
             except Exception as e:
                 await reply(_error_card("Team"), parse_mode="HTML", reply_markup=main_kb())
+        elif data == "menu_live":
+            try:
+                await reply(live_text(), parse_mode="HTML", reply_markup=main_kb())
+            except Exception:
+                await reply(_error_card("Live"), parse_mode="HTML", reply_markup=main_kb())
         elif data == "menu_lineup":
             try:
                 card = lineup_text()
@@ -2427,6 +2551,7 @@ def main():
             app.add_handler(CommandHandler("whoami", cmd_whoami))
             app.add_handler(CommandHandler("haaland", cmd_haaland))
             app.add_handler(CommandHandler("compare", cmd_compare))
+            app.add_handler(CommandHandler("live", cmd_live))
             # docked reply-keyboard taps arrive as text -> route menu labels
             app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
             app.add_handler(CallbackQueryHandler(on_callback))
