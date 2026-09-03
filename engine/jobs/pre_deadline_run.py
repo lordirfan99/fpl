@@ -418,7 +418,11 @@ def main():
             if row.get("element") is not None
         }
         owned_ids = {player["id"] for player in squad}
-        if converge and differential_locked and template_ids:
+        # A live Wildcard / Free Hit is exempt: a full 15-player rebuild is a
+        # pure xPts squad optimisation over the WHOLE pool. Restricting it to
+        # the elite template + current 15 would force the solver to return the
+        # squad it already has (0 transfers), keeping any prior mistakes.
+        if converge and differential_locked and template_ids and not active_transfer_chip:
             candidates = [
                 player for player in candidates
                 if player["id"] in owned_ids or player["id"] in template_ids
@@ -429,6 +433,9 @@ def main():
                 "eligible_template_ids": sorted(template_ids),
             }
             print(f"competitive candidate gate: template-only ({len(template_ids)} eligible IDs)")
+        elif converge and differential_locked and template_ids and active_transfer_chip:
+            print(f"competitive candidate gate: SKIPPED for {active_transfer_chip} "
+                  f"— full pool for the 15-player rebuild")
     if (refresh_failures or not competitive_context) and not active_transfer_chip:
         # The current official account can still be optimized for a legal
         # lineup, but a partially refreshed run may not authorize transfers.
