@@ -21,7 +21,11 @@ def canonical_hash(payload: object) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(); parser.add_argument("--season"); parser.add_argument("--gw", type=int); parser.add_argument("--require-cloud", action="store_true")
-    parser.add_argument("--window-hours", type=float, default=6.0, help="Only capture this many hours before the deadline")
+    parser.add_argument("--window-hours", type=float,
+                        default=float(os.getenv("FPL_JOURNAL_WINDOW_HOURS", "26")),
+                        help="Capture only within this many hours before the deadline. "
+                             "Wide by default so an hourly scheduled run reliably lands "
+                             "one frozen prediction per gameweek (write is idempotent).")
     args = parser.parse_args()
     args.season = args.season or active_season()
     bootstrap = get_json("https://fantasy.premierleague.com/api/bootstrap-static/")
