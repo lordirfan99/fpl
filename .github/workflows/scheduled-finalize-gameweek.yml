@@ -46,7 +46,7 @@ jobs:
           FPL_JOURNAL_BUCKET: ${{ vars.FPL_SNAPSHOT_BUCKET }}
           GW_OVERRIDE: ${{ inputs.gameweek }}
         run: |
-          mkdir -p data data/journal/2026-27/exports data/journal-raw reports/model-validation
+          mkdir -p infra/data infra/data/journal/2026-27/exports infra/data/journal-raw infra/reports/model-validation
           if [ -n "$GW_OVERRIDE" ]; then
             python infra/scripts/run_scheduled_task.py finalize-gameweek --gw "$GW_OVERRIDE"
           else

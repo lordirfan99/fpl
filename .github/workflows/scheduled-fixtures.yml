@@ -40,5 +40,5 @@ jobs:
           FPL_SNAPSHOT_BUCKET: ${{ vars.FPL_SNAPSHOT_BUCKET }}
           FPL_JOURNAL_BUCKET: ${{ vars.FPL_SNAPSHOT_BUCKET }}
         run: |
-          mkdir -p data
+          mkdir -p infra/data
           python infra/scripts/run_scheduled_task.py fixtures
