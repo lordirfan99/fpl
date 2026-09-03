@@ -70,11 +70,22 @@ def team(entry_id: int, gameweek: int, league_id: int | None = None) -> dict[str
         live_points = sum(pick["points"] * pick["multiplier"] for pick in picks)
     classic_leagues = entry.get("leagues", {}).get("classic", [])
     league = next((row for row in classic_leagues if int(row.get("id") or 0) == league_id), None)
+    # The upcoming GW's picks stay private until its deadline, so `active_chip`
+    # is only populated once the deadline has passed. `chips` is the permanent
+    # record of every chip already played.
+    active_chip = picks_payload.get("active_chip") or None
+    chips_played = [
+        {"name": row.get("name"), "event": row.get("event")}
+        for row in (history.get("chips") or [])
+        if row.get("name")
+    ]
     return {
         "source": "official-fpl-live",
         "status": "live",
         "gameweek": gameweek,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "active_chip": active_chip,
+        "chips_played": chips_played,
         "entry": {
             "id": int(entry_id),
             "entry_name": entry.get("name", ""),

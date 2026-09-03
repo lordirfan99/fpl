@@ -1,6 +1,43 @@
 from app import live_fpl
 
 
+def _team_fixture_get(active_chip, chips):
+    def fake_get(path: str, ttl: int = 30) -> dict:
+        if path == "bootstrap-static/":
+            return {
+                "elements": [{"id": 9, "web_name": "P", "element_type": 3, "team": 1, "now_cost": 50, "event_points": 4}],
+                "teams": [{"id": 1, "name": "Team"}],
+                "events": [{"id": 3, "finished": False}],
+            }
+        if path == "entry/77/":
+            return {"name": "T", "player_first_name": "A", "player_last_name": "B", "leagues": {"classic": []}}
+        if path == "entry/77/event/3/picks/":
+            return {"active_chip": active_chip, "picks": [
+                {"element": 9, "position": 1, "multiplier": 2, "is_captain": True, "is_vice_captain": False},
+            ]}
+        if path == "entry/77/history/":
+            return {"current": [{"event": 3, "event_total": 8, "total_points": 20, "overall_rank": 1}], "chips": chips}
+        if path == "fixtures/?event=3":
+            return []
+        raise AssertionError(path)
+    return fake_get
+
+
+def test_team_surfaces_the_active_chip_and_played_chips(monkeypatch) -> None:
+    monkeypatch.setattr(live_fpl, "_get", _team_fixture_get(
+        "wildcard", [{"name": "wildcard", "time": "t", "event": 3}]))
+    result = live_fpl.team(77, 3)
+    assert result["active_chip"] == "wildcard"
+    assert result["chips_played"] == [{"name": "wildcard", "event": 3}]
+
+
+def test_team_active_chip_is_none_before_the_deadline(monkeypatch) -> None:
+    monkeypatch.setattr(live_fpl, "_get", _team_fixture_get(None, []))
+    result = live_fpl.team(77, 3)
+    assert result["active_chip"] is None
+    assert result["chips_played"] == []
+
+
 def test_league_standings_fetches_every_official_page_and_deduplicates(monkeypatch) -> None:
     pages = {
         1: {"standings": {"has_next": True, "results": [{"entry": 1}, {"entry": 2}]}},
