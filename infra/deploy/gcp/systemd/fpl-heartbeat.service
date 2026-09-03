@@ -1,0 +1,15 @@
+[Unit]
+Description=FPL external dead-man's-switch ping (VM-up check)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=fpl
+Group=fpl
+EnvironmentFile=-/etc/fpl-telegram.env
+# Ping a healthchecks.io-style URL. If FPL_HEALTHCHECK_URL is unset the unit
+# is a silent no-op, so it is safe to enable before the URL is configured.
+ExecStart=/bin/bash -c 'test -n "$FPL_HEALTHCHECK_URL" && curl -fsS -m 15 --retry 3 -o /dev/null "$FPL_HEALTHCHECK_URL" || echo "fpl-heartbeat: FPL_HEALTHCHECK_URL not set — skipped"'
+StandardOutput=append:/var/log/fpl/jobs.log
+StandardError=append:/var/log/fpl/jobs.log

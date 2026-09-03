@@ -211,3 +211,26 @@ trycloudflare tunnel — that dies on reboot and is NOT valid on GCP. Options:
 - [ ] Secrets rotated → `secrets-bootstrap.sh` ran → bot restarted with new token
 - [ ] Local Windows crons remain paused (no double instance)
 - [ ] Budget check: VM cost ≈ $15–25/month (e2-small, 20GB pd-balanced)
+
+---
+
+## 9. External dead-man's-switch (fpl-heartbeat)
+
+`fpl-auth-canary` catches a broken auth path, but nothing external notices if
+the whole VM is down. `fpl-heartbeat.timer` pings a healthchecks.io-style URL
+every 15 min; that service alerts you (email/Telegram/etc.) when the pings stop.
+
+Setup (one time):
+
+1. Create a free check at https://healthchecks.io — period **30 min**, grace
+   **10 min**. Copy its ping URL (`https://hc-ping.com/<uuid>`).
+2. On the VM, add it to the shared env file and enable the timer:
+   ```bash
+   echo 'FPL_HEALTHCHECK_URL=https://hc-ping.com/<uuid>' | sudo tee -a /etc/fpl-telegram.env
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now fpl-heartbeat.timer
+   ```
+
+The unit is a silent no-op until `FPL_HEALTHCHECK_URL` is set, so it is safe to
+ship enabled. Point the healthchecks.io integration at Telegram to get the
+alert in the same place as everything else.
