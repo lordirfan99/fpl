@@ -1,0 +1,57 @@
+# Cloud Build upload filter for `gcloud builds submit` (infra/cloudbuild.api.yaml).
+#
+# When this file exists gcloud stops deriving excludes from .gitignore, so the
+# repo-root `data/` tree — gitignored, but required by api/Dockerfile's
+# `COPY data ./data` as the snapshot fallback — is uploaded as build context.
+# GCS (FPL_SNAPSHOT_BUCKET) stays the primary store at runtime.
+#
+# Secret patterns from .gitignore are mirrored here so they are never uploaded.
+
+# ---- secrets: never upload ----
+*.env
+.env*
+!.env.example
+**/credentials*
+**/config/credentials.env
+**/config/settings.json
+*session*.json
+fpl_session.json
+*.key
+*.pem
+service-account*.json
+*service_account*.json
+*token*.json
+cookies*.txt
+engine/config/*
+!engine/config/*.example.json
+!engine/config/bps_rules_*.json
+
+# ---- vcs / ci ----
+.git/
+.github/
+.gitignore
+
+# ---- not needed in the API image (Dockerfile copies api/ + data/ only) ----
+web/
+bot/
+docs/
+tests/
+engine/tests/
+**/__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+.DS_Store
+.idea/
+.vscode/
+*.swp
+uv.lock
+hermes.rar
