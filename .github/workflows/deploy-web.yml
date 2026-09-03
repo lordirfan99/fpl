@@ -27,11 +27,16 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
       - name: Guard — token present
         run: |
           if [ -z "${NETLIFY_AUTH_TOKEN}" ]; then
@@ -40,6 +45,8 @@ jobs:
           fi
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      - name: Install deps
+        run: npm ci
       - name: Build + deploy (production)
         run: >-
           npx --yes netlify-cli@17 deploy --build --prod
