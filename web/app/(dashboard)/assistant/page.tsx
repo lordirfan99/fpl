@@ -41,7 +41,7 @@ export default async function AssistantPage() {
       </div>
       <div className="hero-score">
         <span>{hoursRemaining == null ? "Deadline" : "Time left"}</span>
-        <strong>{hoursRemaining == null ? "—" : hoursRemaining < 24 ? `${Math.ceil(hoursRemaining)}h` : `${Math.floor(hoursRemaining / 24)}d`}</strong>
+        <strong>{hoursRemaining == null ? "—" : hoursRemaining < 24 ? `${Math.ceil(hoursRemaining)}h` : hoursRemaining < 48 ? `${Math.floor(hoursRemaining / 24)}d ${Math.round(hoursRemaining % 24)}h` : `${Math.floor(hoursRemaining / 24)}d`}</strong>
       </div>
     </section>
 
