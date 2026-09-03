@@ -96,6 +96,11 @@ def build_gameweek_journal(
         elite_average = _number(analysis.get("squad_ownership", {}).get("avg_gw_points"))
     gw_points = int(manager.get("gw_points") or 0)
     decision = (predeadline or {}).get("decision", {})
+    # "v5" is the frozen-journal wire key + the dashboard's "V5 Lab" section
+    # name for prediction accountability. It is NOT a model version: the engine
+    # and bot call the live model "competitive-v4.x", and the real version that
+    # produced these rows is carried separately as v5_projection_version /
+    # decision.model_version.
     v5_rows = (predeadline or {}).get("v5", {}).get("players", [])
     fpl_rows = (predeadline or {}).get("fpl_baseline", [])
     quality_issues: list[str] = []
