@@ -150,6 +150,62 @@ def _phase(
     )
 
 
+def _current_team_by_element(bootstrap: dict[str, Any]) -> dict[int, str]:
+    """Map every player id to the club name it currently belongs to."""
+    team_name = {
+        int(team["id"]): team.get("name")
+        for team in bootstrap.get("teams", [])
+        if team.get("id") is not None
+    }
+    current: dict[int, str] = {}
+    for player in bootstrap.get("elements", []):
+        try:
+            element_id = int(player["id"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        name = team_name.get(int(player.get("team") or 0))
+        if name:
+            current[element_id] = name
+    return current
+
+
+def _normalize_squad_teams(
+    managers: list[dict[str, Any]], current_team: dict[int, str]
+) -> list[dict[str, Any]]:
+    """Re-stamp each stored squad pick's club from the live catalogue.
+
+    League snapshots freeze ``pick["team"]`` at gameweek finalization. When a
+    player changes club afterwards the frozen string is wrong, and it is used
+    to route the fixture/FDR lookup, the 3-per-club transfer check and the
+    club shown on the decision board. The element id is stable, so the live
+    bootstrap is trusted for the club. Non-mutating: only rewritten entries
+    are copied.
+    """
+    if not current_team:
+        return managers
+    patched: list[dict[str, Any]] = []
+    for entry in managers:
+        squad = entry.get("squad")
+        if not squad:
+            patched.append(entry)
+            continue
+        new_squad: list[dict[str, Any]] = []
+        changed = False
+        for pick in squad:
+            try:
+                element_id = int(pick.get("element"))
+            except (TypeError, ValueError):
+                new_squad.append(pick)
+                continue
+            club = current_team.get(element_id)
+            if club and club != pick.get("team"):
+                pick = {**pick, "team": club}
+                changed = True
+            new_squad.append(pick)
+        patched.append({**entry, "squad": new_squad} if changed else entry)
+    return patched
+
+
 def build_recommendations(
     manager: dict[str, Any],
     managers: list[dict[str, Any]],
@@ -158,6 +214,12 @@ def build_recommendations(
     population_size: int | None = None,
     gameweek: int = 1,
 ) -> dict[str, Any]:
+    current_team = _current_team_by_element(bootstrap)
+    managers = _normalize_squad_teams(managers, current_team)
+    manager = next(
+        (entry for entry in managers if entry.get("entry_id") == manager.get("entry_id")),
+        _normalize_squad_teams([manager], current_team)[0],
+    )
     elite = elite_managers(managers, population_size=population_size)
     ownership, captaincy = cohort_summary(elite)
     elite_template = _elite_template(elite, ownership)
