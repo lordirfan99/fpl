@@ -168,6 +168,25 @@ class FPLClient:
         """Public completed-deadline transfer history for an entry."""
         return self.get_json(f"entry/{team_id}/transfers/")
 
+    def set_lineup(self, team_id, picks, chip=None, timeout=60):
+        """POST a starting XI + bench + captain/vice. No transfers, reversible.
+
+        ``picks`` is the /api/my-team payload: 15 rows with element, position
+        (1-11 start, 12-15 bench), multiplier (2 captain / 1 start / 0 bench),
+        is_captain, is_vice_captain. Refreshes auth first - the write API needs
+        session cookies, not just a bearer token. Returns the requests.Response.
+        """
+        tok = refresh_access_token()
+        self.reload()
+        if tok and tok.get("access_token"):
+            self.s.headers["Authorization"] = f"Bearer {tok['access_token']}"
+        return self.s.post(
+            f"{BASE}my-team/{team_id}/",
+            json={"picks": picks, "chip": chip},
+            headers={"Content-Type": "application/json", "User-Agent": UA},
+            timeout=timeout,
+        )
+
 
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "--status"

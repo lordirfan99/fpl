@@ -5,7 +5,7 @@ Commands:
   /start  - welcome + mode explanation
   /status - squad value, bank, free transfers, next deadline countdown
   /team   - starting XI + bench with this-GW xPts
-  /lineup - advisory best XI + captain from the current 15 (no writes)
+  /lineup - best XI + captain; one tap to set it (lineup only, reversible)
   /simulate - run the pre-deadline pipeline now and show the plan
   /approve  - execute the pending plan (transfers + lineup + captain)
   /reject   - discard the pending plan, keep squad as-is
@@ -467,9 +467,147 @@ def lineup_text():
         f"{i}.{html.escape(_sh(b['name'], 12))}" for i, b in enumerate(bench, 1)))
     if not optimal:
         lines.append(f"Δ XI projection: <b>{new_xp - cur_xp:+.1f}</b> xPts")
-    lines.append("\n<i>Advisory only — set it in the FPL app or via your pending "
-                 "plan. One-tap apply lands after the GW3 deadline.</i>")
+
+    plan = {
+        "team_id": settings["team_id"], "gw": gw,
+        "picks": _lineup_picks_payload(starters, bench, cap["id"], vice["id"]),
+        "captain": {"id": cap["id"], "name": cap["name"]},
+        "vice": {"id": vice["id"], "name": vice["name"]},
+        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "optimal": bool(optimal),
+    }
+    plan["lineup_id"] = _lineup_hash(plan["picks"])
+    try:
+        from atomic_io import atomic_write_json
+        atomic_write_json(PENDING_LINEUP_FILE, plan)
+    except Exception:
+        pass
+
+    if optimal:
+        lines.append("\n<i>Nothing to apply — this is already your XI.</i>")
+    elif execution_enabled():
+        lines.append("\n<i>Tap ✅ Set this lineup to send this XI + captain to FPL "
+                     "(lineup only, reversible). Not while a chip plan is staged — use /approve for that.</i>")
+    else:
+        lines.append("\n<i>Advisory only — set it in the FPL app. (Execution is off on this bot.)</i>")
     return _safe_card(lines)
+
+
+PENDING_LINEUP_FILE = os.path.join(BASE, "data", "processed", "pending_lineup.json")
+_LINEUP_SLOT_ORDER = {"GKP": 0, "DEF": 1, "MID": 2, "FWD": 3}
+
+
+def _lineup_picks_payload(starters, bench, cap_id, vice_id):
+    """Build the /api/my-team picks list from a solved XI + bench."""
+    ordered_starters = sorted(starters, key=lambda s: (_LINEUP_SLOT_ORDER[s["pos"]], -s["xp"]))
+    ordered_bench = ([b for b in bench if b["pos"] == "GKP"]
+                     + [b for b in bench if b["pos"] != "GKP"])
+    picks, slot = [], 1
+    for s in ordered_starters:
+        picks.append({"element": int(s["id"]), "position": slot,
+                      "multiplier": 2 if s["id"] == cap_id else 1,
+                      "is_captain": s["id"] == cap_id,
+                      "is_vice_captain": s["id"] == vice_id})
+        slot += 1
+    for b in ordered_bench:
+        picks.append({"element": int(b["id"]), "position": slot, "multiplier": 0,
+                      "is_captain": False, "is_vice_captain": False})
+        slot += 1
+    return picks
+
+
+def _lineup_hash(picks):
+    import hashlib
+    body = json.dumps(
+        sorted((p["element"], p["position"], p["multiplier"],
+                bool(p["is_captain"]), bool(p["is_vice_captain"])) for p in picks),
+        separators=(",", ":"))
+    return hashlib.sha256(body.encode()).hexdigest()
+
+
+def load_pending_lineup():
+    try:
+        with open(PENDING_LINEUP_FILE, encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+
+def lineup_apply_confirmation(uid=None):
+    """(token, '') when the pending lineup may be applied, else (None, reason)."""
+    if not authorized(uid):
+        return None, "not authorized"
+    if not execution_enabled():
+        return None, "execution disabled"
+    lp = load_pending_lineup()
+    if not lp or lp.get("optimal"):
+        return None, "nothing to apply"
+    lineup_id = lp.get("lineup_id")
+    if not isinstance(lineup_id, str):
+        return None, "no lineup id"
+    try:
+        age = (datetime.datetime.now(datetime.timezone.utc)
+               - datetime.datetime.fromisoformat(lp["generated_at"])).total_seconds()
+    except (KeyError, ValueError, TypeError):
+        return None, "bad timestamp"
+    if age > 1200:
+        return None, "stale (re-run /lineup)"
+    pending = load_pending() or {}
+    if pending.get("status") == "pending" and pending.get("chip"):
+        return None, "chip plan staged — use /approve"
+    return short_id(lineup_id), ""
+
+
+def apply_lineup(uid=None, token=None):
+    """Apply the hash-bound pending lineup to FPL. Lineup only, no transfers."""
+    if not authorized(uid):
+        return "❌ Not authorized."
+    if not execution_enabled():
+        return "❌ Execution is disabled on this bot. No FPL write was sent."
+    lp = load_pending_lineup()
+    lineup_id = lp.get("lineup_id") if lp else None
+    if (not isinstance(token, str) or not isinstance(lineup_id, str)
+            or not hmac.compare_digest(token, short_id(lineup_id))):
+        return "❌ Confirmation is stale or does not match. Run /lineup again."
+    if lp.get("optimal"):
+        return "✅ Your XI already matches — nothing to send."
+    pending = load_pending() or {}
+    if pending.get("status") == "pending" and pending.get("chip"):
+        return "❌ A wildcard/free-hit plan is staged. Use /approve for that instead."
+    _, deadline, _ = next_deadline_info()
+    if deadline:
+        try:
+            left = (datetime.datetime.fromisoformat(deadline.replace("Z", "+00:00"))
+                    - datetime.datetime.now(datetime.timezone.utc))
+            if left < datetime.timedelta(minutes=15):
+                return "❌ Too close to the deadline to set the lineup from here — use the FPL app."
+        except (ValueError, TypeError):
+            pass
+    team_id, picks = lp["team_id"], lp["picks"]
+    if os.environ.get(DRY_RUN_ENV, "1") == "1":
+        return (f"🧪 DRY RUN — would set this XI, captain "
+                f"{html.escape(str(lp.get('captain', {}).get('name', '?')))}. No FPL write sent.")
+    client = FPLClient()
+    try:
+        response = client.set_lineup(team_id, picks, chip=None)
+    except Exception as error:  # noqa: BLE001
+        return f"❌ Lineup POST failed: {repr(error)[:140]}"
+    if response.status_code >= 300:
+        return f"❌ FPL rejected the lineup ({response.status_code}): {response.text[:200]}"
+    matched = None
+    try:
+        live = client.my_team(team_id).get("picks", [])
+        now_start = {p["element"] for p in live
+                     if p.get("multiplier", 0) > 0 or p.get("position", 99) <= 11}
+        matched = now_start == {p["element"] for p in picks if p["multiplier"] > 0}
+    except Exception:  # noqa: BLE001
+        matched = None
+    cap_name = html.escape(str(lp.get("captain", {}).get("name", "?")))
+    if matched:
+        return f"✅ Lineup applied — XI set, captain {cap_name}."
+    if matched is None:
+        return f"⚠️ Lineup sent (couldn't verify) — check the FPL app. Captain {cap_name}."
+    return f"⚠️ Lineup sent but FPL hasn't reflected it yet — check the app in a minute. Captain {cap_name}."
 
 
 def run_pipeline():
@@ -1876,7 +2014,15 @@ def main():
         if not await guard(update):
             return
         try:
-            await update.message.reply_text(lineup_text(), parse_mode="HTML", reply_markup=main_kb())
+            card = lineup_text()
+            token, _ = lineup_apply_confirmation(update.effective_user.id)
+            kb = main_kb()
+            if token:
+                kb = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("✅ Set this lineup", callback_data=f"applylineup:{token}"),
+                    InlineKeyboardButton("Cancel", callback_data="menu_main"),
+                ]])
+            await update.message.reply_text(card, parse_mode="HTML", reply_markup=kb)
         except Exception:
             await update.message.reply_text(_error_card("Lineup"), parse_mode="HTML", reply_markup=main_kb())
 
@@ -1961,7 +2107,15 @@ def main():
                 await reply(_error_card("Team"), parse_mode="HTML", reply_markup=main_kb())
         elif data == "menu_lineup":
             try:
-                await reply(lineup_text(), parse_mode="HTML", reply_markup=main_kb())
+                card = lineup_text()
+                token, _ = lineup_apply_confirmation(uid)
+                kb = main_kb()
+                if token:
+                    kb = InlineKeyboardMarkup([[
+                        InlineKeyboardButton("✅ Set this lineup", callback_data=f"applylineup:{token}"),
+                        InlineKeyboardButton("Cancel", callback_data="menu_main"),
+                    ]])
+                await reply(card, parse_mode="HTML", reply_markup=kb)
             except Exception:
                 await reply(_error_card("Lineup"), parse_mode="HTML", reply_markup=main_kb())
         elif data == "menu_simulate":
@@ -2076,6 +2230,9 @@ def main():
                 )
             else:
                 await query.message.reply_text(approve_plan(uid, plan_id), reply_markup=main_kb())
+        elif data.startswith("applylineup:"):
+            await query.message.reply_text(
+                apply_lineup(uid, data.removeprefix("applylineup:")), reply_markup=main_kb())
         elif data.startswith("keep_") or data.startswith("exclude_"):
             if not authorized(uid):
                 await query.message.reply_text("❌ Not authorized to edit keep/exclude prefs.", reply_markup=main_kb())
