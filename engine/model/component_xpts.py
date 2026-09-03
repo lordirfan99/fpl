@@ -13,7 +13,6 @@ GOAL_POINTS = {"GKP": 10, "DEF": 6, "MID": 5, "FWD": 4}
 CS_POINTS = {"GKP": 4, "DEF": 4, "MID": 1, "FWD": 0}
 GOAL_PRIOR_90 = {"GKP": 0.0, "DEF": 0.04, "MID": 0.18, "FWD": 0.30}
 ASSIST_PRIOR_90 = {"GKP": 0.01, "DEF": 0.06, "MID": 0.16, "FWD": 0.12}
-BONUS_PRIOR_90 = {"GKP": 0.22, "DEF": 0.24, "MID": 0.30, "FWD": 0.28}
 CS_PRIOR = {"GKP": 0.30, "DEF": 0.30, "MID": 0.27, "FWD": 0.0}
 
 
@@ -68,13 +67,14 @@ def fixture_xpts(el, fixture, gw_so_far, odds_multiplier=1.0, congestion=False):
     season_games = max(1.0, float(gw_so_far or 1))
     fixture_factor = _clamp(float(odds_multiplier or 1.0), 0.65, 1.45)
     fdr = float(fixture.get("fdr", 3) or 3)
-    # Odds is preferred; FDR is a weak residual if no odds differentiation.
-    fdr_factor = _clamp(1.08 - 0.04 * (fdr - 2), 0.82, 1.08)
+    # Odds is preferred; FDR is the residual when no odds differentiation.
+    # Centred on the average FDR 3: easiest (1) -> +22%, hardest (5) -> -22%.
+    # The old +/-13% band barely moved the projection for a fixture-led game.
+    fdr_factor = _clamp(1.0 + 0.11 * (3.0 - fdr), 0.72, 1.30)
     attack_factor = fixture_factor * fdr_factor
 
     goals90 = _rate(el.get("goals_scored"), mins)
     assists90 = _rate(el.get("assists"), mins)
-    raw_bonus90 = _rate(el.get("bonus"), mins)
     raw_saves90 = _rate(el.get("saves"), mins)
     yellow90 = _rate(el.get("yellow_cards"), mins)
     red90 = _rate(el.get("red_cards"), mins)
@@ -86,7 +86,6 @@ def fixture_xpts(el, fixture, gw_so_far, odds_multiplier=1.0, congestion=False):
     raw_assist_rate = assists90 * 0.60 + xa90 * 0.40
     goal_rate = _shrink_rate(raw_goal_rate, mins, GOAL_PRIOR_90[pos])
     assist_rate = _shrink_rate(raw_assist_rate, mins, ASSIST_PRIOR_90[pos])
-    bonus90 = _shrink_rate(raw_bonus90, mins, BONUS_PRIOR_90[pos])
     saves90 = _shrink_rate(raw_saves90, mins, 3.0 if pos == "GKP" else 0.0)
 
     minute_share = mf.expected_minutes / 90.0
@@ -99,7 +98,11 @@ def fixture_xpts(el, fixture, gw_so_far, odds_multiplier=1.0, congestion=False):
     # Eight prior matches prevent one early result from dominating the model.
     cs_rate = (_f(el.get("clean_sheets")) + CS_PRIOR[pos] * 8.0) / (season_games + 8.0)
     team_cs_proxy = _clamp(cs_rate / max(0.15, mf.p_60), 0.05, 0.65)
-    defence_factor = _clamp(2.0 - attack_factor, 0.65, 1.35)
+    # An easy fixture (weak opponent) raises the clean-sheet chance too, so the
+    # CS factor moves WITH attack_factor, not against it. The old 2.0 -
+    # attack_factor inverted this; it barely mattered while the fixture band was
+    # +/-13%, but does now.
+    defence_factor = _clamp(0.5 + 0.5 * attack_factor, 0.65, 1.35)
     p_cs = _clamp(team_cs_proxy * defence_factor, 0.03, 0.65) * mf.p_60
     clean_sheet = p_cs * CS_POINTS[pos]
 
@@ -107,8 +110,6 @@ def fixture_xpts(el, fixture, gw_so_far, odds_multiplier=1.0, congestion=False):
     if pos == "GKP":
         expected_saves = saves90 * minute_share / 3.0
         save_pts = expected_saves
-
-    bonus = bonus90 * minute_share * _clamp(0.8 + 0.2 * attack_factor, 0.7, 1.2)
 
     # 2026/27 defensive contribution proxy. If the explicit field exists use
     # its per-90 rate; otherwise use a conservative baseline by position.
@@ -120,6 +121,13 @@ def fixture_xpts(el, fixture, gw_so_far, odds_multiplier=1.0, congestion=False):
     else:
         p_dc = {"GKP": 0.0, "DEF": 0.24, "MID": 0.10, "FWD": 0.03}[pos] * mf.p_60
     defensive = 2.0 * p_dc
+
+    # Bonus goes to the match's top BPS scorers, so it tracks THIS projection's
+    # returns rather than a flat per-position rate: a blanking player earns
+    # almost none, a projected hauler earns most of the 3. A small floor covers
+    # appearance/passing BPS for a nailed starter.
+    returns_signal = goals + assists + clean_sheet + 0.30 * save_pts + 0.25 * defensive
+    bonus = _clamp(0.09 * minute_share + 0.30 * returns_signal, 0.0, 2.6)
 
     discipline = -(yellow90 + 3.0 * red90) * minute_share
 
