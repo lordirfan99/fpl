@@ -227,6 +227,68 @@ def exposure_from_picks(cohort, picks_by_entry, element_names=None):
     }
 
 
+def elite_template_current_season(cohort, picks_by_entry, standings, element_names=None,
+                                  *, top_fraction=0.25, min_managers=6,
+                                  ownership_floor=50.0):
+    """Elite template from THIS SEASON's evidence only - no preseason prior.
+
+    Rank the cohort by current-season league total (best across the manager's
+    leagues), keep the strongest ``top_fraction`` (at least ``min_managers``),
+    then aggregate their locked squads with EQUAL weight. A player is
+    "template" when at least ``ownership_floor`` percent of that elite subset
+    own them. Shape mirrors the scout ``elite_template`` rows so the gate can
+    consume either.
+    """
+    element_names = element_names or {}
+    best_total = {}
+    for row in standings or []:
+        try:
+            entry_id = int(row["entry"])
+            total = float(row.get("total") or 0)
+        except (KeyError, TypeError, ValueError):
+            continue
+        best_total[entry_id] = max(best_total.get(entry_id, 0.0), total)
+
+    ranked = sorted(
+        (int(c["entry"]) for c in cohort if int(c["entry"]) in picks_by_entry),
+        key=lambda eid: (-best_total.get(eid, 0.0), eid),
+    )
+    if not ranked:
+        return {"source": "current_season", "manager_count": 0, "players": []}
+
+    keep = max(int(min_managers), int(round(len(ranked) * float(top_fraction))))
+    elite = ranked[:keep] or ranked[:1]
+    denom = len(elite)
+    tally = defaultdict(lambda: {"own": 0, "cap": 0})
+    for entry_id in elite:
+        for pick in (picks_by_entry.get(entry_id, {}) or {}).get("picks", []) or []:
+            element = int(pick["element"])
+            tally[element]["own"] += 1
+            if pick.get("is_captain"):
+                tally[element]["cap"] += 1
+
+    players = sorted(
+        (
+            {
+                "element": element,
+                "name": element_names.get(element, str(element)),
+                "elite_percentage": round(100.0 * row["own"] / denom, 1),
+                "elite_captaincy": round(100.0 * row["cap"] / denom, 1),
+            }
+            for element, row in tally.items()
+            if 100.0 * row["own"] / denom >= float(ownership_floor)
+        ),
+        key=lambda p: -p["elite_percentage"],
+    )
+    return {
+        "source": "current_season",
+        "manager_count": denom,
+        "top_fraction": float(top_fraction),
+        "ownership_floor": float(ownership_floor),
+        "players": players,
+    }
+
+
 def load_latest_state(path=None, *, max_age_hours=30, now=None):
     state = _read_json(path or LATEST_STATE_FILE)
     if not state:
