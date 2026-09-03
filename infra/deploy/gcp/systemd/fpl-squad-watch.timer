@@ -1,8 +1,8 @@
 [Unit]
-Description=Timer for FPL squad watch
+Description=Timer for FPL squad availability watch (hourly, silent unless changed)
 
 [Timer]
-OnCalendar=*-*-* 09:10:00
+OnCalendar=*-*-* *:12:00
 Persistent=true
 
 [Install]
