@@ -1,7 +1,6 @@
 [build]
   base = "web"
   command = "npm run build"
-  publish = ".next"
 
 [build.environment]
   NODE_VERSION = "24"
@@ -9,5 +8,7 @@
 [context.production.environment]
   NEXT_TELEMETRY_DISABLED = "1"
 
+# The @netlify/plugin-nextjs v5 runtime manages the publish directory itself;
+# an explicit `publish` here resolves wrong from CI and breaks the deploy.
 [[plugins]]
   package = "@netlify/plugin-nextjs"
