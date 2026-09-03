@@ -114,14 +114,27 @@ def team_rotation_rate(history, team, lookback=5):
     return max(0.0, min(0.25, sum(changes) / len(changes))) if changes else 0.0
 
 
-def player_rates(rows, prior, prior_minutes=900.0):
-    """Exposure-shrunk, strictly lagged per-90 component rates."""
+def player_rates(rows, prior, prior_minutes=900.0, *, min_prior_minutes=180.0,
+                 decay_per_gw=60.0):
+    """Exposure-shrunk, strictly lagged per-90 component rates.
+
+    ``prior_minutes`` is how much position-average evidence the shrinkage weighs
+    against the player's own sample. A fixed 900 (~10 full games) keeps every
+    player pinned to the positional mean until deep into the season, so the
+    model can't tell an elite from a cheap option. Decay it by ``decay_per_gw``
+    for every gameweek of real sample (floored at ``min_prior_minutes``) so
+    current-season signal takes over at a sensible pace while the first 2-3 GWs
+    stay heavily shrunk.
+    """
     minutes = sum(_f(r.get("minutes")) for r in rows)
-    result = {"sample_minutes": minutes, "sample_gws": len(rows)}
+    effective_prior = max(float(min_prior_minutes),
+                          float(prior_minutes) - float(decay_per_gw) * len(rows))
+    result = {"sample_minutes": minutes, "sample_gws": len(rows),
+              "effective_prior_minutes": effective_prior}
     for field, base in prior.items():
         observed = 90.0 * sum(_f(r.get(field)) for r in rows) / max(90.0, minutes)
-        result[field] = ((observed * minutes) + (float(base) * prior_minutes)) / (
-            minutes + prior_minutes
+        result[field] = ((observed * minutes) + (float(base) * effective_prior)) / (
+            minutes + effective_prior
         )
     return result
 
