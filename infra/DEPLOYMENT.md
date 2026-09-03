@@ -131,3 +131,40 @@ The control-centre payload must report `writes_enabled: false` and
   `fpl-dashboard-bridge.service`.
 - Data: revert the automated `data: finalize GW...` commit; CI will redeploy the last
   validated snapshots.
+
+---
+
+## Open follow-ups (owner action)
+
+These need a dashboard/console the agent can't reach. None block the season.
+
+### 1. Reconnect Netlify git auto-deploy  (was: manual `netlify deploy`)
+The site currently deploys only when someone runs `netlify deploy` by hand, so
+`web/` fixes (e.g. the hydration timezone fix) don't ship on merge.
+
+1. Netlify → the site → **Site configuration → Build & deploy → Link repository**
+   → GitHub → `lordirfan99/fpl`, production branch `main`.
+2. `infra/netlify.toml` already holds the build config (`base = web`,
+   `command = npm run build`, `publish = .next`, `@netlify/plugin-nextjs`),
+   so no build settings to enter.
+3. Environment variables: set `FPL_API_BASE_URL` (and `FPL_DATA_BASE_URL` if
+   used) to the Cloud Run API URL under **Environment variables**.
+4. Trigger one deploy to pick up the current `main` (includes PR #49).
+
+### 2. External heartbeat URL  (fpl-heartbeat)
+Create a check at healthchecks.io (period 30 min, grace 10), then on the VM:
+```bash
+echo 'FPL_HEALTHCHECK_URL=https://hc-ping.com/<uuid>' | sudo tee -a /etc/fpl-telegram.env
+sudo systemctl daemon-reload && sudo systemctl enable --now fpl-heartbeat.timer
+```
+Point the healthchecks.io alert at Telegram. (Details in README-GCP.md §9.)
+
+### 3. VM single point of failure  (decision)
+`instance-20260412-121200` (e2-micro) runs the FPL bot + jobs AND the SportMania
+bots + Caddy. If it dies, both stacks go down and — until the heartbeat URL
+above is set — nothing tells you. Options:
+- Accept it (heartbeat + fast manual restart). ~RM 0.
+- Give FPL its own e2-micro (the account's Always-Free e2-micro is already used
+  by this box, so a second one is full price ≈ RM 25–30/mo).
+- Keep shared but move `/opt/fpl-autopilot` onto a separate 10 GB disk so a
+  SportMania disk-fill can't take FPL down.
