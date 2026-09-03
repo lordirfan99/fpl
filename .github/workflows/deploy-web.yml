@@ -2,7 +2,8 @@ name: deploy · web to Netlify
 
 # Replaces the manual `netlify deploy`. Builds web/ with the Next.js plugin and
 # deploys to production on every merge to main that touches the dashboard.
-# Requires repo secrets: NETLIFY_AUTH_TOKEN, NETLIFY_SITE_ID.
+# Only secret required: NETLIFY_AUTH_TOKEN. The site is targeted by its public
+# name, so no Site ID is needed.
 
 on:
   push:
@@ -20,6 +21,9 @@ concurrency:
   group: deploy-web
   cancel-in-progress: true
 
+env:
+  NETLIFY_SITE_NAME: fpl-scout-intelligence
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -28,19 +32,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - name: Guard — secrets present
+      - name: Guard — token present
         run: |
-          if [ -z "${NETLIFY_AUTH_TOKEN}" ] || [ -z "${NETLIFY_SITE_ID}" ]; then
-            echo "::error::Set repo secrets NETLIFY_AUTH_TOKEN and NETLIFY_SITE_ID first."
+          if [ -z "${NETLIFY_AUTH_TOKEN}" ]; then
+            echo "::error::Set repo secret NETLIFY_AUTH_TOKEN first."
             exit 1
           fi
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
       - name: Build + deploy (production)
         run: >-
           npx --yes netlify-cli@17 deploy --build --prod
+          --site "$NETLIFY_SITE_NAME"
           --message "CI ${{ github.sha }}"
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
