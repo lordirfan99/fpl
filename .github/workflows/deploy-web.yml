@@ -2,8 +2,8 @@ name: deploy · web to Netlify
 
 # Replaces the manual `netlify deploy`. Builds web/ with the Next.js plugin and
 # deploys to production on every merge to main that touches the dashboard.
-# Only secret required: NETLIFY_AUTH_TOKEN. The site is targeted by its public
-# name, so no Site ID is needed.
+# Only secret required: NETLIFY_AUTH_TOKEN. The Site ID below is a public
+# identifier (it lives in .netlify/state.json), not a credential.
 
 on:
   push:
@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NETLIFY_SITE_NAME: fpl-scout-intelligence
+  NETLIFY_SITE_ID: e2602e61-b56a-45ff-8f01-debe6037af2e
 
 jobs:
   deploy:
@@ -43,7 +43,7 @@ jobs:
       - name: Build + deploy (production)
         run: >-
           npx --yes netlify-cli@17 deploy --build --prod
-          --site "$NETLIFY_SITE_NAME"
+          --site "$NETLIFY_SITE_ID"
           --message "CI ${{ github.sha }}"
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
