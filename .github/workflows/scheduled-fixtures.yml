@@ -1,0 +1,44 @@
+name: scheduled · refresh fixtures
+
+# Replaces Cloud Run Job `fpl-refresh-fixtures` + Cloud Scheduler.
+# Public repo => GitHub-hosted minutes are free and unmetered.
+# Keyless GCS write via Workload Identity Federation (no stored key).
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: scheduled-refresh-fixtures
+  cancel-in-progress: true
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install --no-cache-dir -r api/requirements.txt
+      - uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: run_scheduled_task fixtures
+        env:
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/api
+          FPL_DATA_DIR: ${{ github.workspace }}/data
+          FPL_SNAPSHOT_BUCKET: ${{ vars.FPL_SNAPSHOT_BUCKET }}
+          FPL_JOURNAL_BUCKET: ${{ vars.FPL_SNAPSHOT_BUCKET }}
+        run: |
+          mkdir -p data
+          python infra/scripts/run_scheduled_task.py fixtures
