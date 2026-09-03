@@ -85,3 +85,102 @@ def test_lineup_card_confirms_when_already_optimal(monkeypatch):
     _wire(monkeypatch, xp, starter_ids={1, 3, 4, 5, 6, 8, 9, 10, 11, 13, 14}, captain_id=8)
     card = telegram_bot.lineup_text()
     assert "already match the projection" in card
+
+
+# --- one-tap apply -----------------------------------------------------------
+
+def _pk(el, slot, mult, c=False, v=False):
+    return {"element": el, "position": slot, "multiplier": mult,
+            "is_captain": c, "is_vice_captain": v}
+
+
+def test_lineup_picks_payload_shape():
+    starters = [{"id": i, "pos": p, "xp": 10 - i}
+                for i, p in enumerate(["GKP", "DEF", "DEF", "DEF", "MID", "MID",
+                                       "MID", "MID", "FWD", "FWD", "FWD"], 1)]
+    bench = [{"id": 12, "pos": "GKP", "xp": 1}, {"id": 13, "pos": "DEF", "xp": 4},
+             {"id": 14, "pos": "MID", "xp": 3}, {"id": 15, "pos": "FWD", "xp": 2}]
+    picks = telegram_bot._lineup_picks_payload(starters, bench, cap_id=9, vice_id=5)
+    assert len(picks) == 15
+    assert [p["position"] for p in picks] == list(range(1, 16))
+    assert picks[8]["element"] == 9 and picks[8]["multiplier"] == 2 and picks[8]["is_captain"]
+    assert sum(p["is_captain"] for p in picks) == 1
+    assert sum(p["is_vice_captain"] for p in picks) == 1
+    assert picks[11]["element"] == 12 and picks[11]["multiplier"] == 0   # reserve GK slot 12
+    assert all(p["multiplier"] == 0 for p in picks[11:])
+
+
+def test_lineup_hash_is_order_independent():
+    a = [_pk(1, 1, 1), _pk(2, 2, 2, c=True)]
+    b = [_pk(2, 2, 2, c=True), _pk(1, 1, 1)]
+    assert telegram_bot._lineup_hash(a) == telegram_bot._lineup_hash(b)
+    assert telegram_bot._lineup_hash(a) != telegram_bot._lineup_hash([_pk(1, 1, 2), _pk(2, 2, 1)])
+
+
+class _ApplyClient:
+    def __init__(self):
+        self.posted = None
+
+    def set_lineup(self, team_id, picks, chip=None):
+        self.posted = (team_id, picks, chip)
+        raise AssertionError("dry run must not POST")
+
+    def my_team(self, _tid):
+        return {"picks": []}
+
+
+def _pending_lineup(tmp_path, monkeypatch, *, optimal=False, age_s=10):
+    import datetime as _dt
+    ts = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(seconds=age_s)).isoformat()
+    picks = telegram_bot._lineup_picks_payload(
+        [{"id": i, "pos": p, "xp": 9 - i} for i, p in enumerate(
+            ["GKP", "DEF", "DEF", "DEF", "MID", "MID", "MID", "MID", "FWD", "FWD", "FWD"], 1)],
+        [{"id": 12, "pos": "GKP", "xp": 1}, {"id": 13, "pos": "DEF", "xp": 2},
+         {"id": 14, "pos": "MID", "xp": 2}, {"id": 15, "pos": "FWD", "xp": 2}],
+        cap_id=9, vice_id=5)
+    plan = {"team_id": 1, "gw": 3, "picks": picks, "captain": {"id": 9, "name": "Cap"},
+            "vice": {"id": 5, "name": "Vc"}, "generated_at": ts, "optimal": optimal}
+    plan["lineup_id"] = telegram_bot._lineup_hash(picks)
+    f = tmp_path / "pending_lineup.json"
+    f.write_text(__import__("json").dumps(plan))
+    monkeypatch.setattr(telegram_bot, "PENDING_LINEUP_FILE", str(f))
+    return plan
+
+
+def test_apply_lineup_dry_run_does_not_post(monkeypatch, tmp_path):
+    plan = _pending_lineup(tmp_path, monkeypatch)
+    monkeypatch.setattr(telegram_bot, "authorized", lambda uid: True)
+    monkeypatch.setattr(telegram_bot, "execution_enabled", lambda: True)
+    monkeypatch.setenv("FPL_TELEGRAM_DRY_RUN", "1")
+    monkeypatch.setattr(telegram_bot, "load_pending", lambda: {})
+    monkeypatch.setattr(telegram_bot, "next_deadline_info", lambda: (3, None, None))
+    monkeypatch.setattr(telegram_bot, "FPLClient", _ApplyClient)
+    out = telegram_bot.apply_lineup(uid=1, token=telegram_bot.short_id(plan["lineup_id"]))
+    assert "DRY RUN" in out
+
+
+def test_apply_lineup_refuses_stale_token(monkeypatch, tmp_path):
+    _pending_lineup(tmp_path, monkeypatch)
+    monkeypatch.setattr(telegram_bot, "authorized", lambda uid: True)
+    monkeypatch.setattr(telegram_bot, "execution_enabled", lambda: True)
+    assert "stale" in telegram_bot.apply_lineup(uid=1, token="deadbeef").lower()
+
+
+def test_apply_lineup_refuses_when_chip_plan_pending(monkeypatch, tmp_path):
+    plan = _pending_lineup(tmp_path, monkeypatch)
+    monkeypatch.setattr(telegram_bot, "authorized", lambda uid: True)
+    monkeypatch.setattr(telegram_bot, "execution_enabled", lambda: True)
+    monkeypatch.setattr(telegram_bot, "load_pending",
+                        lambda: {"status": "pending", "chip": "wildcard"})
+    out = telegram_bot.apply_lineup(uid=1, token=telegram_bot.short_id(plan["lineup_id"]))
+    assert "wildcard" in out.lower() or "chip" in out.lower()
+
+
+def test_lineup_apply_confirmation_gates(monkeypatch, tmp_path):
+    plan = _pending_lineup(tmp_path, monkeypatch)
+    monkeypatch.setattr(telegram_bot, "execution_enabled", lambda: True)
+    monkeypatch.setattr(telegram_bot, "load_pending", lambda: {})
+    monkeypatch.setattr(telegram_bot, "authorized", lambda uid: False)
+    assert telegram_bot.lineup_apply_confirmation(1)[0] is None
+    monkeypatch.setattr(telegram_bot, "authorized", lambda uid: True)
+    assert telegram_bot.lineup_apply_confirmation(1)[0] == telegram_bot.short_id(plan["lineup_id"])
