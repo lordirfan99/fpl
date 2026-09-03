@@ -104,3 +104,15 @@ def test_bench_weight_zero_still_produces_a_legal_squad():
     assert len(squad) == 15
     starters, bench = solve_lineup(squad)
     assert len(starters) == 11 and len(bench) == 4
+
+
+def test_starting_defender_cap_forces_an_attacking_shape():
+    # The pool's 5 elite defenders would otherwise all start (5-4-1).
+    cap3 = {"GKP": 1, "DEF": 3, "MID": 5, "FWD": 3}
+    squad = solve_squad(_pool(), budget=1000, lineup_max=cap3)
+    starters, bench = solve_lineup(squad, line_max=cap3)
+    n_def = sum(1 for p in starters if p["position"] == "DEF")
+    n_att = sum(1 for p in starters if p["position"] in ("MID", "FWD"))
+    assert n_def == 3
+    assert n_att == 7  # 3-4-3 or 3-5-2
+    assert len(starters) == 11 and len(bench) == 4
