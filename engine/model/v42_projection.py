@@ -5,6 +5,7 @@ This module is deliberately separate from the executable V4.1 facade.
 from __future__ import annotations
 
 import datetime
+import math
 
 from calibration_v42 import calibrate
 from feature_store_v42 import fixture_factors, player_rates, team_rotation_rate
@@ -32,6 +33,12 @@ PRIORS = {
 
 def _clamp(value, low, high):
     return max(low, min(high, float(value)))
+
+
+def _logistic(value, midpoint, steepness):
+    """P(hit) that a per-90 rate clears an FPL threshold. 0.5 at the threshold,
+    not the old hard clamp that treated 'averages the threshold' as certain."""
+    return 1.0 / (1.0 + math.exp(-float(steepness) * (float(value) - float(midpoint))))
 
 
 def _congested(fixture_map, team, gw):
@@ -88,9 +95,9 @@ def fixture_projection(element, fixture, history, strengths, *, congestion=False
                            + role_assist_rate * 3.0) * share * factors["attack"],
         "clean_sheet": factors["clean_sheet"] * minutes.p_60_plus * CS_POINTS[position],
         "saves": rates["saves"] * share / 3.0 if position == "GKP" else 0.0,
-        "defensive": 2.0 * _clamp(rates["defensive_contribution"] /
-                                   (10.0 if position == "DEF" else 12.0), 0.0, 1.0)
-                                   * minutes.p_60_plus if position in ("DEF", "MID") else 0.0,
+        "defensive": (2.0 * _logistic(rates["defensive_contribution"],
+                                      10.0 if position == "DEF" else 12.0, 0.35)
+                      * minutes.p_60_plus) if position in ("DEF", "MID") else 0.0,
         "discipline": -(rates["yellow_cards"] + 3.0 * rates["red_cards"]) * share,
     }
     mean = max(0.0, sum(components.values()))

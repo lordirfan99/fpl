@@ -9,9 +9,10 @@ sys.path.insert(0, os.path.join(ROOT, "jobs"))
 sys.path.insert(0, os.path.join(ROOT, "bot"))
 
 from feature_store_v42 import (event_rows, history_by_player, load_event_history,
-                               team_rotation_rate, team_strengths, write_event_rows)
+                               player_rates, team_rotation_rate, team_strengths,
+                               write_event_rows)
 from minutes_v42 import forecast_minutes_v42
-from v42_projection import project_player_v42
+from v42_projection import _logistic, project_player_v42
 from evaluate_v42_candidate import evaluate
 from templates import plan_card
 
@@ -22,6 +23,33 @@ def player(**overrides):
              "news": "", "ep_next": "4.0"}
     value.update(overrides)
     return value
+
+
+class RateShrinkageTests(unittest.TestCase):
+    PRIOR = {"goals_scored": 0.30}
+
+    def _rate(self, gws, minutes_each):
+        rows = [{"minutes": minutes_each, "goals_scored": 1.0} for _ in range(gws)]
+        return player_rates(rows, self.PRIOR)
+
+    def test_effective_prior_decays_with_gameweeks(self):
+        self.assertEqual(self._rate(2, 90)["effective_prior_minutes"], 780.0)   # 900 - 60*2
+        self.assertEqual(self._rate(10, 90)["effective_prior_minutes"], 300.0)
+        self.assertEqual(self._rate(20, 90)["effective_prior_minutes"], 180.0)  # floor
+
+    def test_current_season_signal_wins_faster_late_season(self):
+        early = self._rate(2, 90)["goals_scored"]     # heavy shrink toward 0.30
+        late = self._rate(12, 90)["goals_scored"]     # sample should dominate
+        self.assertLess(early, late)
+        self.assertGreater(late, 0.7)                  # observed ~1.0/90 comes through
+
+
+class DefensiveContributionTests(unittest.TestCase):
+    def test_logistic_is_half_at_threshold_and_monotone(self):
+        self.assertAlmostEqual(_logistic(10.0, 10.0, 0.35), 0.5, places=6)
+        self.assertLess(_logistic(6.0, 10.0, 0.35), 0.5)
+        self.assertGreater(_logistic(14.0, 10.0, 0.35), 0.5)
+        self.assertLess(_logistic(10.0, 10.0, 0.35), 1.0)   # never a certainty
 
 
 class MinutesTests(unittest.TestCase):
