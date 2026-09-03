@@ -4,12 +4,13 @@ FPL Autopilot - squad/lineup solver (MILP via PuLP/CBC).
 Two problems:
   solve_squad  : best 15 players under FPL constraints (budget, position
                  quotas 2/5/5/3, max 3 per club). It jointly chooses the
-                 starting XI + captain and scores the bench at only
-                 ``BENCH_WEIGHT`` of face value, because bench players only
-                 ever score via autosub. This stops the solver spending real
-                 money on a premium player it would then bench (e.g. buying a
-                 £9.0m striker as the 3rd forward in a 5-4-1). It still returns
-                 all 15; callers run solve_lineup to split XI/bench.
+                 starting XI + captain, scores the bench at only
+                 ``BENCH_WEIGHT`` of face value (bench only scores via autosub),
+                 and hard-caps the three outfield subs at ``OUTFIELD_BENCH_MAX``
+                 total price. Together these stop the solver parking spare
+                 budget on a premium player it would then bench (e.g. a £9.0m
+                 striker as the 3rd forward in a 5-4-1). It still returns all
+                 15; callers run solve_lineup to split XI/bench.
   solve_lineup : best starting XI from a fixed 15 (min 1 GK / 3 DEF / 2 MID /
                  1 FWD), then bench ordered by xPts (autosub order matters).
 
@@ -27,6 +28,12 @@ CLUB_MAX = 3
 # season (autosub only, and usually < 90 mins when it happens). Small but not
 # zero, so the bench isn't filled with literally pointless £4.0m fodder.
 BENCH_WEIGHT = 0.15
+# Hard cap on the combined price of the three OUTFIELD substitutes (0.1m units).
+# The objective still can't reward banked cash, so without this a cheap-XI build
+# with a big surplus parks that money in the best affordable bench filler
+# (a £9.0m striker sat on the bench). £15.0m still allows real depth
+# (~£6m + £4.5m + £4.5m) while blocking that.
+OUTFIELD_BENCH_MAX = 150
 
 
 def _solve(players, objective, constraints, name="prob"):
@@ -42,9 +49,11 @@ def _solve(players, objective, constraints, name="prob"):
 
 
 def solve_squad(players, budget=1000, quota=SQUAD_QUOTA, club_max=CLUB_MAX,
-                bench_weight=BENCH_WEIGHT, lineup_min=LINEUP_MIN, lineup_max=LINEUP_MAX):
+                bench_weight=BENCH_WEIGHT, lineup_min=LINEUP_MIN, lineup_max=LINEUP_MAX,
+                outfield_bench_max=OUTFIELD_BENCH_MAX):
     """Pick the 15 that maximise starting-XI xPts + captain, with the bench
-    scored at ``bench_weight`` of face value. Returns the 15 (unchanged
+    scored at ``bench_weight`` of face value and the three outfield substitutes
+    capped at ``outfield_bench_max`` total price. Returns the 15 (unchanged
     contract); run solve_lineup on the result for the XI/bench split.
     """
     prob = pulp.LpProblem("squad", pulp.LpMaximize)
@@ -85,6 +94,10 @@ def solve_squad(players, budget=1000, quota=SQUAD_QUOTA, club_max=CLUB_MAX,
         prob += pulp.lpSum(starts[i] for i in ids if by_id[i]["position"] == pos) >= n
     for pos, n in lineup_max.items():
         prob += pulp.lpSum(starts[i] for i in ids if by_id[i]["position"] == pos) <= n
+
+    # --- the 3 outfield subs must be cheap: no parking surplus on a bench body ---
+    prob += pulp.lpSum(by_id[i]["cost"] * (in_squad[i] - starts[i])
+                       for i in ids if by_id[i]["position"] != "GKP") <= outfield_bench_max
 
     prob.solve(pulp.PULP_CBC_CMD(msg=0))
     if pulp.LpStatus[prob.status] != "Optimal":
