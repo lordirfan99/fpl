@@ -2,13 +2,18 @@
 
 Regression: the old objective (max sum of 15 xPts) would spend real money on a
 premium player it then benched - e.g. a £9.0m striker as the 3rd forward in a
-5-4-1. The bench only scores via autosub, so it is now weighted at BENCH_WEIGHT.
+5-4-1. Bench players only score via autosub, so they are now weighted at
+BENCH_WEIGHT *and* the three outfield subs are hard-capped at OUTFIELD_BENCH_MAX.
 """
 import pytest
 
 pytest.importorskip("pulp")  # CBC not installed in the lightweight local venv
 
-from squad_solver import solve_lineup, solve_squad  # noqa: E402
+from squad_solver import (  # noqa: E402
+    OUTFIELD_BENCH_MAX,
+    solve_lineup,
+    solve_squad,
+)
 
 
 def _p(pid, pos, cost, xpts, club=None):
@@ -40,9 +45,14 @@ TRAP_ID = 61
 UPGRADE_ID = 30
 
 
+def _outfield_bench(squad):
+    _, bench = solve_lineup(squad)
+    return [p for p in bench if p["position"] != "GKP"]
+
+
 def test_does_not_buy_a_premium_player_just_to_bench_it():
-    # Budget lets the solver afford the real DEF upgrade but NOT also the trap.
-    squad = solve_squad(_pool(), budget=940)
+    # Full £100m budget: only the bench-cost cap stops the trap here.
+    squad = solve_squad(_pool(), budget=1000)
     ids = {p["id"] for p in squad}
 
     assert len(squad) == 15
@@ -52,9 +62,19 @@ def test_does_not_buy_a_premium_player_just_to_bench_it():
     starters, bench = solve_lineup(squad)
     assert len(starters) == 11 and len(bench) == 4
     assert UPGRADE_ID in {p["id"] for p in starters}
-    # the two non-starting forwards are cheap fodder, not premium
     bench_fwd = [p for p in bench if p["position"] == "FWD"]
     assert bench_fwd and all(p["cost"] <= 40 for p in bench_fwd)
+
+
+def test_outfield_bench_cost_is_capped():
+    subs = _outfield_bench(solve_squad(_pool(), budget=1000))
+    assert sum(p["cost"] for p in subs) <= OUTFIELD_BENCH_MAX
+    # no single outfield sub is a premium body
+    assert all(p["cost"] <= 60 for p in subs)
+
+    # a tighter (still feasible) cap is honoured
+    tight = _outfield_bench(solve_squad(_pool(), budget=1000, outfield_bench_max=130))
+    assert sum(p["cost"] for p in tight) <= 130
 
 
 def test_returns_a_legal_15_and_respects_budget():
