@@ -1,5 +1,52 @@
 # Runbook
 
+## Recommendation freshness — 4 September 2026
+
+**Problem.** `/v1/recommendations/current` (and `/v1/decision/current`) read only
+the newest *finalized* league snapshot. During GW3 prep that file was
+`2026-09-01T14:00:07Z` — 69.5 h old, `stale=true` — but the endpoint still
+returned 5 transfer suggestions with no honest freshness signal, while
+`/v1/leagues/{id}/live/status` was serving a complete VM snapshot ~0.3 h old.
+
+**Change (branch `fix/recommendation-freshness`).**
+- New `api/app/recommendation_inputs.py::resolve_recommendation_inputs` picks the
+  freshest *safe* league context: fresh VM live snapshot first, finalized
+  fallback, honest `safe_hold` / `needs_refresh` when neither is usable. The
+  player catalogue / prices / fixtures always come from the independent
+  `repository.bootstrap` / `repository.fixtures` reference caches.
+- The VM collector (`refresh_live_leagues.py`, `SCHEMA_VERSION` 1→2) now also
+  publishes `gw_bank`, the official `overall_rank` and real `transfers_made` per
+  manager — all lifted from the `entry_history` block of the picks call it
+  already makes, so **no extra FPL request** and no new write path.
+- Every response carries `freshness{source, snapshot_at, data_age_hours, stale,
+  status, reason, bank_known, rank_provenance, missing_fields}` and a
+  `packet_status` (`advisory` / `provisional` / `safe_hold` / `needs_refresh`).
+- Dashboard Assistant shows an explicit **Fresh / Provisional / Stale · safe
+  hold** state and suppresses the transfer card on a hold.
+- `monitor_production.py` fails loudly on a silently-stale recommendation;
+  `safe_hold` is an accepted honest degradation.
+- No model/scoring change. `fetch_competitive_v4(require_executable_plan=True)`
+  and the Telegram `/approve` gate remain the only execution authority; a
+  `provisional` / `safe_hold` packet never satisfies the executable path.
+
+**Local verification.** `pytest` 339 passed / 6 skipped (incl. new
+`api/tests/test_recommendation_freshness.py` — fresh / stale-finalized /
+incomplete-live / mixed-source / future+malformed timestamp / no-write /
+Telegram-only cases); `ruff check .` clean; `web` typecheck + build clean.
+
+**Release / production verification.** _Filled in after deploy from the tag:_
+
+| Item | Before | After |
+|---|---|---|
+| merge commit / tag | — | _pending_ |
+| API revision | `3afe2ed` | _pending_ |
+| `/v1/recommendations/current` `meta.source` | `snapshot` (finalized) | _pending_ |
+| `snapshot_at` / `data_age_hours` | `2026-09-01T14:00:07Z` / 69.5 h | _pending_ |
+| `freshness.status` / `packet_status` | (none) / `advisory` | _pending_ |
+| `/v1/leagues/{58005,131997}/live/status` | ready | _pending_ |
+| VM `systemctl --failed` | — | _pending_ |
+| `entry/2797967` transfers made by this system | 0 | _pending (must stay 0)_ |
+
 ## Current recovered runtime — 4 September 2026
 
 The active VM is `instance-20260412-121200` in **us-central1-a**, `e2-micro`,

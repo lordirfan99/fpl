@@ -10,9 +10,19 @@ import { formatMYT } from "@/lib/format";
 
 const number = (value?: number) => typeof value === "number" ? value.toFixed(1) : "—";
 
+const FRESHNESS_LABEL: Record<string, { label: string; detail: string; tone: "positive" | "warning" | "default" }> = {
+  fresh: { label: "Fresh", detail: "Official live snapshot", tone: "positive" },
+  provisional: { label: "Provisional", detail: "Live · affordability unconfirmed", tone: "warning" },
+  stale: { label: "Stale", detail: "Older finalized snapshot", tone: "warning" },
+  safe_hold: { label: "Safe hold", detail: "No fresh league data — see Telegram", tone: "warning" },
+  needs_refresh: { label: "Needs refresh", detail: "No usable league snapshot", tone: "warning" },
+};
+
 export default async function AssistantPage() {
   const review = await getDashboardData().catch(() => null);
-  const rec = review ? await getCompetitiveRecommendation(review.leagueId, review.gameweek).catch(() => null) : null;
+  // No explicit gw: let the API pick the freshest safe source (live snapshot
+  // first, finalized fallback, honest safe_hold).
+  const rec = review ? await getCompetitiveRecommendation(review.leagueId).catch(() => null) : null;
   const live = review ? await getLiveTeam(undefined, review.leagueId).catch(() => null) : null;
 
   const season = review ? deriveSeasonContext(review.bootstrap.events, { finalizedGw: review.gameweek, liveGameweek: live?.gameweek }) : null;
@@ -24,13 +34,20 @@ export default async function AssistantPage() {
   const deadline = season?.nextDeadline ? new Date(season.nextDeadline) : null;
   const hoursRemaining = season?.hoursToDeadline ?? null;
 
-  const move = rec?.transfers?.[0];
+  const fresh = rec?.freshness;
+  const packet = rec?.packetStatus ?? "advisory";
+  const held = packet === "safe_hold" || packet === "needs_refresh";
+  const freshMeta = FRESHNESS_LABEL[fresh?.status ?? "stale"] ?? FRESHNESS_LABEL.stale;
+  const ageLabel = fresh?.dataAgeHours == null ? "—"
+    : fresh.dataAgeHours < 1 ? `${Math.round(fresh.dataAgeHours * 60)}m ago`
+    : fresh.dataAgeHours < 48 ? `${fresh.dataAgeHours.toFixed(1)}h ago`
+    : `${Math.floor(fresh.dataAgeHours / 24)}d ago`;
+
+  const move = held ? undefined : rec?.transfers?.[0];
   const captain = rec?.captains?.[0];
   const phase = rec?.competitive.phase;
   const alignment = rec?.competitive.alignment;
   const targetAlignment = rec?.competitive.targetAlignment;
-  const action = move ? "TRANSFER" : "LINEUP ONLY";
-  const quality = rec?.meta.qualityStatus ?? "unknown";
 
   return <div className="page-stack">
     <PageHeader
@@ -58,8 +75,11 @@ export default async function AssistantPage() {
       <MetricCard label="Action now" value={move ? "Transfer" : "Set XI"} detail={move ? "Model-supported candidate below" : "No move clears the model threshold"} tone={move ? "positive" : "default"} />
       <MetricCard label="Target gameweek" value={`GW${targetGameweek ?? "—"}`} detail={formatMYT(deadline) ?? "Deadline TBC"} />
       <MetricCard label="Elite alignment" value={alignment == null ? "—" : `${alignment.toFixed(0)}%`} detail={targetAlignment == null ? "Target pending" : `Target ${targetAlignment}%`} tone={alignment != null && targetAlignment != null && alignment >= targetAlignment ? "positive" : "warning"} />
-      <MetricCard label="Snapshot quality" value={quality === "valid" ? "Valid" : quality === "unknown" ? "Pending" : "Invalid"} detail={rec ? `Reviewed GW${review?.gameweek}` : "Awaiting snapshot"} tone={quality === "valid" ? "positive" : "warning"} />
+      <MetricCard label="Recommendation" value={freshMeta.label} detail={`${freshMeta.detail} · ${ageLabel}`} tone={freshMeta.tone} />
     </section>
+
+    {held ? <section className="execution-note"><ShieldCheck /><div><strong>Holding — no fresh league data</strong><p>{fresh?.reason ? `Reason: ${fresh.reason}. ` : ""}The dashboard will not present an old transfer as current. Your Telegram bot has the live plan; apply any change yourself in the official FPL app.</p></div></section> : null}
+    {packet === "provisional" ? <section className="execution-note"><Clock3 /><div><strong>Provisional live data</strong><p>Built from the fresh official live snapshot, but your bank was not in it — affordability on any transfer below is unconfirmed. Verify in the FPL app before acting.</p></div></section> : null}
 
     <div className="content-grid decision-grid">
       <section className="surface">
@@ -72,7 +92,7 @@ export default async function AssistantPage() {
             <p>{number(move.xptsGain)} gross next-GW xPts · {move.incoming.eliteOwnership.toFixed(1)}% elite ownership · hits excluded</p>
           </div>
           <b>Apply in FPL<small>after team news</small></b>
-        </article> : <div className="empty-state"><ShieldCheck /><h3>Keep your transfer</h3><p>No move clears the model threshold on the latest finalized snapshot. Focus on the XI and captain.</p></div>}
+        </article> : <div className="empty-state"><ShieldCheck /><h3>{held ? "No recommendation" : "Keep your transfer"}</h3><p>{held ? "No fresh league context is available to build a transfer recommendation right now." : "No move clears the model threshold on the freshest available data. Focus on the XI and captain."}</p></div>}
       </section>
       <section className="surface">
         <div className="section-heading"><div><span>LINEUP CHECK</span><h2>Captain and formation</h2></div><span className="section-chip">Model recommendation</span></div>
@@ -88,7 +108,7 @@ export default async function AssistantPage() {
     <section className="surface">
       <div className="section-heading"><div><span>WHY YOU CAN TRUST THIS</span><h2>Decision readiness</h2><p>Each status answers a different question, so &ldquo;valid&rdquo; is never confused with &ldquo;fresh&rdquo;.</p></div></div>
       <div className="validation-grid">
-        <div className={quality === "valid" ? "passed" : "failed"}><ShieldCheck /><span>Snapshot: {quality}</span></div>
+        <div className={fresh && !fresh.stale ? "passed" : "failed"}><ShieldCheck /><span>Data: {fresh?.source ?? "unknown"} · {freshMeta.label.toLowerCase()}{fresh?.snapshotAt ? ` · ${formatMYT(fresh.snapshotAt)}` : ""}</span></div>
         <div className={deadline && hoursRemaining != null && hoursRemaining > 0 ? "passed" : "failed"}><Clock3 /><span>Deadline: {formatMYT(deadline) ?? "unknown"}</span></div>
         <div className="passed"><ListChecks /><span>Execution: manual — you apply changes in the official FPL app</span></div>
       </div>

@@ -174,14 +174,15 @@ def hydrate_manager_squads(rows: list[dict[str, Any]], gameweek: int, limit: int
     teams = {int(row["id"]): row.get("name", "—") for row in bootstrap.get("teams", [])}
     targets = rows[:limit]
 
-    def hydrate(row: dict[str, Any]) -> tuple[int, list[dict[str, Any]], str]:
+    def hydrate(row: dict[str, Any]) -> tuple[int, list[dict[str, Any]], str, dict[str, Any]]:
+        empty_extras: dict[str, Any] = {"bank": None, "overall_rank": None, "event_transfers": None}
         for attempt in range(3):
             try:
                 payload = _get(f"entry/{int(row['entry'])}/event/{gameweek}/picks/", ttl=30)
                 break
             except Exception:
                 if attempt == 2:
-                    return int(row["entry"]), [], ""
+                    return int(row["entry"]), [], "", empty_extras
                 sleep(0.25 * (attempt + 1))
         try:
             picks = []
@@ -199,9 +200,26 @@ def hydrate_manager_squads(rows: list[dict[str, Any]], gameweek: int, limit: int
                 # of the submitted XI: positions 1–11 start, 12–15 are bench.
                 multiplier = (2 if pick.get("is_captain") else 1) if selection_position <= 11 else 0
                 picks.append({"element": int(pick.get("element") or 0), "name": name, "position": position, "team": teams.get(int(player.get("team") or 0), "—"), "cost": int(player.get("now_cost") or 0) / 10, "multiplier": multiplier, "is_captain": bool(pick.get("is_captain")), "is_vice_captain": bool(pick.get("is_vice_captain")), "selected_by": float(player.get("selected_by_percent") or 0)})
-            return int(row["entry"]), picks, captain
+            # The same picks payload carries the manager's live bank, official
+            # overall rank and GW transfer count in `entry_history`. Capture
+            # them here so the published snapshot is a complete recommendation
+            # input without any extra FPL request.
+            history = payload.get("entry_history") or {}
+
+            def _as_int(value: Any) -> int | None:
+                try:
+                    return int(value) if value is not None else None
+                except (TypeError, ValueError):
+                    return None
+
+            extras = {
+                "bank": _as_int(history.get("bank")),
+                "overall_rank": _as_int(history.get("overall_rank")) or None,
+                "event_transfers": _as_int(history.get("event_transfers")),
+            }
+            return int(row["entry"]), picks, captain, extras
         except Exception:
-            return int(row["entry"]), [], ""
+            return int(row["entry"]), [], "", empty_extras
 
     hydrated = 0
     # A public league's five-percent cohort can be 90+ squads.  Eight workers
@@ -211,11 +229,15 @@ def hydrate_manager_squads(rows: list[dict[str, Any]], gameweek: int, limit: int
     with ThreadPoolExecutor(max_workers=max(1, min(16, len(targets)))) as pool:
         futures = [pool.submit(hydrate, row) for row in targets]
         results = [future.result() for future in as_completed(futures)]
-    by_id = {entry_id: (picks, captain) for entry_id, picks, captain in results}
+    by_id = {entry_id: (picks, captain, extras) for entry_id, picks, captain, extras in results}
     for row in rows:
         entry_id = int(row.get("entry") or 0)
         if entry_id in by_id and by_id[entry_id][0]:
-            row["_live_squad"] = by_id[entry_id][0]
-            row["_live_captain"] = by_id[entry_id][1]
+            picks, captain, extras = by_id[entry_id]
+            row["_live_squad"] = picks
+            row["_live_captain"] = captain
+            row["_live_bank"] = extras.get("bank")
+            row["_live_overall_rank"] = extras.get("overall_rank")
+            row["_live_event_transfers"] = extras.get("event_transfers")
             hydrated += 1
     return hydrated

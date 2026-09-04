@@ -52,11 +52,13 @@ def fetch_competitive_v4(league_id: int, gameweek: int, *, timeout: int = 30,
         if not isinstance(payload.get("plan"), dict):
             raise CompetitiveV4Error("V4 packet has no complete plan")
     else:
-        # A safe-hold OR advisory packet may still carry a fresh, valid league
-        # model. It must never be treated as executable, but it is the correct
-        # input for constructing the plan. "advisory" is what the API returns
-        # for a finalized-GW decision packet (competitor-aware, not executable).
-        if packet_status not in ("safe_hold", "advisory", "valid", "applied"):
+        # A safe-hold / advisory / provisional packet may still carry a valid
+        # league model. It must never be treated as executable, but it is the
+        # correct input for constructing the plan. "advisory" is a finalized-GW
+        # decision packet; "provisional" is a fresh live packet with an optional
+        # field missing (e.g. bank unknown); "needs_refresh" has no usable model
+        # and is filtered out by the quality gate above.
+        if packet_status not in ("safe_hold", "advisory", "provisional", "valid", "applied", "needs_refresh"):
             raise CompetitiveV4Error(f"unexpected V4 packet status: {packet_status!r}")
         if competitive.get("phase") is None or competitive.get("alignment") is None:
             raise CompetitiveV4Error("V4 competitive context is incomplete")
@@ -87,7 +89,8 @@ def fetch_competitive_v4(league_id: int, gameweek: int, *, timeout: int = 30,
         "elite_count": payload.get("elite_count"),
         "elite_overlap": payload.get("elite_overlap"),
         "elite_average_points": payload.get("elite_average_points"),
-        "meta": {key: meta.get(key) for key in ("run_id", "snapshot_at", "generated_at", "stale", "freshness_hours", "quality_status", "snapshot_gameweek")},
+        "meta": {key: meta.get(key) for key in ("run_id", "snapshot_at", "generated_at", "stale", "freshness_hours", "quality_status", "snapshot_gameweek", "data_source", "data_age_hours", "freshness_status", "freshness_reason", "missing_fields")},
+        "freshness": payload.get("freshness") or {},
         "decision_id": payload.get("decision_id"),
         "packet_status": packet_status,
         "context_only": not require_executable_plan,

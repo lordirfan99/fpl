@@ -213,7 +213,16 @@ def build_recommendations(
     fixtures: list[dict[str, Any]],
     population_size: int | None = None,
     gameweek: int = 1,
+    bank: float | None = None,
 ) -> dict[str, Any]:
+    """Build the competitive packet.
+
+    ``bank`` is the manager's bank in pounds. Pass ``None`` (the default) to read
+    ``manager["gw_bank"]`` (FPL-native tenths). When neither is available the
+    affordability filter runs at zero bank -- which can only *withhold* a
+    suggestion, never invent an unaffordable one -- and every transfer is
+    stamped ``bank_known=False`` so the caller can flag it.
+    """
     current_team = _current_team_by_element(bootstrap)
     managers = _normalize_squad_teams(managers, current_team)
     manager = next(
@@ -298,7 +307,12 @@ def build_recommendations(
         if current is None or pick["score"] < current["score"]:
             weakest[pick["position"]] = pick
     transfers = []
-    bank = _number(manager.get("gw_bank")) / 10.0
+    if bank is None:
+        raw_bank = manager.get("gw_bank")
+        bank_known = raw_bank is not None
+        bank = _number(raw_bank) / 10.0
+    else:
+        bank_known = True
     club_counts = Counter(pick.get("team") for pick in squad)
     for incoming in missing:
         outgoing = weakest.get(incoming["position"])
@@ -318,7 +332,7 @@ def build_recommendations(
                 "gain_basis": "next_gameweek_gross; transfer cost and hits excluded",
                 "net_ev_status": "not_calculated",
                 "legal_checks": {"same_position": True, "affordable_at_snapshot_prices": True,
-                                 "club_limit": True, "bank": round(bank, 1)},
+                                 "club_limit": True, "bank": round(bank, 1), "bank_known": bank_known},
             })
     transfers.sort(key=lambda item: item["signal_gain"], reverse=True)
 
@@ -369,6 +383,7 @@ def build_recommendations(
         "captains": sorted(starters, key=lambda pick: pick["score"], reverse=True)[:4],
         "risks": [pick for pick in squad if pick["risk"]],
         "missing_elite_players": missing[:6], "competitive": competitive,
+        "inputs": {"bank_known": bank_known, "bank": round(bank, 1)},
     }
 
 
