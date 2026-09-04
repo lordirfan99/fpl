@@ -144,7 +144,8 @@ class RecommendationResponse(BaseModel):
     league_id: int
     gameweek: int
     team_id: int
-    packet_status: Literal["advisory", "provisional", "safe_hold", "needs_refresh"] = "advisory"
+    # "Can a client act on this?" — data freshness is separate, in `freshness`.
+    packet_status: Literal["advisory", "safe_hold", "needs_refresh"] = "advisory"
     freshness: dict[str, Any] = Field(default_factory=dict)
     elite_count: int
     elite_overlap: int

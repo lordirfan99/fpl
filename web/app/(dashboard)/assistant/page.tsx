@@ -79,7 +79,7 @@ export default async function AssistantPage() {
     </section>
 
     {held ? <section className="execution-note"><ShieldCheck /><div><strong>Holding — no fresh league data</strong><p>{fresh?.reason ? `Reason: ${fresh.reason}. ` : ""}The dashboard will not present an old transfer as current. Your Telegram bot has the live plan; apply any change yourself in the official FPL app.</p></div></section> : null}
-    {packet === "provisional" ? <section className="execution-note"><Clock3 /><div><strong>Provisional live data</strong><p>Built from the fresh official live snapshot, but your bank was not in it — affordability on any transfer below is unconfirmed. Verify in the FPL app before acting.</p></div></section> : null}
+    {!held && fresh?.status === "provisional" ? <section className="execution-note"><Clock3 /><div><strong>Provisional live data</strong><p>Built from the fresh official live snapshot, but your bank was not in it — affordability on any transfer below is unconfirmed. Verify in the FPL app before acting.</p></div></section> : null}
 
     <div className="content-grid decision-grid">
       <section className="surface">

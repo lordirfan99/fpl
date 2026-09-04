@@ -197,7 +197,9 @@ def test_incomplete_live_snapshot_is_provisional_with_bank_unconfirmed(monkeypat
         captured_at=(NOW - timedelta(minutes=15)).isoformat(), with_bank=False))
     body = CLIENT.get("/v1/recommendations/current?league_id=58005").json()
 
-    assert body["packet_status"] == "provisional"
+    # packet_status stays "advisory" (still actionable); the "provisional"
+    # nuance lives in freshness.status so older consumers are unaffected.
+    assert body["packet_status"] == "advisory"
     assert body["freshness"]["status"] == "provisional"
     assert body["freshness"]["bank_known"] is False
     assert body["meta"]["missing_fields"] == ["gw_bank"]

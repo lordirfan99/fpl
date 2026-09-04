@@ -25,7 +25,8 @@ export interface CompetitivePlayer extends Pick {
 }
 
 export type FreshnessStatus = "fresh" | "provisional" | "stale" | "safe_hold" | "needs_refresh";
-export type PacketStatus = "advisory" | "provisional" | "safe_hold" | "needs_refresh";
+// "Can I act on this?" — separate from data freshness (FreshnessStatus).
+export type PacketStatus = "advisory" | "safe_hold" | "needs_refresh";
 
 export interface RecommendationFreshness {
   source: string;
