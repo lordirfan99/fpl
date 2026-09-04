@@ -19,33 +19,52 @@ returned 5 transfer suggestions with no honest freshness signal, while
   manager — all lifted from the `entry_history` block of the picks call it
   already makes, so **no extra FPL request** and no new write path.
 - Every response carries `freshness{source, snapshot_at, data_age_hours, stale,
-  status, reason, bank_known, rank_provenance, missing_fields}` and a
-  `packet_status` (`advisory` / `provisional` / `safe_hold` / `needs_refresh`).
+  status, reason, bank_known, rank_provenance, missing_fields}`.
+  `packet_status` stays orthogonal (`advisory` / `safe_hold` / `needs_refresh`)
+  so every consumer version is unaffected by how fresh the inputs are (#67);
+  data freshness (`fresh` / `provisional` / `stale`) lives only in
+  `freshness.status`.
 - Dashboard Assistant shows an explicit **Fresh / Provisional / Stale · safe
   hold** state and suppresses the transfer card on a hold.
 - `monitor_production.py` fails loudly on a silently-stale recommendation;
   `safe_hold` is an accepted honest degradation.
 - No model/scoring change. `fetch_competitive_v4(require_executable_plan=True)`
   and the Telegram `/approve` gate remain the only execution authority; a
-  `provisional` / `safe_hold` packet never satisfies the executable path.
+  `safe_hold` / `needs_refresh` packet never satisfies the executable path.
 
 **Local verification.** `pytest` 339 passed / 6 skipped (incl. new
 `api/tests/test_recommendation_freshness.py` — fresh / stale-finalized /
 incomplete-live / mixed-source / future+malformed timestamp / no-write /
 Telegram-only cases); `ruff check .` clean; `web` typecheck + build clean.
 
-**Release / production verification.** _Filled in after deploy from the tag:_
+**Release.** PRs #66 (`dfb9674`) + #67 (`392161b`), squash-merged to `main`.
+Release tag **`v2026.09.04-recommendation-freshness-2`** (`392161b`).
+- **API**: Cloud Build `b0d6241f-2117-4e1c-aaa5-3ce6c95e964b` (SUCCESS) →
+  Cloud Run `fpl-scout-api` now reports revision `392161b`.
+- **Collector**: `install-live-refresh.sh v2026.09.04-recommendation-freshness-2`
+  on the VM (`us-central1-a`); `/opt/fpl-live-refresh/current` →
+  `releases/392161b33e66f3947dd5f6f145ee1401df475beb`. One manual run completed
+  `Result=success ExecMainStatus=0`, publishing schema-v2 snapshots for 58005
+  (12:17:41Z, 1217 mgrs) and 131997 (12:27:14Z, 2623 mgrs); the 30-min timer
+  was restarted and the temporary checkout removed.
+
+**Production verification — 4 September 2026, ~12:30 UTC.**
 
 | Item | Before | After |
 |---|---|---|
-| merge commit / tag | — | _pending_ |
-| API revision | `3afe2ed` | _pending_ |
-| `/v1/recommendations/current` `meta.source` | `snapshot` (finalized) | _pending_ |
-| `snapshot_at` / `data_age_hours` | `2026-09-01T14:00:07Z` / 69.5 h | _pending_ |
-| `freshness.status` / `packet_status` | (none) / `advisory` | _pending_ |
-| `/v1/leagues/{58005,131997}/live/status` | ready | _pending_ |
-| VM `systemctl --failed` | — | _pending_ |
-| `entry/2797967` transfers made by this system | 0 | _pending (must stay 0)_ |
+| API revision | `3afe2ed` | `392161b` (`/health` ok) |
+| `/v1/recommendations/current` source | `snapshot` (finalized) | `official-fpl-live` |
+| `snapshot_at` / `data_age_hours` | `2026-09-01T14:00:07Z` / **70.0 h**, `stale=true` | `2026-09-04T12:17:41Z` / **~0.2 h**, `stale=false` |
+| `freshness.status` / `packet_status` | (absent) / `advisory` | `fresh` / `advisory` |
+| `freshness.bank_known` / `rank_provenance` | (absent) | `true` / `official-entry-history` |
+| my `inputs.bank` | (from 70 h-old file) | `£1.0m` (live `entry_history`) |
+| `/v1/decision/current` | advisory, quality `valid` | advisory, quality `valid`, `freshness.status=fresh`, `executable=false`, `writes_enabled=false` |
+| `/v1/leagues/58005/live/status` | ready, gw2 | ready, gw2, age 0.21 h, 1217 mgrs |
+| `/v1/leagues/131997/live/status` | ready, gw2 | ready, gw2, age 0.05 h, 2623 mgrs |
+| `/v1/live/team` | gw2, 15 picks, 99 pts | unchanged (gw2, 15 picks, 99 pts) |
+| Dashboard Assistant "Recommendation" chip | "Snapshot quality: Valid/Pending" | "**Fresh** — Official live snapshot · 13m ago" |
+| VM `systemctl --failed` | — | empty (no failed units) |
+| `entry/2797967` transfers / chips | GW1 0, GW2 1, `chips: []` | **unchanged** — no FPL write occurred |
 
 ## Current recovered runtime — 4 September 2026
 
@@ -106,8 +125,8 @@ The VM's exact deployed commit was not identifiable from its runtime directory.
 
 | Component | Tag / ref | Notes |
 |---|---|---|
-| api | `v2026.09.04-vm-live-refresh` (`3afe2ed`) | Cloud Build `c1c88be1-c67c-4d89-94aa-4fcba8c68fca` succeeded; health and both league status checks passed |
-| live collector | `v2026.09.04-recovered-runtime` (`c71e597`) | Automatic run published both leagues and completed successfully at 11:05:47 UTC on 2026-09-04 |
+| api | `v2026.09.04-recommendation-freshness-2` (`392161b`) | Cloud Build `b0d6241f-2117-4e1c-aaa5-3ce6c95e964b` succeeded; `/health` → `392161b`; `/v1/recommendations/current` `freshness.status=fresh` from `official-fpl-live`; both league status checks ready |
+| live collector | `v2026.09.04-recommendation-freshness-2` (`392161b`) | schema-v2 (`gw_bank` + official `overall_rank` from `entry_history`); manual run `Result=success`, published 58005 (12:17:41Z) + 131997 (12:27:14Z) on 2026-09-04; 30-min timer restarted; no failed units |
 | engine + bot | recovered machine image `fpl-zone-recovery-20260904` | Services active after restore; exact source commit not independently established |
 | Telegram bot token | rotated 2026-09-02, in VM `config/credentials.env` only | `@Fplnaf_bot`, chat `-1004464574417` |
 
