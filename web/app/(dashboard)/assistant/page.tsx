@@ -15,9 +15,12 @@ export default async function AssistantPage() {
   const rec = review ? await getCompetitiveRecommendation(review.leagueId, review.gameweek).catch(() => null) : null;
   const live = review ? await getLiveTeam(undefined, review.leagueId).catch(() => null) : null;
 
-  const season = review ? deriveSeasonContext(review.bootstrap.events, { finalizedGw: review.gameweek }) : null;
+  const season = review ? deriveSeasonContext(review.bootstrap.events, { finalizedGw: review.gameweek, liveGameweek: live?.gameweek }) : null;
   const targetGameweek = season?.nextDeadlineGw;
-  const liveChipForTarget = live && live.gameweek === targetGameweek ? live.active_chip : null;
+  // Trust the live chip only while its gameweek is the one being played and
+  // has not been finalized yet — otherwise `active_chip` on a finished GW's
+  // picks would report a spent chip forever.
+  const liveChipNow = live && season && live.gameweek === season.liveGw && season.liveGw > season.finalizedGw ? live.active_chip : null;
   const deadline = season?.nextDeadline ? new Date(season.nextDeadline) : null;
   const hoursRemaining = season?.hoursToDeadline ?? null;
 
@@ -37,7 +40,7 @@ export default async function AssistantPage() {
       updated={formatMYT(rec?.meta.snapshotAt)}
     />
 
-    <ChipNotice targetGameweek={targetGameweek} liveActiveChip={liveChipForTarget} />
+    <ChipNotice targetGameweek={targetGameweek} liveGameweek={live?.gameweek} liveActiveChip={liveChipNow} />
 
     <section className="decision-hero">
       <div>
