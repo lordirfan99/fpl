@@ -508,10 +508,14 @@ def recommendations(
         resolved.manager, resolved.managers, resolved.bootstrap, resolved.fixtures,
         population_size=resolved.population_size, gameweek=resolved.gameweek, bank=None,
     )
+    # `packet_status` answers "can a client act on this?" -> advisory / safe_hold
+    # / needs_refresh only. Data freshness (fresh / provisional / stale) is
+    # orthogonal and lives in `freshness.status`, so the API stays compatible
+    # with every consumer version regardless of how fresh the inputs are.
     return RecommendationResponse(
         meta=_rec_meta(resolved), league_id=league_id, gameweek=resolved.gameweek,
         team_id=settings.my_team_id,
-        packet_status="provisional" if resolved.status == "provisional" else "advisory",
+        packet_status="advisory",
         freshness=resolved.freshness(),
         disclaimer=REC_DISCLAIMER,
         **result,
