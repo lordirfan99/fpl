@@ -9,7 +9,7 @@ set -euo pipefail
 
 REF="${1:?usage: vm-sync.sh <git-tag-or-sha>}"
 VM=instance-20260412-121200
-ZONE=us-central1-f
+ZONE="${FPL_VM_ZONE:-us-central1-f}"
 PROJECT=irfan-374115
 REMOTE=/opt/fpl-autopilot
 
