@@ -1,5 +1,57 @@
 # Runbook
 
+## Current planning inputs — verified release, 4 September 2026
+
+This section supersedes the earlier freshness/account-state claims below.
+Public gameweek picks and `entry_history` are league research, not a verified
+current pre-deadline squad or bank. Personal planning requires authenticated
+`my-team` inputs on the VM.
+
+**Release:** [PR #69](https://github.com/lordirfan99/fpl/pull/69), tag
+`v2026.09.04-current-planning-inputs`, commit
+`7fbc39fdb109988a2e9c9ff6b4b3a6c78f4200ef`. PR CI was green before merge.
+Cloud Build `1611e4b2-90c2-4833-8edc-ca277a8fbedc` succeeded and API `/health`
+reported that commit, healthy, with writes disabled. Netlify workflow
+[33889924119](https://github.com/lordirfan99/fpl/actions/runs/33889924119)
+succeeded for the same commit.
+
+The tagged `infra/deploy/install-recommendation-planner.sh` installed only
+`model/competitive_v4_client.py` and `jobs/pre_deadline_run.py` on the active
+us-central1-a VM. The auto-runner timer was paused for installation and restored;
+no bot restart or configuration/dependency change was required. The installer
+compared both installed files against the tagged checkout. Other engine/bot
+files remain from the recovered image, with no independently established SHA.
+The live collector remains at `392161b`; its schema did not need another deploy.
+
+**Read-only production verification, approximately 15:35 UTC:**
+
+- `pre_deadline_run.py --verify-inputs-only` exited 0. Its authenticated account
+  read at `2026-09-04T15:34:52.152533+00:00` verified 15 players, bank and selling
+  prices, and detected an already-active GW3 Wildcard. No chip was activated.
+  It used league data captured at `2026-09-04T15:32:15.970374+00:00` and reported
+  `plan_saved=false`, `card_sent=false`. This did not regenerate the pending plan.
+- Both leagues, on both current recommendation/decision endpoints, used fresh
+  `official-fpl-live` data with `status=provisional`, `stale=false` and
+  `account_state_verified=false`. Public personal transfers/captains were empty.
+  Explicitly pinning the old GW2 decision returned `safe_hold`, with no transfers.
+- The deployed dashboard showed league research, current-account-unverified
+  messaging and pending personal recommendations, with no browser console errors.
+- Telegram, dashboard bridge, Caddy and both SportMania services were active;
+  there were no failed systemd units. The restored auto-runner timer's next
+  occurrence was 16:05 UTC (00:05 MYT on 5 September), before the GW3 deadline
+  at 17:30 UTC. Existing VM scheduling was preserved; no Cloud Scheduler added.
+- Production monitor/load checks
+  [33890360103](https://github.com/lordirfan99/fpl/actions/runs/33890360103)
+  passed, including both leagues' freshness and recommendation contracts.
+
+**Rollback:** follow [the scoped planner procedure](../infra/RECOMMENDATION-INPUTS.md).
+The original two files are retained in
+`/var/backups/fpl-planner/7fbc39fdb109988a2e9c9ff6b4b3a6c78f4200ef`.
+Pause the timer and ensure no planner is running before the tagged installer's
+`--rollback`; restore the previously active timer only after verification.
+API rollback uses the preceding tagged release, but that restores the known
+stale/public-account recommendation limitations documented in PR #69.
+
 ## Recommendation freshness — 4 September 2026
 
 **Problem.** `/v1/recommendations/current` (and `/v1/decision/current`) read only
@@ -125,9 +177,10 @@ The VM's exact deployed commit was not identifiable from its runtime directory.
 
 | Component | Tag / ref | Notes |
 |---|---|---|
-| api | `v2026.09.04-recommendation-freshness-2` (`392161b`) | Cloud Build `b0d6241f-2117-4e1c-aaa5-3ce6c95e964b` succeeded; `/health` → `392161b`; `/v1/recommendations/current` `freshness.status=fresh` from `official-fpl-live`; both league status checks ready |
+| api + dashboard | `v2026.09.04-current-planning-inputs` (`7fbc39f`) | API health and Netlify deployment verified; production monitor 33890360103 passed; public league research is provisional and does not claim authenticated personal recommendations |
+| VM planning client + pre-deadline job | `v2026.09.04-current-planning-inputs` (`7fbc39f`) | Two-file scoped installation; authenticated input-only verification passed, no plan saved or card sent; timer restored |
 | live collector | `v2026.09.04-recommendation-freshness-2` (`392161b`) | schema-v2 (`gw_bank` + official `overall_rank` from `entry_history`); manual run `Result=success`, published 58005 (12:17:41Z) + 131997 (12:27:14Z) on 2026-09-04; 30-min timer restarted; no failed units |
-| engine + bot | recovered machine image `fpl-zone-recovery-20260904` | Services active after restore; exact source commit not independently established |
+| remaining engine + bot | recovered machine image `fpl-zone-recovery-20260904` | Services active; except for the two planning files above, exact source commit not independently established |
 | Telegram bot token | rotated 2026-09-02, in VM `config/credentials.env` only | `@Fplnaf_bot`, chat `-1004464574417` |
 
 Update this table on every release.
