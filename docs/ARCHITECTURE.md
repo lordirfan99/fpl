@@ -51,7 +51,7 @@
 | Resource | Name |
 |---|---|
 | Cloud Run svc | `fpl-scout-api` · `fpl-scout-dashboard` (orphaned) · `fpl-scheduled-tasks` |
-| Cloud Run jobs | `fpl-refresh-fixtures` `fpl-refresh-gameweek` `fpl-capture-journal` `fpl-monitor` `fpl-live-league-refresh` `fpl-decision-refresh` `fpl-decision-final-window` |
+| Background jobs | Fixture/journal/finalization/monitor: GitHub Actions. Live leagues: VM `fpl-live-refresh.timer`; rollout in `infra/LIVE-REFRESH-VM.md`. Legacy cloud jobs are retired after verification. |
 | Cloud Scheduler | one trigger per job above (all **PAUSED** during migration) |
 | GCS | `irfan-374115-fpl-snapshots` |
 | VM | `instance-20260412-121200` (us-central1-f) — engine + bot via systemd |

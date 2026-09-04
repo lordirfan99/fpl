@@ -5,6 +5,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+throw "Retired: live refresh must run on the existing VM. Follow infra/LIVE-REFRESH-VM.md; do not provision Cloud Scheduler."
 $ProjectNumber = gcloud projects describe $ProjectId --format="value(projectNumber)"
 $RuntimeServiceAccount = "fpl-live-refresh@$ProjectId.iam.gserviceaccount.com"
 $SchedulerServiceAccount = "fpl-live-refresh-scheduler@$ProjectId.iam.gserviceaccount.com"

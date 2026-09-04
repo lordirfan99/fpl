@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 
-SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "refresh_live_leagues.py"
+SCRIPT = Path(__file__).resolve().parents[2] / "infra" / "scripts" / "refresh_live_leagues.py"
 SPEC = importlib.util.spec_from_file_location("refresh_live_leagues", SCRIPT)
 assert SPEC and SPEC.loader
 collector = importlib.util.module_from_spec(SPEC)
@@ -55,3 +55,19 @@ def test_collector_rejects_partial_hydration(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="hydrated 0/1"):
         collector.collect(58005)
+
+
+def test_bench_boost_does_not_block_publication():
+    squad = _squad()
+    for pick in squad:
+        pick["multiplier"] = 1
+    collector._validate([{"entry_id": 1, "squad": squad}], 1)
+
+
+@pytest.mark.parametrize("count", [0, 10, 12, 14])
+def test_incomplete_scoring_lineup_is_rejected(count):
+    squad = _squad()
+    for index, pick in enumerate(squad):
+        pick["multiplier"] = int(index < count)
+    with pytest.raises(RuntimeError, match="invalid lineup"):
+        collector._validate([{"entry_id": 1, "squad": squad}], 1)

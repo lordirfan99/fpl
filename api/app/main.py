@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 
 from .league_registry import LeagueRegistry
+from .live_freshness import snapshot_freshness
 from . import live_fpl
 from .recommendations import MODEL_VERSION, build_recommendations, cohort_summary, elite_managers
 from .projection_types import PROJECTION_VERSION
@@ -540,6 +541,7 @@ def league_live(league_id: int) -> dict:
             "quality_status": "complete",
             "generated_at": snapshot["captured_at"],
             "pages_fetched": snapshot.get("pages_fetched", 0),
+            **snapshot_freshness(snapshot.get("captured_at")),
         },
         "league_id": league_id,
         "gameweek": snapshot["gameweek"],
@@ -548,6 +550,21 @@ def league_live(league_id: int) -> dict:
         "hydration_percent": 100.0,
         "managers": snapshot["managers"],
         "provisional": True,
+    }
+
+
+@app.get("/v1/leagues/{league_id}/live/status")
+def league_live_status(league_id: int) -> dict:
+    """Small monitoring response; never collect from FPL on a web request."""
+    try:
+        snapshot = repository.live_league(league_id)
+    except LiveSnapshotNotFoundError as error:
+        raise HTTPException(status_code=503, detail="live_snapshot_unavailable") from error
+    freshness = snapshot_freshness(snapshot.get("captured_at"))
+    return {
+        "ready": not freshness["stale"], "league_id": league_id,
+        "gameweek": snapshot["gameweek"], "captured_at": snapshot.get("captured_at"),
+        "manager_count": snapshot["expected_count"], **freshness,
     }
 
 

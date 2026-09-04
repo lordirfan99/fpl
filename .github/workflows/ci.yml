@@ -28,6 +28,12 @@ jobs:
           done
       - name: Lint
         run: ruff check . || { echo "::error::ruff failed"; exit 1; }
+      - name: Validate VM live-refresh release scripts and timer
+        run: |
+          bash -n infra/deploy/install-live-refresh.sh
+          schedule=$(sed -n 's/^OnCalendar=//p' infra/deploy/gcp/systemd/fpl-live-refresh.timer)
+          test -n "$schedule"
+          systemd-analyze calendar "$schedule"
       - name: Tests
         run: |
           # testpaths come from pyproject.toml; exit 5 = "no tests collected" (skeleton) is OK

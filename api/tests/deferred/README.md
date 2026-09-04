@@ -3,8 +3,11 @@
 Not run by CI yet. Two reasons:
 
 **Needs scout-root scripts** — `scripts/run_scheduled_task.py`, `fetch_gw_data_fixed`:
-`test_scheduled_tasks`, `test_official_refresh`, `test_live_snapshot_collector`,
+`test_scheduled_tasks`, `test_official_refresh`,
 `test_snapshot_writer`. Rejoin when `infra/` lands.
+
+`test_live_snapshot_collector` now runs in the main API suite with synthetic
+fixtures and the monorepo script path.
 
 **Needs bulk snapshot fixtures** — `data/bootstrap_cache.json`,
 `data/gw*_league58005_data.json` (21–48 MB each), `data/journal/**`:

@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "api"))
 
 from app import live_fpl  # noqa: E402
@@ -66,7 +66,9 @@ def _validate(managers: list[dict[str, Any]], expected_count: int) -> None:
         starters = sum(1 for pick in squad if int(pick.get("multiplier") or 0) > 0)
         captains = sum(1 for pick in squad if pick.get("is_captain"))
         vices = sum(1 for pick in squad if pick.get("is_vice_captain"))
-        if starters != 11 or captains != 1 or vices != 1:
+        # Bench Boost has 15 scoring picks. A legitimate chip must not prevent
+        # publication of the entire league.
+        if starters not in (11, 15) or captains != 1 or vices != 1:
             raise RuntimeError(
                 f"entry {manager['entry_id']} invalid lineup: starters={starters}, captains={captains}, vices={vices}"
             )

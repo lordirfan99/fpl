@@ -58,11 +58,7 @@ for j in "${MIGRATED_JOBS[@]}"; do
   gcloud run jobs delete "${j}"       --project="${PROJECT}" --region="${REGION}"   --quiet || true
 done
 
-say "5/5  Trim the one job that stays on Cloud Run"
-gcloud run jobs update fpl-live-league-refresh \
-  --project="${PROJECT}" --region="${REGION}" \
-  --cpu=0.5 --memory=512Mi --max-retries=1
-
-say "Done.  Cloud Run monthly cost should now be ~RM 3-6 (was ~RM 47)."
-echo "The fpl-scheduled-tasks image in Artifact Registry is now unused; prune it"
-echo "once fpl-live-league-refresh is also off Cloud Run."
+say "5/5  Live collection uses the existing VM"
+echo "Follow infra/LIVE-REFRESH-VM.md for the tagged collector install and verification."
+echo "Do not create/update/resume a Cloud Run collector or Cloud Scheduler trigger."
+echo "Retire the old live resources only after the VM has published both leagues."
