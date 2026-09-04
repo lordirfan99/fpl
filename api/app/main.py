@@ -35,6 +35,7 @@ from .schemas import (
     TeamResponse,
 )
 from .settings import settings
+from .private_dashboard import router as private_dashboard_router
 from .validation import snapshot_quality
 
 
@@ -52,6 +53,7 @@ app.add_middleware(
 )
 repository = SnapshotRepository(settings.data_dir, settings.snapshot_bucket)
 league_registry = LeagueRegistry(settings.data_dir)
+app.include_router(private_dashboard_router)
 SEASON_PATTERN = re.compile(r"^20\d{2}-\d{2}$")
 
 

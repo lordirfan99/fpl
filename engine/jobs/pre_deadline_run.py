@@ -1029,6 +1029,14 @@ def main():
         sys.exit(1)
 
     # --- approval card (rich media tables) ---
+    # Display-only artifact, outside the canonical approval payload/hash.
+    # Optional publication failure must not change the existing Telegram flow.
+    try:
+        from dashboard_packet import export_plan
+        export_plan(BASE, plan, team, players, bootstrap, fixtures)
+    except Exception as error:
+        print(f"private dashboard publication failed: {type(error).__name__}")
+
     sys.path.insert(0, os.path.join(BASE, "bot"))
     from templates import plan_card
     card = plan_card(plan)

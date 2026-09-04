@@ -32,6 +32,7 @@ jobs:
         run: |
           bash -n infra/deploy/install-live-refresh.sh
           bash -n infra/deploy/install-recommendation-planner.sh
+          bash -n infra/deploy/install-private-dashboard.sh
           schedule=$(sed -n 's/^OnCalendar=//p' infra/deploy/gcp/systemd/fpl-live-refresh.timer)
           test -n "$schedule"
           systemd-analyze calendar "$schedule"
@@ -56,7 +57,7 @@ jobs:
           FPL_DATA_BASE_URL: http://localhost:8080/data
         run: |
           if [ -f web/package.json ]; then
-            cd web && npm ci && npm run typecheck && npm run build
+            cd web && npm ci && npx playwright test --config playwright.unit.config.ts && npm run typecheck && npm run build
           else
             echo "no web/ yet (skeleton) — passing"
           fi
