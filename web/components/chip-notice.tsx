@@ -12,7 +12,7 @@ const TRANSFER_CHIPS = new Set(["wildcard", "freehit"]);
 
 type SelfReport = { chip: string; gw: number };
 
-export function ChipNotice({ targetGameweek, liveActiveChip }: { targetGameweek?: number; liveActiveChip?: string | null }) {
+export function ChipNotice({ targetGameweek, liveGameweek, liveActiveChip }: { targetGameweek?: number; liveGameweek?: number; liveActiveChip?: string | null }) {
   const [selfReport, setSelfReport] = useState<SelfReport | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -45,19 +45,25 @@ export function ChipNotice({ targetGameweek, liveActiveChip }: { targetGameweek?
 
   const selfChip = selfReport?.gw === targetGameweek ? selfReport?.chip ?? null : null;
   const chip = (liveActiveChip ?? selfChip)?.toLowerCase() ?? null;
-  const gwLabel = targetGameweek != null ? `GW${targetGameweek}` : "this gameweek";
+  // A confirmed chip is for the gameweek being played now; a self-report is for
+  // the upcoming deadline.
+  const chipGameweek = liveActiveChip ? liveGameweek ?? targetGameweek : targetGameweek;
+  const gwLabel = chipGameweek != null ? `GW${chipGameweek}` : "this gameweek";
 
   if (chip) {
     const name = LABEL[chip] ?? chip;
+    const transfer = TRANSFER_CHIPS.has(chip);
     return (
       <section className="chip-note">
         <span className="status-dot" />
         <div>
-          <strong>🃏 {name} active for {gwLabel}</strong>
+          <strong>🃏 {name} {liveActiveChip ? "played" : "active"} for {gwLabel}</strong>
           <p>
-            {TRANSFER_CHIPS.has(chip)
-              ? <>Unlimited free transfers this week, so the single-transfer suggestion below doesn&rsquo;t apply. Use <a href="/transfers">Transfers &amp; Chips</a> for the multi-week plan, or your Telegram bot for the full-squad rebuild.</>
-              : <>Your captain and bench choices carry more weight than usual this week; the transfer suggestion still stands.</>}
+            {transfer && liveActiveChip
+              ? <>You rebuilt with unlimited transfers this week. Any single-transfer advice on the dashboard is about the <em>next</em> deadline, not {gwLabel}. Use <a href="/transfers">Transfers &amp; Chips</a> to review the multi-week shape.</>
+              : transfer
+                ? <>Unlimited free transfers this week, so the single-transfer suggestion below doesn&rsquo;t apply. Use <a href="/transfers">Transfers &amp; Chips</a> for the multi-week plan, or your Telegram bot for the full-squad rebuild.</>
+                : <>Your captain and bench choices carry more weight than usual this week; the transfer suggestion still stands.</>}
           </p>
           <p style={{ opacity: 0.75 }}>
             {liveActiveChip
