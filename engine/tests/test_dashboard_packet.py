@@ -3,7 +3,7 @@ import json
 from unittest.mock import Mock, patch
 
 import pytest
-from dashboard_packet import account_fingerprint, make_packet
+from dashboard_packet import account_fingerprint, make_packet, private_bucket
 from dashboard_account_check import check
 
 
@@ -11,6 +11,14 @@ def account():
     return {"picks": [{"element": i, "position": i, "selling_price": 50, "is_captain": i == 1,
                        "is_vice_captain": i == 2} for i in range(1, 16)],
             "transfers": {"bank": 10, "limit": 2, "made": 0}, "chips": []}
+
+
+@pytest.mark.parametrize("config", [{"private_bucket": "public"}, {"private_bucket": "public", "public_snapshot_bucket": "public"}])
+def test_missing_or_same_public_bucket_fails_before_upload(tmp_path, config):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/dashboard.json").write_text(json.dumps(config))
+    with pytest.raises(ValueError, match="Distinct"):
+        private_bucket(tmp_path)
 
 
 @pytest.mark.parametrize("field,value", [("bank", 20), ("limit", 1), ("made", 1)])

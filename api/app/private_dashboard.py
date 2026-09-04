@@ -49,7 +49,8 @@ def validate(packet, check, owner, now=None):
 
 def read_private(name):
     bucket_name = os.getenv("FPL_PRIVATE_DASHBOARD_BUCKET")
-    if not bucket_name or bucket_name == os.getenv("FPL_SNAPSHOT_BUCKET"):
+    public_bucket = os.getenv("FPL_SNAPSHOT_BUCKET")
+    if not bucket_name or not public_bucket or bucket_name == public_bucket:
         raise ValueError("Private bucket unavailable")
     from google.cloud import storage
     bucket = storage.Client().bucket(bucket_name)

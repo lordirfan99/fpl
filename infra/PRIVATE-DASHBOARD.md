@@ -20,7 +20,10 @@ packets must never enter `data/` build contexts, public snapshots or journal exp
 - API server-only `FPL_PRIVATE_DASHBOARD_BUCKET` and the same read token, stored
   through Secret Manager. Token authorizes only GET `/v1/private/dashboard/current`.
 - VM `config/dashboard.json`, owner fpl, mode 0600, contains only
-  `{"private_bucket":"<private-bucket-name>"}`. No FPL credentials leave the VM.
+  `{"private_bucket":"<private-bucket-name>","public_snapshot_bucket":"<existing-public-bucket-name>"}`.
+  Both identities are required and must differ; obtain the public identity from
+  the deployed collector configuration, not an unset planner environment variable.
+  No FPL credentials leave the VM.
 
 ## Reviewed release installation
 

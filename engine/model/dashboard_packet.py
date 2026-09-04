@@ -1,7 +1,6 @@
 """Allowlisted, read-only projection of a canonical plan. Never an approval payload."""
 import hashlib
 import json
-import os
 from pathlib import Path
 
 
@@ -80,15 +79,19 @@ def make_packet(plan, team, players, bootstrap, fixtures):
 
 def private_bucket(base):
     config = Path(base) / "config" / "dashboard.json"
-    return json.loads(config.read_text()).get("private_bucket") if config.exists() else None
+    if not config.exists():
+        return None
+    values = json.loads(config.read_text())
+    private, public = values.get("private_bucket"), values.get("public_snapshot_bucket")
+    if not private or not public or private == public:
+        raise ValueError("Distinct private and public bucket identities are required")
+    return private
 
 
 def publish(base, name, payload):
     bucket_name = private_bucket(base)
     if not bucket_name:
         return False
-    if bucket_name == os.getenv("FPL_SNAPSHOT_BUCKET"):
-        raise ValueError("Private data cannot use the public snapshot bucket")
     from google.cloud import storage
     bucket = storage.Client().bucket(bucket_name)
     bucket.reload(timeout=15)
