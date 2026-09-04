@@ -11,12 +11,12 @@ export default async function LeaguePage({ searchParams }: { searchParams: Promi
   const params = await searchParams;
   const selected = resolveLeague(params.league);
   const requestedPage = Math.max(1, Number(params.page) || 1);
-  const data = await getLeagueSummary(selected.id, { page: requestedPage, query: params.q });
-  const selectedManagerId = Number(params.manager) || 0;
-  const [bootstrap, managerDetail] = await Promise.all([
+  const [data, bootstrap] = await Promise.all([
+    getLeagueSummary(selected.id, { page: requestedPage, query: params.q }),
     getCompactCatalog(),
-    selectedManagerId ? getLeagueManager(selected.id, data.gameweek, selectedManagerId).catch(() => undefined) : undefined,
   ]);
+  const selectedManagerId = Number(params.manager) || 0;
+  const managerDetail = selectedManagerId ? await getLeagueManager(selected.id, data.gameweek, selectedManagerId).catch(() => undefined) : undefined;
   const myTeam = data.manager;
   return <div className="page-stack">
     <PageHeader eyebrow="LEAGUE INTELLIGENCE" title={selected.name} description={`${data.total.toLocaleString()} managers · server-paginated standings`} updated={formatMYT(data.meta?.snapshot_at)} />

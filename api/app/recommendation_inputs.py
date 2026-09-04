@@ -9,15 +9,13 @@ implements the freshness policy:
    every field the calculation needs.
 2. If the live snapshot is missing an optional field, still use it but mark the
    result ``provisional`` (e.g. bank unknown -> affordability unconfirmed).
-3. If no fresh league context exists and the finalized snapshot predates the
-   live gameweek, return ``safe_hold`` -- never old transfers dressed as current.
+3. If no fresh league context exists, return ``safe_hold`` in every gameweek.
 4. Always report ``source``, ``snapshot_at``, ``data_age_hours``, ``stale`` and a
    machine-readable ``reason``.
 
 The player catalogue, prices, fixtures and availability come from
 ``repository.bootstrap`` / ``repository.fixtures`` -- independent reference caches
-that are already refreshed on their own cadence -- so they are never the stale
-component here.
+that are refreshed independently. Their age must also be validated.
 
 No FPL write path is imported or reachable from this module.
 """
@@ -36,7 +34,7 @@ FINALIZED_MAX_AGE_HOURS = 12
 # Anything further in the future than this is a clock/collector fault, not data.
 FUTURE_SKEW_HOURS = 5 / 60
 
-USABLE_STATUSES = ("fresh", "provisional", "stale")
+USABLE_STATUSES = ("fresh", "provisional")
 HOLD_STATUSES = ("safe_hold", "needs_refresh")
 
 
@@ -59,6 +57,8 @@ class RecInputs:
     rank_provenance: str
     bank_known: bool
     missing_fields: tuple[str, ...] = ()
+    catalogue_snapshot_at: str | None = None
+    fixtures_snapshot_at: str | None = None
 
     @property
     def usable(self) -> bool:
@@ -75,6 +75,15 @@ class RecInputs:
             "missing_fields": list(self.missing_fields),
             "rank_provenance": self.rank_provenance,
             "bank_known": self.bank_known,
+            # Public event picks are locked at that event's deadline. A recent
+            # fetch does not prove the owner's squad/bank for the next deadline.
+            "account_state_verified": False,
+            "account_source": "public_gameweek_picks",
+            "account_gameweek": self.gameweek,
+            "bank_source": "entry_history" if self.bank_known else "unknown",
+            "scope": "league_research",
+            "catalogue_snapshot_at": self.catalogue_snapshot_at,
+            "fixtures_snapshot_at": self.fixtures_snapshot_at,
         }
 
 
@@ -140,6 +149,18 @@ def resolve_recommendation_inputs(
             gameweek=finalized_gw, bootstrap={}, now=now,
         )
     live_gw = _bootstrap_current_gw(bootstrap)
+    catalogue_at = (bootstrap.get("_meta") or {}).get("fetched_at") or bootstrap.get("fetched_at")
+    if snapshot_freshness(catalogue_at, now=now)["stale"]:
+        return _hold(
+            status="needs_refresh", reason="catalogue_stale_or_unparsable",
+            gameweek=finalized_gw, bootstrap=bootstrap, now=now,
+        )
+    fixtures_at = repo.fixtures_captured_at()
+    if snapshot_freshness(fixtures_at, now=now)["stale"]:
+        return _hold(
+            status="needs_refresh", reason="fixtures_stale_or_unparsable",
+            gameweek=finalized_gw, bootstrap=bootstrap, now=now,
+        )
 
     # 2. Prefer the VM collector's complete live snapshot.
     live_reason = ""
@@ -170,8 +191,10 @@ def resolve_recommendation_inputs(
         # known omission of the live collector -- it would cost one FPL call per
         # manager. `transfer_consensus` is simply empty in that case, which is
         # self-evident, so it is not counted as a per-snapshot gap here.
-        missing: list[str] = [] if bank_known else ["gw_bank"]
-        status = "provisional" if missing else "fresh"
+        missing: list[str] = ["current_account_squad", "current_account_bank", "selling_prices", "free_transfers"]
+        if not bank_known:
+            missing.append("gw_bank")
+        status = "provisional"
         gameweek = int(live["gameweek"])
         return RecInputs(
             bootstrap=bootstrap,
@@ -185,10 +208,11 @@ def resolve_recommendation_inputs(
             data_age_hours=_age_hours(live.get("captured_at"), now),
             stale=False,
             status=status,
-            reason="fresh_live_snapshot" if status == "fresh" else "live_snapshot_missing_optional_fields",
+            reason="fresh_league_context; current_account_not_verified",
             rank_provenance=str(live.get("rank_provenance") or "unknown"),
             bank_known=bank_known,
             missing_fields=tuple(missing),
+            catalogue_snapshot_at=catalogue_at, fixtures_snapshot_at=fixtures_at,
         )
 
     # 3. Fall back to the newest valid finalized snapshot.
@@ -216,19 +240,19 @@ def resolve_recommendation_inputs(
     stale = unparsable or future_skewed or age > FINALIZED_MAX_AGE_HOURS
     predates_live = live_gw is not None and live_gw > finalized_gw
 
-    if stale and predates_live:
+    if predates_live:
         status = "safe_hold"
         base_reason = "no_fresh_source_and_snapshot_predates_live_gw"
     elif stale:
-        status = "stale"
+        status = "safe_hold"
         base_reason = (
             "finalized_snapshot_timestamp_unparsable" if unparsable
             else "finalized_snapshot_timestamp_in_future" if future_skewed
             else f"finalized_snapshot_older_than_{FINALIZED_MAX_AGE_HOURS}h"
         )
     else:
-        status = "fresh"
-        base_reason = "fresh_finalized_snapshot"
+        status = "provisional"
+        base_reason = "fresh_finalized_snapshot; current_account_not_verified"
 
     if status == "safe_hold":
         return RecInputs(
@@ -257,6 +281,7 @@ def resolve_recommendation_inputs(
         reason=_join(base_reason, live_reason),
         rank_provenance="finalized-snapshot",
         bank_known=manager.get("gw_bank") is not None,
+        catalogue_snapshot_at=catalogue_at, fixtures_snapshot_at=fixtures_at,
     )
 
 

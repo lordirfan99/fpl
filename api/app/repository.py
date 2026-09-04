@@ -173,6 +173,14 @@ class SnapshotRepository:
     def bootstrap(self) -> dict[str, Any]:
         return self._fresh_reference("bootstrap_cache.json")
 
+    def fixtures_captured_at(self) -> str | None:
+        """Proven capture time, not the time a recommendation was requested."""
+        try:
+            payload = self._fresh_reference("fixtures_cache.json")
+        except SnapshotNotFoundError:
+            return None
+        return (payload.get("_meta") or {}).get("fetched_at") or payload.get("fetched_at")
+
     def fixtures(self, gameweek: int) -> list[dict[str, Any]]:
         try:
             payload = self._fresh_reference("fixtures_cache.json")
