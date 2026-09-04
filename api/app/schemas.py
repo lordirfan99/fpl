@@ -17,6 +17,13 @@ class ApiMeta(BaseModel):
     snapshot_gameweek: int | None = None
     quality_status: Literal["valid", "invalid", "unknown"] = "unknown"
     quality_issues: list[str] = Field(default_factory=list)
+    # Recommendation-freshness provenance (see recommendation_inputs.RecInputs).
+    # Optional so every other endpoint's meta is unchanged.
+    data_source: str | None = None
+    data_age_hours: float | None = None
+    freshness_status: str | None = None
+    freshness_reason: str | None = None
+    missing_fields: list[str] = Field(default_factory=list)
     data_version: str | None = None
     data_hash: str | None = None
     cutoff_at: datetime | None = None
@@ -137,6 +144,8 @@ class RecommendationResponse(BaseModel):
     league_id: int
     gameweek: int
     team_id: int
+    packet_status: Literal["advisory", "provisional", "safe_hold", "needs_refresh"] = "advisory"
+    freshness: dict[str, Any] = Field(default_factory=dict)
     elite_count: int
     elite_overlap: int
     elite_average_points: float
@@ -145,4 +154,5 @@ class RecommendationResponse(BaseModel):
     risks: list[dict[str, Any]]
     missing_elite_players: list[dict[str, Any]]
     competitive: dict[str, Any]
+    inputs: dict[str, Any] = Field(default_factory=dict)
     disclaimer: str

@@ -65,7 +65,10 @@ def test_hydrated_squad_uses_pick_selection_order_for_the_starting_xi(monkeypatc
         if path == "bootstrap-static/":
             return {"elements": [{"id": 9, "web_name": "Player", "element_type": 3, "team": 1, "now_cost": 50}], "teams": [{"id": 1, "name": "Team"}]}
         assert path == "entry/1/event/2/picks/"
-        return {"picks": [{"element": 9, "position": position, "multiplier": 1, "is_captain": position == 1, "is_vice_captain": position == 2} for position in range(1, 16)]}
+        return {
+            "picks": [{"element": 9, "position": position, "multiplier": 1, "is_captain": position == 1, "is_vice_captain": position == 2} for position in range(1, 16)],
+            "entry_history": {"bank": 7, "overall_rank": 812345, "event_transfers": 2},
+        }
 
     monkeypatch.setattr(live_fpl, "_get", fake_get)
 
@@ -74,3 +77,21 @@ def test_hydrated_squad_uses_pick_selection_order_for_the_starting_xi(monkeypatc
     assert sum(pick["multiplier"] > 0 for pick in squad) == 11
     assert squad[0]["multiplier"] == 2
     assert all(pick["multiplier"] == 0 for pick in squad[11:])
+    # The same picks payload also yields bank / official overall rank / GW transfers.
+    assert rows[0]["_live_bank"] == 7
+    assert rows[0]["_live_overall_rank"] == 812345
+    assert rows[0]["_live_event_transfers"] == 2
+
+
+def test_hydrate_tolerates_a_picks_payload_with_no_entry_history(monkeypatch) -> None:
+    rows = [{"entry": 1}]
+
+    def fake_get(path: str, ttl: int = 30) -> dict:
+        if path == "bootstrap-static/":
+            return {"elements": [{"id": 9, "web_name": "P", "element_type": 3, "team": 1, "now_cost": 50}], "teams": [{"id": 1, "name": "T"}]}
+        return {"picks": [{"element": 9, "position": p, "multiplier": 1, "is_captain": p == 1, "is_vice_captain": p == 2} for p in range(1, 16)]}
+
+    monkeypatch.setattr(live_fpl, "_get", fake_get)
+    assert live_fpl.hydrate_manager_squads(rows, 2, 1) == 1
+    assert rows[0]["_live_bank"] is None
+    assert rows[0]["_live_overall_rank"] is None

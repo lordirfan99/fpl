@@ -13,7 +13,7 @@ const positionFromElementType = (elementType?: number): Pick["position"] => elem
 
 export default async function MyTeamPage() {
   const [data, live] = await Promise.all([getDashboardData(), getLiveTeam()]);
-  const rec = await getCompetitiveRecommendation(data.leagueId, data.gameweek).catch(() => null);
+  const rec = await getCompetitiveRecommendation(data.leagueId).catch(() => null);
   const { manager } = data;
 
   const season = deriveSeasonContext(data.bootstrap.events, { finalizedGw: data.gameweek, liveGameweek: live?.gameweek });
@@ -30,7 +30,8 @@ export default async function MyTeamPage() {
   const liveOverallRank = live?.entry.overall_rank;
   const liveLeagueRank = live?.league?.entry_rank;
 
-  const move = rec?.transfers?.[0];
+  const recHeld = rec?.packetStatus === "safe_hold" || rec?.packetStatus === "needs_refresh";
+  const move = recHeld ? undefined : rec?.transfers?.[0];
   const flagged = rec?.risks?.map((player) => player.name).filter(Boolean) ?? [];
 
   const playerMeta = (pick: Pick) => {

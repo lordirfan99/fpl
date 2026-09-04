@@ -29,26 +29,36 @@ except ImportError:  # pragma: no cover - checked at runtime in production
     storage = None
 
 
-SCHEMA_VERSION = 1
+# v2: each manager also carries `gw_bank` and a real `overall_rank` /
+# `transfers_made` lifted from the picks payload's `entry_history` block, so the
+# published snapshot is a complete recommendation input. v1 readers ignore the
+# extra keys.
+SCHEMA_VERSION = 2
 
 
 def _manager(row: dict[str, Any]) -> dict[str, Any]:
     squad = row.get("_live_squad", [])
+    league_rank = int(row.get("rank") or 0)
+    # The classic-standings feed has no overall rank; `entry_history.overall_rank`
+    # from the per-manager picks call does. Prefer it; fall back to league rank.
+    official_overall = row.get("_live_overall_rank")
+    overall_rank = int(official_overall) if official_overall else league_rank
     return {
         "entry_id": int(row.get("entry") or 0),
         "entry_name": row.get("entry_name") or "",
         "player_name": row.get("player_name") or "",
         "gw_points": int(row.get("event_total") or 0),
         "total_points": int(row.get("total") or 0),
-        # The FPL league-standings feed does not carry overall rank. Keep this
-        # field populated for the existing client contract, but identify it in
-        # provenance rather than presenting it as a fresh overall ranking.
-        "overall_rank": int(row.get("rank") or 0),
-        "league_rank": int(row.get("rank") or 0),
+        "overall_rank": overall_rank,
+        "overall_rank_source": "official-entry-history" if official_overall else "classic-league-rank-fallback",
+        "league_rank": league_rank,
         "league_last_rank": int(row.get("last_rank") or 0),
         "squad_cost": round(sum(float(pick.get("cost") or 0) for pick in squad), 1),
+        # `bank` is FPL-native tenths (100 == £10.0m). Absent only if the picks
+        # payload had no `entry_history`.
+        "gw_bank": None if row.get("_live_bank") is None else int(row["_live_bank"]),
         "captain": row.get("_live_captain") or "",
-        "transfers_made": 0,
+        "transfers_made": int(row.get("_live_event_transfers") or 0),
         "squad": squad,
     }
 
@@ -85,6 +95,8 @@ def collect(league_id: int) -> dict[str, Any]:
     managers = [_manager(row) for row in rows]
     _validate(managers, expected_count)
     captured_at = datetime.now(timezone.utc).isoformat()
+    ranks_official = all(m["overall_rank_source"] == "official-entry-history" for m in managers)
+    banks_present = all(m["gw_bank"] is not None for m in managers)
     return {
         "schema_version": SCHEMA_VERSION,
         "status": "complete",
@@ -95,7 +107,8 @@ def collect(league_id: int) -> dict[str, Any]:
         "expected_count": expected_count,
         "hydrated_count": hydrated,
         "pages_fetched": int(standings.get("pages_fetched") or 0),
-        "rank_provenance": "classic-league-rank-fallback",
+        "rank_provenance": "official-entry-history" if ranks_official else "classic-league-rank-fallback",
+        "bank_provenance": "official-entry-history" if banks_present else "unavailable",
         "managers": managers,
     }
 

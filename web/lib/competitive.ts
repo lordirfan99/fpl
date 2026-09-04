@@ -24,8 +24,26 @@ export interface CompetitivePlayer extends Pick {
   starterPercentage?: number;
 }
 
+export type FreshnessStatus = "fresh" | "provisional" | "stale" | "safe_hold" | "needs_refresh";
+export type PacketStatus = "advisory" | "provisional" | "safe_hold" | "needs_refresh";
+
+export interface RecommendationFreshness {
+  source: string;
+  status: FreshnessStatus;
+  reason: string;
+  stale: boolean;
+  snapshotAt?: string;
+  dataAgeHours?: number;
+  bankKnown: boolean;
+  rankProvenance?: string;
+  missingFields: string[];
+}
+
 export interface CompetitiveRecommendation {
+  gameweek: number;
   meta: { snapshotAt?: string; stale: boolean; freshnessHours?: number; qualityStatus: "valid" | "invalid" | "unknown"; qualityIssues: string[] };
+  packetStatus: PacketStatus;
+  freshness: RecommendationFreshness;
   eliteCount: number;
   eliteOverlap: number;
   eliteAverage: number;
@@ -59,21 +77,39 @@ export interface CompetitiveRecommendation {
 
 type Json = Record<string, unknown>;
 
-export async function getCompetitiveRecommendation(leagueId: number, gameweek: number): Promise<CompetitiveRecommendation> {
-  const response = await fetch(`${API_BASE}/v1/decision/current?league_id=${leagueId}&gw=${gameweek}`, { cache: "no-store" });
+export async function getCompetitiveRecommendation(leagueId: number, gameweek?: number): Promise<CompetitiveRecommendation> {
+  // Omit `gw` so the API runs its freshness policy (fresh live snapshot first,
+  // finalized fallback, honest safe_hold). Passing an explicit gw pins one
+  // finalized snapshot and is only for historical lookups.
+  const query = gameweek == null ? `league_id=${leagueId}` : `league_id=${leagueId}&gw=${gameweek}`;
+  const response = await fetch(`${API_BASE}/v1/decision/current?${query}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`Scout API returned ${response.status} for V4 competitive recommendation`);
   const raw = await response.json() as Json;
   const competitive = (raw.competitive as Json | undefined) ?? {};
   const meta = (raw.meta as Json | undefined) ?? {};
+  const fresh = (raw.freshness as Json | undefined) ?? {};
   const weights = (competitive.weights as Json | undefined) ?? {};
   const phaseInputs = (competitive.phase_inputs as Json | undefined) ?? {};
   const players = (value: unknown) => ((value as Json[]) ?? []).map(player);
   return {
+    gameweek: number(raw.gameweek),
     meta: {
       snapshotAt: text(meta.snapshot_at), stale: Boolean(meta.stale),
       freshnessHours: optionalNumber(meta.freshness_hours),
       qualityStatus: (text(meta.quality_status) ?? "unknown") as "valid" | "invalid" | "unknown",
       qualityIssues: (meta.quality_issues as string[]) ?? [],
+    },
+    packetStatus: (text(raw.packet_status) ?? "advisory") as PacketStatus,
+    freshness: {
+      source: text(fresh.source) ?? text(meta.data_source) ?? "unknown",
+      status: (text(fresh.status) ?? text(meta.freshness_status) ?? (Boolean(meta.stale) ? "stale" : "fresh")) as FreshnessStatus,
+      reason: text(fresh.reason) ?? text(meta.freshness_reason) ?? "",
+      stale: Boolean(fresh.stale ?? meta.stale),
+      snapshotAt: text(fresh.snapshot_at) ?? text(meta.snapshot_at),
+      dataAgeHours: optionalNumber(fresh.data_age_hours ?? meta.data_age_hours ?? meta.freshness_hours),
+      bankKnown: fresh.bank_known == null ? true : Boolean(fresh.bank_known),
+      rankProvenance: text(fresh.rank_provenance),
+      missingFields: (fresh.missing_fields as string[]) ?? (meta.missing_fields as string[]) ?? [],
     },
     eliteCount: number(raw.elite_count), eliteOverlap: number(raw.elite_overlap),
     eliteAverage: number(raw.elite_average_points),

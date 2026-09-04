@@ -9,7 +9,7 @@ export default async function PlannerPage({ searchParams }: { searchParams: Prom
   const requested = Number(query.gw);
   const targetGameweek = Number.isInteger(requested) && requested >= 1 && requested <= 38 ? requested : undefined;
   const data = await getPlannerData(targetGameweek);
-  const plan = targetGameweek === data.gameweek ? await getCompetitiveRecommendation(data.leagueId, data.gameweek).catch(() => null) : null;
+  const plan = targetGameweek === data.gameweek ? await getCompetitiveRecommendation(data.leagueId).catch(() => null) : null;
   const gameweeks = Array.from({ length: data.toGameweek - data.fromGameweek + 1 }, (_, index) => data.fromGameweek + index);
   const playerIndex = new Map(data.bootstrap.elements.map((player) => [player.id, player]));
   const starters = data.manager.squad.slice(0, 11);

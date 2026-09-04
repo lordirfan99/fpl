@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from .league_registry import LeagueRegistry
 from .live_freshness import snapshot_freshness
 from . import live_fpl
+from .recommendation_inputs import RecInputs, resolve_recommendation_inputs
 from .recommendations import MODEL_VERSION, build_recommendations, cohort_summary, elite_managers
 from .projection_types import PROJECTION_VERSION
 from .projections import build_projections
@@ -413,28 +414,106 @@ def elite(
     )
 
 
+REC_DISCLAIMER = "Decision support only. Verify late team news before approving any FPL action."
+
+
+def _rec_meta(resolved: RecInputs) -> ApiMeta:
+    """Build the recommendation meta from resolved freshness provenance."""
+    snapshot_at = None
+    if resolved.snapshot_at:
+        try:
+            snapshot_at = datetime.fromisoformat(str(resolved.snapshot_at).replace("Z", "+00:00"))
+            if snapshot_at.tzinfo is None:
+                snapshot_at = snapshot_at.replace(tzinfo=timezone.utc)
+        except ValueError:
+            snapshot_at = None
+    # The catalogue (players/prices/fixtures) is always the freshest reference we
+    # hold, so the packet is structurally "valid" even when the league context is
+    # stale -- the honest signal for that is freshness_status / stale, not a
+    # corruption verdict.
+    quality = "valid" if resolved.usable else "unknown"
+    return ApiMeta(
+        source=resolved.source, snapshot_at=snapshot_at, stale=resolved.stale,
+        freshness_hours=resolved.data_age_hours, snapshot_gameweek=resolved.gameweek,
+        quality_status=quality,
+        quality_issues=[] if resolved.usable else [resolved.reason],
+        data_source=resolved.source, data_age_hours=resolved.data_age_hours,
+        freshness_status=resolved.status, freshness_reason=resolved.reason,
+        missing_fields=list(resolved.missing_fields),
+        model_version=MODEL_VERSION, feature_version="competitive-features-v4",
+        code_revision=settings.git_revision,
+    )
+
+
+def _hold_recommendation(league_id: int, resolved: RecInputs) -> RecommendationResponse:
+    """An honest hold: no transfers, minimal competitive block, clearly stale."""
+    return RecommendationResponse(
+        meta=_rec_meta(resolved), league_id=league_id, gameweek=resolved.gameweek,
+        team_id=settings.my_team_id,
+        packet_status="safe_hold" if resolved.status == "safe_hold" else "needs_refresh",
+        freshness=resolved.freshness(),
+        elite_count=0, elite_overlap=0, elite_average_points=0.0,
+        transfers=[], captains=[], risks=[], missing_elite_players=[],
+        competitive={
+            "model_version": MODEL_VERSION, "phase": "MATCH",
+            "phase_reason": f"No fresh league context ({resolved.reason}); holding.",
+            "alignment": 0, "target_alignment": 82,
+            "execution_authority": "manual_fpl", "writes_enabled": False,
+        },
+        inputs={"bank_known": False},
+        disclaimer=REC_DISCLAIMER,
+    )
+
+
+def _resolve_pinned(league_id: int, gw: int) -> RecInputs:
+    """Explicit ?gw=N: that finalized snapshot only, labelled by its own age."""
+    snapshot = _league_or_404(league_id, gw)
+    managers = snapshot.get("competitors", [])
+    manager = next((m for m in managers if m.get("entry_id") == settings.my_team_id), None)
+    if manager is None:
+        raise HTTPException(status_code=404, detail="Configured team is not present in this snapshot")
+    meta = _meta(snapshot)
+    age = meta.freshness_hours
+    stale = bool(meta.stale)
+    return RecInputs(
+        bootstrap=repository.bootstrap(), fixtures=repository.fixtures(min(gw + 1, 38)),
+        manager=manager, managers=managers, gameweek=gw,
+        population_size=snapshot.get("population_size") or snapshot.get("total_entries"),
+        source="finalized-snapshot",
+        snapshot_at=meta.snapshot_at.isoformat() if meta.snapshot_at else None,
+        data_age_hours=age, stale=stale,
+        status="stale" if stale else "fresh",
+        reason="explicit_gameweek_pin" + ("; stale" if stale else ""),
+        rank_provenance="finalized-snapshot",
+        bank_known=manager.get("gw_bank") is not None,
+    )
+
+
 @app.get("/v1/recommendations/current", response_model=RecommendationResponse)
 def recommendations(
     league_id: int = Query(default=settings.default_league_id, gt=0),
     gw: int | None = Query(default=None, ge=1, le=38),
 ) -> RecommendationResponse:
-    gw = gw or _current_gameweek()
-    snapshot = _league_or_404(league_id, gw)
-    managers = snapshot.get("competitors", [])
-    manager = next((item for item in managers if item.get("entry_id") == settings.my_team_id), None)
-    if manager is None:
-        raise HTTPException(status_code=404, detail="Configured team is not present in this snapshot")
+    if gw is not None:
+        resolved = _resolve_pinned(league_id, gw)
+    else:
+        resolved = resolve_recommendation_inputs(
+            repository, league_id, settings.my_team_id, _current_gameweek()
+        )
+
+    if not resolved.usable:
+        return _hold_recommendation(league_id, resolved)
+
     result = build_recommendations(
-        manager,
-        managers,
-        repository.bootstrap(),
-        repository.fixtures(min(gw + 1, 38)),
-        population_size=snapshot.get("population_size") or snapshot.get("total_entries"),
-        gameweek=gw,
+        resolved.manager, resolved.managers, resolved.bootstrap, resolved.fixtures,
+        population_size=resolved.population_size, gameweek=resolved.gameweek, bank=None,
     )
     return RecommendationResponse(
-        meta=_meta(snapshot, model_version=MODEL_VERSION, feature_version="competitive-features-v4"), league_id=league_id, gameweek=gw, team_id=settings.my_team_id,
-        disclaimer="Decision support only. Verify late team news before approving any FPL action.",
+        meta=_rec_meta(resolved), league_id=league_id, gameweek=resolved.gameweek,
+        team_id=settings.my_team_id,
+        packet_status="provisional" if resolved.status == "provisional" else "advisory",
+        freshness=resolved.freshness(),
+        disclaimer=REC_DISCLAIMER,
         **result,
     )
 
@@ -651,25 +730,28 @@ def decision_current(
     official catalogue, the latest finalized league snapshot and the projection
     model; it is advisory only and is never executable.
     """
-    gw = gw or _current_gameweek()
     disclaimer = "Read-only decision support. Review and apply every change manually in the official FPL app."
     try:
         recommendation = recommendations(league_id=league_id, gw=gw).model_dump(mode="json")
     except HTTPException as error:
         if error.status_code != 404:
             raise
-        # Before the deadline the current-GW opponent picks are not locked yet,
-        # so no competitor-aware recommendation can exist. Expose that plainly
+        # An explicit ?gw=N with no snapshot at all: expose the hold plainly
         # rather than inventing a move.
+        pinned = gw or _current_gameweek()
         now = datetime.now(timezone.utc).isoformat()
         return {
-            "decision_id": hashlib.sha256(f"{league_id}:{gw}:safe_hold".encode()).hexdigest(),
+            "decision_id": hashlib.sha256(f"{league_id}:{pinned}:safe_hold".encode()).hexdigest(),
             "model_version": MODEL_VERSION,
             "league_id": league_id,
-            "gameweek": gw,
+            "gameweek": pinned,
             "generated_at": now,
             "meta": {"source": "snapshot", "stale": True, "quality_status": "unknown",
-                     "quality_issues": ["missing_gameweek_snapshot"], "snapshot_gameweek": gw},
+                     "quality_issues": ["missing_gameweek_snapshot"], "snapshot_gameweek": pinned,
+                     "freshness_status": "needs_refresh", "freshness_reason": "missing_gameweek_snapshot"},
+            "freshness": {"source": "none", "status": "needs_refresh",
+                          "reason": "missing_gameweek_snapshot", "stale": True,
+                          "snapshot_at": None, "data_age_hours": None},
             "competitive": {"model_version": MODEL_VERSION, "phase": "MATCH",
                              "phase_reason": "Waiting for the current gameweek snapshot.",
                              "alignment": 0, "target_alignment": 82},
@@ -680,11 +762,16 @@ def decision_current(
             "writes_enabled": False,
             "disclaimer": disclaimer,
         }
+
+    result_gw = recommendation["gameweek"]
+    # The recommendation packet already carries its own honest status
+    # (advisory / provisional / safe_hold / needs_refresh). Never upgrade it here.
+    packet_status = recommendation.get("packet_status", "advisory")
     packet_body = {
         "league_id": league_id,
-        "gameweek": gw,
+        "gameweek": result_gw,
         "competitive": recommendation["competitive"],
-        "packet_status": "advisory",
+        "packet_status": packet_status,
     }
     decision_id = hashlib.sha256(json.dumps(packet_body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return {
@@ -692,12 +779,13 @@ def decision_current(
         "decision_id": decision_id,
         "model_version": MODEL_VERSION,
         "league_id": league_id,
-        "gameweek": gw,
+        "gameweek": result_gw,
         "generated_at": recommendation["meta"].get("generated_at"),
         "meta": recommendation["meta"],
+        "freshness": recommendation.get("freshness", {}),
         "competitive": recommendation["competitive"],
         "plan": None,
-        "packet_status": "advisory",
+        "packet_status": packet_status,
         "executable": False,
         "execution_authority": "manual_fpl",
         "writes_enabled": False,

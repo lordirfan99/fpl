@@ -34,9 +34,12 @@ def test_collector_builds_a_complete_validated_snapshot(monkeypatch) -> None:
 
     def hydrate(targets, gameweek, limit):
         assert gameweek == 2 and limit == 2
-        for row in targets:
+        for index, row in enumerate(targets):
             row["_live_squad"] = _squad()
             row["_live_captain"] = "Captain"
+            row["_live_bank"] = 5 + index
+            row["_live_overall_rank"] = 100000 + index
+            row["_live_event_transfers"] = index
         return 2
 
     monkeypatch.setattr(collector.live_fpl, "hydrate_manager_squads", hydrate)
@@ -44,8 +47,33 @@ def test_collector_builds_a_complete_validated_snapshot(monkeypatch) -> None:
     snapshot = collector.collect(58005)
 
     assert snapshot["status"] == "complete"
+    assert snapshot["schema_version"] == 2
     assert snapshot["expected_count"] == snapshot["hydrated_count"] == 2
     assert len(snapshot["managers"]) == 2
+    assert snapshot["managers"][0]["gw_bank"] == 5
+    assert snapshot["managers"][0]["overall_rank"] == 100000
+    assert snapshot["managers"][1]["transfers_made"] == 1
+    assert snapshot["rank_provenance"] == "official-entry-history"
+    assert snapshot["bank_provenance"] == "official-entry-history"
+
+
+def test_collector_falls_back_to_league_rank_when_entry_history_absent(monkeypatch) -> None:
+    rows = [{"entry": 1, "entry_name": "One", "player_name": "M1", "event_total": 40, "total": 100, "rank": 7}]
+    monkeypatch.setattr(collector.live_fpl, "current_gameweek", lambda: 2)
+    monkeypatch.setattr(collector.live_fpl, "league_standings", lambda lid: {"managers": rows, "count": 1, "pages_fetched": 1})
+
+    def hydrate(targets, gameweek, limit):
+        for row in targets:
+            row["_live_squad"] = _squad()
+            row["_live_captain"] = "C"
+        return 1
+
+    monkeypatch.setattr(collector.live_fpl, "hydrate_manager_squads", hydrate)
+    snapshot = collector.collect(58005)
+    assert snapshot["managers"][0]["overall_rank"] == 7  # league-rank fallback
+    assert snapshot["managers"][0]["gw_bank"] is None
+    assert snapshot["rank_provenance"] == "classic-league-rank-fallback"
+    assert snapshot["bank_provenance"] == "unavailable"
 
 
 def test_collector_rejects_partial_hydration(monkeypatch) -> None:
