@@ -1,5 +1,11 @@
 # Shared VM zone recovery — 4 September 2026
 
+**Verified outcome:** restored in us-central1-a, e2-micro, same public IP.
+The machine-image operation retained a 10 GB pd-balanced disk despite the
+requested pd-standard override. Auto-delete was explicitly disabled afterward.
+The script now checks/reports the actual disk type and enforces retention.
+Compute eligibility must not be confused with free storage/IP/backups.
+
 The owner authorized recovery in another free-tier-eligible GCP zone after
 `e2-micro` starts in `us-central1-f` repeatedly failed with capacity exhaustion.
 Use `recover-vm-zone.ps1` from a reviewed, tagged release. Default target is
