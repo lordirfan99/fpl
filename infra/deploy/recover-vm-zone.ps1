@@ -49,4 +49,12 @@ $DeviceName = $SourceVm.disks[0].deviceName
 Invoke-Gcloud @('compute', 'instances', 'create', $VmName, "--project=$Project", "--zone=$TargetZone",
     "--source-machine-image=$ImageName", '--machine-type=e2-micro', '--subnet=default', "--address=$PublicIp",
     "--create-disk=boot=yes,auto-delete=no,device-name=$DeviceName,type=pd-standard", '--quiet')
+# The machine-image restore observed on 2026-09-04 retained the source disk
+# settings despite create-disk overrides. Enforce retention explicitly and
+# report the actual type instead of claiming the requested free disk allowance.
+$Restored = Invoke-Gcloud @('compute', 'instances', 'describe', $VmName, "--project=$Project", "--zone=$TargetZone", '--format=json') | ConvertFrom-Json
+$DiskName = ($Restored.disks[0].source -split '/')[-1]
+Invoke-Gcloud @('compute', 'instances', 'set-disk-auto-delete', $VmName, "--project=$Project", "--zone=$TargetZone", "--disk=$DiskName", '--no-auto-delete', '--quiet')
+$Disk = Invoke-Gcloud @('compute', 'disks', 'describe', $DiskName, "--project=$Project", "--zone=$TargetZone", '--format=json') | ConvertFrom-Json
+if ($Disk.type -notlike '*/pd-standard') { Write-Warning "Recovered boot disk is $($Disk.type); storage charges may apply. Do not stop the recovered VM just to change disk type." }
 Write-Output "Created replacement. Verify all services and scopes before declaring recovery. Original VM/disk/image are retained."

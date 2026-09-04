@@ -1,5 +1,31 @@
 # Runbook
 
+## Current recovered runtime — 4 September 2026
+
+The active VM is `instance-20260412-121200` in **us-central1-a**, `e2-micro`,
+public IP **34.60.216.122**, private IP `10.128.0.6`. Recovery used PR #63,
+tag `v2026.09.04-zone-recovery` (`d3eac83`), and private machine image
+`fpl-zone-recovery-20260904`. The original in us-central1-f remains stopped with
+its disk intact. Never start both copies: they share bot tokens and state.
+
+At 10:38 UTC Telegram, dashboard bridge, Caddy, SportMania FPL and SportMania
+payment bot were active with no failed units. Bot/engine files were preserved
+from the original disk; their source commit is not independently established.
+API is deployed at `3afe2ed` (`v2026.09.04-vm-live-refresh`) and reports healthy
+with FPL writes disabled. The collector is installed from `d3eac83`; record its
+verified publication and timer status below after the first successful runs.
+
+The replacement inherits storage read-write scope. Its 10 GB boot disk remained
+**pd-balanced** despite the requested standard-disk override; auto-delete was
+explicitly turned off and verified separately. Compute is free-tier eligible,
+but IPv4, balanced disks and retained recovery images can incur charges. Do not
+describe this whole deployment as zero-cost. Retire the original disk/image only
+after a deliberate backup-retention decision; do not risk another outage solely
+to convert the active disk.
+
+Future VM deployments default to us-central1-a, with `FPL_VM_ZONE` available for
+an explicit override. The old migration records below are historical.
+
 ## Live refresh migration (4 September 2026)
 
 The owner requires VM scheduling for live league refresh. Follow

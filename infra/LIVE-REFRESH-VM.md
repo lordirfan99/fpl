@@ -1,5 +1,11 @@
 # Live league refresh on the existing VM
 
+**Recovery update:** the active VM is now in `us-central1-a`; use that zone for
+all current SSH/deploy commands. The us-central1-f commands below describe the
+original migration. Storage write scope is already enabled on the recovered VM.
+The timer now also triggers one minute after activation/reboot for outage
+recovery; its regular UTC half-hour schedule remains unchanged.
+
 Owner decision, 4 September 2026: run live collection on the existing VM;
 do not provision Cloud Scheduler or another Cloud Run collector. API hosting
 stays on Cloud Run. Existing GitHub Actions fixture/journal/monitor jobs stay
