@@ -20,7 +20,9 @@ An UP zone is not proof that e2-micro capacity is available.
 The source must be stopped. A private machine image preserves the disk and
 configuration before the reserved external IP is detached. Only after that
 backup is READY is a replacement created. It uses the same instance name,
-an `e2-micro`, a `pd-standard` boot disk and reserved IP `34.60.216.122`.
+an `e2-micro` and reserved IP `34.60.216.122`. The script requests a
+`pd-standard` boot disk, but machine-image restore can retain the source type;
+the verified replacement actually uses `pd-balanced`, as recorded above.
 SSH metadata, labels, service account and scopes are inherited. The source VM
 and original disk are not deleted, and the replacement disk has auto-delete off.
 The new private IP can differ; verify any internal-IP dependencies.
@@ -40,6 +42,17 @@ still reserved and the source disk is intact. Do not restart the original and
 replacement together. Rollback requires stopping the replacement first, moving
 the address back to the original, and proving the original can start; its old
 zone's capacity is not guaranteed. Retain the recovery image until verified.
+
+Cost reference (checked 4 September 2026): Google's
+[Free Tier terms](https://docs.cloud.google.com/free/docs/free-cloud-features#compute)
+cover eligible e2-micro hours across the supported regions and up to 30 GB-months
+of **standard**, not balanced, persistent disk. Its
+[IPv4 pricing](https://cloud.google.com/vpc/network-pricing#ipaddress)
+lists in-use standard-VM IPv4 at USD 0.005/hour (roughly USD 3.65 per 730-hour
+month before credits/taxes). This is a component estimate, not a verified total
+bill. Backups, balanced disks, network traffic, GCS and API usage are additional
+possible costs. Moving from one us-central1 zone to another restores capacity;
+the zone change alone does not create a new compute discount.
 
 Verification: SSH to the replacement zone; require Telegram, dashboard bridge,
 Caddy and both SportMania services active, inspect failed units and recent logs,

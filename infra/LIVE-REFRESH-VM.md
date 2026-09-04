@@ -6,6 +6,13 @@ original migration. Storage write scope is already enabled on the recovered VM.
 The timer now also triggers one minute after activation/reboot for outage
 recovery; its regular UTC half-hour schedule remains unchanged.
 
+**Deployment verified:** `v2026.09.04-recovered-runtime` completed an automatic
+VM run at 11:05:47 UTC on 4 September, publishing both leagues. The timer is
+enabled. The obsolete `fpl-live-league-refresh` Cloud Scheduler and Cloud Run
+job were deleted afterward. The numbered steps below are the original release
+procedure, not pending work; do not repeat its old-zone stop/start commands.
+See `docs/RUNBOOK.md` for current runtime and rollback records.
+
 Owner decision, 4 September 2026: run live collection on the existing VM;
 do not provision Cloud Scheduler or another Cloud Run collector. API hosting
 stays on Cloud Run. Existing GitHub Actions fixture/journal/monitor jobs stay

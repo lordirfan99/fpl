@@ -12,8 +12,24 @@ At 10:38 UTC Telegram, dashboard bridge, Caddy, SportMania FPL and SportMania
 payment bot were active with no failed units. Bot/engine files were preserved
 from the original disk; their source commit is not independently established.
 API is deployed at `3afe2ed` (`v2026.09.04-vm-live-refresh`) and reports healthy
-with FPL writes disabled. The collector is installed from `d3eac83`; record its
-verified publication and timer status below after the first successful runs.
+with FPL writes disabled. The collector is installed from `c71e597`
+(`v2026.09.04-recovered-runtime`, PR #64). Its preceding manual validation run
+from `d3eac83` completed at 10:50:42 UTC with exit 0: league 58005 had 1,218
+managers and league 131997 had 2,624, with both API status endpoints ready and
+fresh. No FPL account writes were performed by the collector.
+
+The enabled VM timer triggered `c71e597` automatically at 10:55:45 UTC. That
+run completed successfully at 11:05:47 UTC, publishing league 58005 at
+10:57:49 UTC (1,218 managers) and league 131997 at 11:05:43 UTC (2,624 managers).
+The elapsed 11:00 calendar occurrence then triggered a serial follow-up run;
+there was no overlapping collector process. The legacy Cloud Scheduler and
+Cloud Run job named `fpl-live-league-refresh` were both deleted after this
+successful scheduled validation. Snapshot objects and the recovery backup were
+retained. No replacement Cloud Scheduler was created.
+
+Production monitor [run 33865448229](https://github.com/lordirfan99/fpl/actions/runs/33865448229)
+passed after recovery. The timer retains its UTC half-hour window plus a
+one-minute activation/reboot trigger (with up to 60 seconds random delay).
 
 The replacement inherits storage read-write scope. Its 10 GB boot disk remained
 **pd-balanced** despite the requested standard-disk override; auto-delete was
@@ -43,13 +59,20 @@ The VM's exact deployed commit was not identifiable from its runtime directory.
 
 | Component | Tag / ref | Notes |
 |---|---|---|
-| api | scout `93b9c6b2` (PR #12 state) | deployed via scout `deploy-api.yml` on 2026-09-02 |
-| engine + bot | autopilot `b6ba31e` (`codex/gcp-deploy`) | reverted onto the VM 2026-09-02 |
+| api | `v2026.09.04-vm-live-refresh` (`3afe2ed`) | Cloud Build `c1c88be1-c67c-4d89-94aa-4fcba8c68fca` succeeded; health and both league status checks passed |
+| live collector | `v2026.09.04-recovered-runtime` (`c71e597`) | Automatic run published both leagues and completed successfully at 11:05:47 UTC on 2026-09-04 |
+| engine + bot | recovered machine image `fpl-zone-recovery-20260904` | Services active after restore; exact source commit not independently established |
 | Telegram bot token | rotated 2026-09-02, in VM `config/credentials.env` only | `@Fplnaf_bot`, chat `-1004464574417` |
 
 Update this table on every release.
 
-## Freeze / unfreeze
+## Historical freeze / unfreeze (not current deployment commands)
+
+The commands in this section predate the zone recovery and scheduler migration.
+Do not execute them verbatim: the active zone is now `us-central1-a`, and the
+legacy Cloud Scheduler jobs are retired. Inventory current VM timers and GitHub
+workflows before freezing. For the new public league collector, disable/stop
+`fpl-live-refresh.timer` and stop `fpl-live-refresh.service` on the active VM.
 
 **Freeze** (stop all automation writing state):
 ```bash
