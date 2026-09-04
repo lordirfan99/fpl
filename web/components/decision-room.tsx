@@ -31,23 +31,31 @@ export function DecisionRoom({ packet, checkedAt }: { packet: DecisionPacket; ch
   const [proposed, setProposed] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [valid, setValid] = useState(true);
+  const [latestCheckedAt, setLatestCheckedAt] = useState(checkedAt);
   useEffect(() => {
     let active = true;
     const verify = async () => {
-      if (Date.now() >= Date.parse(packet.deadline) || !checkedAt || Date.now() - Date.parse(checkedAt) > 20 * 60_000) {
+      if (Date.now() >= Date.parse(packet.deadline) || !latestCheckedAt || Date.now() - Date.parse(latestCheckedAt) > 20 * 60_000) {
         if (active) setValid(false);
       }
       try {
-        const response = await fetch("/api/private/dashboard", { cache: "no-store" });
+        const response = await fetch("/api/private/dashboard", { cache: "no-store", signal: AbortSignal.timeout(12000) });
         const latest = await response.json();
-        if (active) setValid(response.ok && latest.status === "ready" && latest.packet?.plan_id === packet.plan_id && latest.packet?.account_fingerprint === packet.account_fingerprint);
+        if (active) {
+          const freshCheck = Date.parse(latest.account_checked_at);
+          const stillValid = response.ok && latest.status === "ready" && latest.packet?.plan_id === packet.plan_id
+            && latest.packet?.account_fingerprint === packet.account_fingerprint && Number.isFinite(freshCheck)
+            && Date.now() - freshCheck >= 0 && Date.now() - freshCheck <= 20 * 60_000 && Date.now() < Date.parse(packet.deadline);
+          if (stillValid) setLatestCheckedAt(latest.account_checked_at);
+          setValid(stillValid);
+        }
       } catch { if (active) setValid(false); }
     };
     const timer = setInterval(verify, 60_000);
     const focus = () => { void verify(); };
     window.addEventListener("focus", focus);
     return () => { active = false; clearInterval(timer); window.removeEventListener("focus", focus); };
-  }, [packet.plan_id, packet.account_fingerprint, packet.deadline, checkedAt]);
+  }, [packet.plan_id, packet.account_fingerprint, packet.deadline, latestCheckedAt]);
   if (!valid) return <section className="surface" role="status"><h2>Plan unavailable</h2><p>The account check expired or this plan changed. Reload to retrieve the latest verified plan. No hold recommendation is implied.</p><button onClick={() => window.location.reload()}>Reload verified plan</button></section>;
 
   const currentIds = packet.account.picks.filter(p => p.position <= 11).sort((a, b) => a.position - b.position).map(p => p.element);
@@ -128,6 +136,6 @@ export function DecisionRoom({ packet, checkedAt }: { packet: DecisionPacket; ch
       <div className="decision-fixtures"><table><caption>Recorded fixtures for the proposed squad · FDR 1 easier → 5 harder</caption><thead><tr><th>Player</th>{Array.from({ length: Math.min(3, 39 - packet.gameweek) }, (_, i) => <th key={i}>GW{packet.gameweek + i}</th>)}</tr></thead>
         <tbody>{[...packet.starters, ...packet.bench].map(id => { const p = packet.players.find(p => p.id === id); return p ? <tr key={id}><th>{p.name}</th>{Array.from({ length: Math.min(3, 39 - packet.gameweek) }, (_, i) => <td key={i}>{fixturesFor(packet, p, packet.gameweek + i).map(f => <span className={`decision-fdr level-${f.fdr}`} key={f.label}>{f.label} · {f.fdr}</span>)}{fixturesFor(packet, p, packet.gameweek + i).length === 0 ? "No fixture" : null}</td>)}</tr> : null; })}</tbody></table></div>
     </section>
-    <details className="surface decision-provenance"><summary><ShieldCheck size={17} /> Sources and verification</summary><p>Account checked {formatMYT(checkedAt)} · plan account capture {formatMYT(packet.timestamps.account)}</p><p>League {formatMYT(packet.timestamps.league)} · players and fixtures {formatMYT(packet.timestamps.reference)}</p><p>Model {packet.model_version}. No transfers, chip changes or lineup writes are available from this dashboard.</p></details>
+    <details className="surface decision-provenance"><summary><ShieldCheck size={17} /> Sources and verification</summary><p>Account checked {formatMYT(latestCheckedAt)} · plan account capture {formatMYT(packet.timestamps.account)}</p><p>League {formatMYT(packet.timestamps.league)} · players and fixtures {formatMYT(packet.timestamps.reference)}</p><p>Model {packet.model_version}. No transfers, chip changes or lineup writes are available from this dashboard.</p></details>
   </div>;
 }
