@@ -41,7 +41,7 @@ export default async function AssistantPage() {
   const held = !rec || fresh?.stale !== false || packet === "safe_hold" || packet === "needs_refresh";
   const accountUnverified = fresh?.accountStateVerified !== true;
   const actionHeld = held || accountUnverified;
-  const freshMeta = FRESHNESS_LABEL[fresh?.status ?? "stale"] ?? FRESHNESS_LABEL.stale;
+  const freshMeta = !held && accountUnverified ? FRESHNESS_LABEL.provisional : FRESHNESS_LABEL[fresh?.status ?? "stale"] ?? FRESHNESS_LABEL.stale;
   const ageLabel = fresh?.dataAgeHours == null ? "—"
     : fresh.dataAgeHours < 1 ? `${Math.round(fresh.dataAgeHours * 60)}m ago`
     : fresh.dataAgeHours < 48 ? `${fresh.dataAgeHours.toFixed(1)}h ago`
@@ -78,7 +78,7 @@ export default async function AssistantPage() {
     <section className="metric-grid">
       <MetricCard label="Action now" value={actionHeld ? "Check plan" : move ? "Transfer" : "Set XI"} detail={actionHeld ? "Current account verification required" : move ? "Model-supported candidate below" : "No move clears the model threshold"} tone={move ? "positive" : "default"} />
       <MetricCard label="Target gameweek" value={`GW${targetGameweek ?? "—"}`} detail={formatMYT(deadline) ?? "Deadline TBC"} />
-      <MetricCard label="Elite alignment" value={alignment == null ? "—" : `${alignment.toFixed(0)}%`} detail={targetAlignment == null ? "Target pending" : `Target ${targetAlignment}%`} tone={alignment != null && targetAlignment != null && alignment >= targetAlignment ? "positive" : "warning"} />
+      <MetricCard label={accountUnverified ? "Public squad alignment" : "Elite alignment"} value={alignment == null ? "—" : `${alignment.toFixed(0)}%`} detail={accountUnverified ? `Based on GW${fresh?.accountGameweek ?? rec?.gameweek ?? "—"} picks` : targetAlignment == null ? "Target pending" : `Target ${targetAlignment}%`} tone={alignment != null && targetAlignment != null && alignment >= targetAlignment ? "positive" : "warning"} />
       <MetricCard label="Recommendation" value={freshMeta.label} detail={`${freshMeta.detail} · ${ageLabel}`} tone={freshMeta.tone} />
     </section>
 
