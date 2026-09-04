@@ -1,5 +1,10 @@
 # Phase D cutover — runbook
 
+> Historical migration procedure. Fixture/journal/finalization/monitor now run
+> on GitHub Actions. Live refresh must run on the existing VM: use
+> [LIVE-REFRESH-VM.md](../LIVE-REFRESH-VM.md), not the legacy cloud-job steps below.
+> Do not provision or resume Cloud Scheduler for live collection.
+
 Run these in order from a **clean monorepo checkout of `main`** at the tag you cut.
 Each step is reversible until the archive. The frozen legacy system is the safety net.
 
@@ -80,8 +85,7 @@ for j in fpl-refresh-fixtures fpl-refresh-gameweek fpl-capture-journal fpl-monit
   gcloud run jobs update "$j" --region=us-central1 --project=irfan-374115 \
     --image="$IMG/fpl-scheduled-tasks:$SHA"
 done
-gcloud run jobs update fpl-live-league-refresh --region=us-central1 --project=irfan-374115 \
-  --image="$IMG/fpl-live-refresh:$SHA"
+# Live collection is VM-only: follow ../LIVE-REFRESH-VM.md.
 ```
 
 ## 4. Un-freeze — one at a time
@@ -95,7 +99,7 @@ gcloud compute ssh instance-20260412-121200 --zone us-central1-f --project irfan
 
 # Cloud Scheduler — resume, watch one run, then the next
 for j in fpl-refresh-fixtures fpl-refresh-gameweek fpl-capture-journal fpl-monitor \
-         fpl-live-league-refresh fpl-decision-refresh fpl-decision-final-window; do
+         fpl-decision-refresh fpl-decision-final-window; do
   gcloud scheduler jobs resume "$j" --location=us-central1 --project=irfan-374115
 done
 ```

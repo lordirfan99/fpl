@@ -1,4 +1,4 @@
-# Build the monorepo images consumed by the paused Cloud Run scheduler jobs.
+# Legacy manual task image only; live refresh runs on the VM.
 # Job configuration (args, service account and limits) is preserved when an
 # operator runs `gcloud run jobs update --image ...` during the cutover.
 steps:
@@ -12,20 +12,9 @@ steps:
     args:
       - push
       - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-scheduled-tasks:${_GIT_SHA}
-  - name: gcr.io/cloud-builders/docker
-    args:
-      - build
-      - --file=api/Dockerfile.live-refresh
-      - --tag=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-live-refresh:${_GIT_SHA}
-      - .
-  - name: gcr.io/cloud-builders/docker
-    args:
-      - push
-      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-live-refresh:${_GIT_SHA}
 
 images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-scheduled-tasks:${_GIT_SHA}
-  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-live-refresh:${_GIT_SHA}
 
 substitutions:
   _REGION: us-central1
