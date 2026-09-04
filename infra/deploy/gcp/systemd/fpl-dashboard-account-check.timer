@@ -1,0 +1,11 @@
+[Unit]
+Description=Verify private dashboard account every 15 minutes on VM
+
+[Timer]
+OnCalendar=*-*-* *:00,15,30,45:00
+OnBootSec=2min
+Persistent=true
+Unit=fpl-dashboard-account-check.service
+
+[Install]
+WantedBy=timers.target

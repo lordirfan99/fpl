@@ -58,3 +58,5 @@ engine/config/*
 !engine/config/*.example.json
 !engine/config/bps_rules_*.json
 uv.lock
+web/test-results/
+web/playwright-report/

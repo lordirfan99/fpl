@@ -1,0 +1,17 @@
+[Unit]
+Description=Read-only private dashboard account verification
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=fpl
+Group=fpl
+WorkingDirectory=/opt/fpl-autopilot
+Environment=FPL_AUTOPILOT_HOME=/opt/fpl-autopilot
+Environment=PYTHONPATH=/opt/fpl-autopilot/jobs:/opt/fpl-autopilot/model:/opt/fpl-autopilot/execution
+ExecStart=/opt/fpl-autopilot/.venv/bin/python /opt/fpl-autopilot/jobs/dashboard_account_check.py
+TimeoutStartSec=120
+NoNewPrivileges=true
+UMask=0077
+
