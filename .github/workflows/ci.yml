@@ -31,6 +31,7 @@ jobs:
       - name: Validate VM live-refresh release scripts and timer
         run: |
           bash -n infra/deploy/install-live-refresh.sh
+          bash -n infra/deploy/install-recommendation-planner.sh
           schedule=$(sed -n 's/^OnCalendar=//p' infra/deploy/gcp/systemd/fpl-live-refresh.timer)
           test -n "$schedule"
           systemd-analyze calendar "$schedule"

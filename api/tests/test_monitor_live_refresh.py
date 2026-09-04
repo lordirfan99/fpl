@@ -32,9 +32,28 @@ def test_monitor_checks_both_leagues_before_reporting_success(monkeypatch):
 
     def fetch(url, limit):
         calls.append(url)
-        return 200, json.dumps({"ready": True, "managers": []}).encode(), {"server-timing": "ok"}
+        return 200, json.dumps({"ready": True, "managers": [], "packet_status": "advisory",
+                                "freshness": {"status": "provisional", "stale": False},
+                                "meta": {"stale": False}}).encode(), {"server-timing": "ok"}
 
     monkeypatch.setattr(monitor, "fetch", fetch)
     assert monitor.main() == 0
     assert any(url.endswith("/v1/leagues/58005/live/status") for url in calls)
     assert any(url.endswith("/v1/leagues/131997/live/status") for url in calls)
+    assert any("/v1/decision/current?league_id=131997" in url for url in calls)
+
+
+@pytest.mark.parametrize("packet", ["safe_hold", "needs_refresh"])
+def test_monitor_accepts_honest_hold_but_not_actions(packet):
+    monitor.validate_recommendation({"packet_status": packet, "transfers": []})
+    with pytest.raises(RuntimeError):
+        monitor.validate_recommendation({"packet_status": packet, "transfers": [{"incoming": 1}]})
+
+
+def test_monitor_rejects_missing_contract_and_unverified_personal_action():
+    with pytest.raises(RuntimeError):
+        monitor.validate_recommendation({})
+    with pytest.raises(RuntimeError, match="Unverified"):
+        monitor.validate_recommendation({"packet_status": "advisory", "meta": {"stale": False},
+                                         "freshness": {"status": "provisional", "stale": False},
+                                         "captains": [{"element": 1}]})

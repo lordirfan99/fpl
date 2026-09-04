@@ -347,6 +347,7 @@ def build_recommendations(
         "phase_inputs": phase_inputs, "alignment": alignment, "target_alignment": target_alignment,
         "core_owned": core_owned, "core_size": len(core),
         "core_ownership_threshold": CORE_OWNERSHIP_THRESHOLD,
+        "core_template": core,
         "critical_missing": sorted(
             (pick for pick in core if pick["element"] not in owned_ids and pick["model_support"]),
             key=lambda pick: pick["elite_ownership"], reverse=True,

@@ -427,10 +427,7 @@ def _rec_meta(resolved: RecInputs) -> ApiMeta:
                 snapshot_at = snapshot_at.replace(tzinfo=timezone.utc)
         except ValueError:
             snapshot_at = None
-    # The catalogue (players/prices/fixtures) is always the freshest reference we
-    # hold, so the packet is structurally "valid" even when the league context is
-    # stale -- the honest signal for that is freshness_status / stale, not a
-    # corruption verdict.
+    # Structural validity and provenance are both required before calculating.
     quality = "valid" if resolved.usable else "unknown"
     return ApiMeta(
         source=resolved.source, snapshot_at=snapshot_at, stale=resolved.stale,
@@ -450,7 +447,7 @@ def _hold_recommendation(league_id: int, resolved: RecInputs) -> RecommendationR
     return RecommendationResponse(
         meta=_rec_meta(resolved), league_id=league_id, gameweek=resolved.gameweek,
         team_id=settings.my_team_id,
-        packet_status="safe_hold" if resolved.status == "safe_hold" else "needs_refresh",
+        packet_status="needs_refresh" if resolved.status == "needs_refresh" else "safe_hold",
         freshness=resolved.freshness(),
         elite_count=0, elite_overlap=0, elite_average_points=0.0,
         transfers=[], captains=[], risks=[], missing_elite_players=[],
@@ -474,18 +471,23 @@ def _resolve_pinned(league_id: int, gw: int) -> RecInputs:
         raise HTTPException(status_code=404, detail="Configured team is not present in this snapshot")
     meta = _meta(snapshot)
     age = meta.freshness_hours
-    stale = bool(meta.stale)
+    bootstrap = repository.bootstrap()
+    catalogue_at = (bootstrap.get("_meta") or {}).get("fetched_at") or bootstrap.get("fetched_at")
+    fixtures_at = repository.fixtures_captured_at()
+    stale = (bool(meta.stale) or snapshot_freshness(meta.snapshot_at.isoformat() if meta.snapshot_at else None)["stale"]
+             or snapshot_freshness(catalogue_at)["stale"] or snapshot_freshness(fixtures_at)["stale"])
     return RecInputs(
-        bootstrap=repository.bootstrap(), fixtures=repository.fixtures(min(gw + 1, 38)),
+        bootstrap=bootstrap, fixtures=repository.fixtures(min(gw + 1, 38)),
         manager=manager, managers=managers, gameweek=gw,
         population_size=snapshot.get("population_size") or snapshot.get("total_entries"),
         source="finalized-snapshot",
         snapshot_at=meta.snapshot_at.isoformat() if meta.snapshot_at else None,
         data_age_hours=age, stale=stale,
-        status="stale" if stale else "fresh",
+        status="safe_hold" if stale else "provisional",
         reason="explicit_gameweek_pin" + ("; stale" if stale else ""),
         rank_provenance="finalized-snapshot",
         bank_known=manager.get("gw_bank") is not None,
+        catalogue_snapshot_at=catalogue_at, fixtures_snapshot_at=fixtures_at,
     )
 
 
@@ -508,6 +510,12 @@ def recommendations(
         resolved.manager, resolved.managers, resolved.bootstrap, resolved.fixtures,
         population_size=resolved.population_size, gameweek=resolved.gameweek, bank=None,
     )
+    # The public API has league evidence, not authenticated pre-deadline account
+    # state. Keep the research context for the VM planner; personalized actions
+    # are built there using my-team, selling prices and actual free transfers.
+    result["transfers"] = []
+    result["captains"] = []
+    result["inputs"].update({"account_state_verified": False, "scope": "league_research"})
     # `packet_status` answers "can a client act on this?" -> advisory / safe_hold
     # / needs_refresh only. Data freshness (fresh / provisional / stale) is
     # orthogonal and lives in `freshness.status`, so the API stays compatible

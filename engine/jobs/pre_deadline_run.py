@@ -43,7 +43,7 @@ from transfer_solver import squad_horizon_utility  # noqa: E402
 from horizon_milp import optimize_horizon  # noqa: E402
 from fpl_client import FPLClient  # noqa: E402
 from atomic_io import atomic_write_json  # noqa: E402
-from competitive_v4_client import CompetitiveV4Error, fetch_competitive_v4  # noqa: E402
+from competitive_v4_client import CompetitiveV4Error, align_current_squad, fetch_competitive_v4  # noqa: E402
 from decision_explanation import build_decision_summary  # noqa: E402
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36"
@@ -159,12 +159,23 @@ def detected_transfer_chip(team, gw):
     return None
 
 
+def account_inputs_verified(team):
+    picks = team.get("picks") or []
+    transfers = team.get("transfers") or {}
+    return (len(picks) == 15 and len({p.get("element") for p in picks}) == 15
+            and transfers.get("bank") is not None
+            and all(p.get("selling_price") is not None for p in picks)
+            and (transfers.get("limit") is not None or transfers.get("status") == "unlimited"))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--notifications-disabled", action="store_true",
                         help="Build and persist the plan without sending a Telegram card")
     parser.add_argument("--force-notify", action="store_true",
                         help="Send the Telegram card even when the prior plan is unchanged")
+    parser.add_argument("--verify-inputs-only", action="store_true",
+                        help="Read account and league inputs, report provenance, then exit without saving a plan or sending a card")
     args = parser.parse_args()
     settings = load_settings()
     creds = load_creds()
@@ -175,6 +186,8 @@ def main():
     bootstrap = fetch("https://fantasy.premierleague.com/api/bootstrap-static/")
     fixtures = fetch("https://fantasy.premierleague.com/api/fixtures/")
     team = client.my_team(team_id)
+    if not args.verify_inputs_only and not account_inputs_verified(team):
+        raise RuntimeError("Current account inputs incomplete; no personal plan can be saved")
 
     # --- determine GW context ---
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -204,22 +217,18 @@ def main():
     competitive_error = None
     try:
         competitive_cfg = settings.get("competitive_v4", {}) or {}
-        # Competitive context = the rivals' CURRENT (last-finalized) squads. Their
-        # picks for the upcoming GW are hidden until its deadline and never
-        # available before it, so asking for `gw` here always yields a safe_hold
-        # packet. Ask for the last finalized GW instead — that is the only
-        # competitor data that exists at planning time.
+        # Rival picks belong to the last public GW. The client uses that GW as
+        # a validation constraint, while allowing the API to select a fresh
+        # capture instead of pinning an old finalized file.
         context_gw = max(1, gw - 1)
         competitive_context = fetch_competitive_v4(
             int(competitive_cfg.get("league_id", 58005)),
             context_gw,
             require_executable_plan=False,
         )
-        # A finalized-GW context is expected to be hours/days old and is valid
-        # for the whole planning window until the next GW finalizes. Only reject
-        # it if it is older than the configured horizon (default one week) or if
-        # the API returned an older GW than requested.
-        max_age = float(competitive_cfg.get("max_snapshot_age_hours", 168.0))
+        # An owner-configured limit may be stricter, never looser than the API
+        # freshness contract. The client also validates the actual timestamp.
+        max_age = min(12.0, float(competitive_cfg.get("max_snapshot_age_hours", 12.0)))
         freshness = competitive_context["meta"].get("freshness_hours")
         snap_gw = competitive_context["meta"].get("snapshot_gameweek")
         if freshness is not None and float(freshness) > max_age:
@@ -231,6 +240,23 @@ def main():
     except CompetitiveV4Error as error:
         competitive_context = None
         competitive_error = error
+
+    if args.verify_inputs_only:
+        picks = team.get("picks") or []
+        transfers = team.get("transfers") or {}
+        account_ok = account_inputs_verified(team)
+        print(json.dumps({
+            "verification_only": True, "target_gameweek": gw,
+            "account": {"source": "authenticated_my_team", "verified": account_ok,
+                        "fetched_at": now.isoformat(), "squad_count": len(picks),
+                        "bank_known": transfers.get("bank") is not None},
+            "league": (competitive_context or {}).get("freshness"),
+            "error": str(competitive_error) if competitive_error else None,
+            "plan_saved": False, "card_sent": False,
+        }))
+        if not account_ok or not competitive_context:
+            raise SystemExit(1)
+        return
 
     # Current-season league intelligence snapshot (used to build the elite
     # template from THIS season's evidence instead of preseason scout priors).
@@ -438,6 +464,7 @@ def main():
         "applied": False, "reason": "Competitive template gate is open or unavailable."
     }
     if competitive_context:
+        align_current_squad(competitive_context, {player["id"] for player in squad})
         gate = competitive_context.get("template_gate") or {}
         converge = gate.get("decision") == "CONVERGE_TO_TEMPLATE"
         differential_locked = not bool(gate.get("differential_allowed"))
@@ -455,7 +482,7 @@ def main():
         live_template = (league_state or {}).get("elite_template_live") or {}
         live_ids = {int(p["element"]) for p in (live_template.get("players") or [])
                     if p.get("element") is not None}
-        if template_source == "current_season" and len(live_ids) >= int(
+        if (competitive_context.get("freshness") or {}).get("source") != "official-fpl-live" and template_source == "current_season" and len(live_ids) >= int(
                 li_cfg.get("elite_template_min_players", 6)):
             template_ids = live_ids
             threshold = float(li_cfg.get("elite_template_alignment_threshold", 0.82))

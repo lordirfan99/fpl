@@ -36,6 +36,8 @@ export interface RecommendationFreshness {
   snapshotAt?: string;
   dataAgeHours?: number;
   bankKnown: boolean;
+  accountStateVerified: boolean;
+  accountGameweek?: number;
   rankProvenance?: string;
   missingFields: string[];
 }
@@ -108,7 +110,9 @@ export async function getCompetitiveRecommendation(leagueId: number, gameweek?: 
       stale: Boolean(fresh.stale ?? meta.stale),
       snapshotAt: text(fresh.snapshot_at) ?? text(meta.snapshot_at),
       dataAgeHours: optionalNumber(fresh.data_age_hours ?? meta.data_age_hours ?? meta.freshness_hours),
-      bankKnown: fresh.bank_known == null ? true : Boolean(fresh.bank_known),
+      bankKnown: fresh.bank_known === true,
+      accountStateVerified: fresh.account_state_verified === true,
+      accountGameweek: optionalNumber(fresh.account_gameweek),
       rankProvenance: text(fresh.rank_provenance),
       missingFields: (fresh.missing_fields as string[]) ?? (meta.missing_fields as string[]) ?? [],
     },

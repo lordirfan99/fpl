@@ -23,6 +23,18 @@ NOW = datetime(2026, 9, 4, 12, tzinfo=timezone.utc)
 TEAM_ID = main.settings.my_team_id
 CLIENT = TestClient(main.app)
 
+
+@pytest.fixture(autouse=True)
+def freeze_clock(monkeypatch):
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW if tz is not None else NOW.replace(tzinfo=None)
+    from app import recommendation_inputs, live_freshness
+    monkeypatch.setattr(recommendation_inputs, "datetime", FrozenDateTime)
+    monkeypatch.setattr(live_freshness, "datetime", FrozenDateTime)
+    monkeypatch.setattr(main, "datetime", FrozenDateTime)
+
 POS_TYPE = {"GKP": 1, "DEF": 2, "MID": 3, "FWD": 4}
 XI = ["GKP", "DEF", "DEF", "DEF", "MID", "MID", "MID", "FWD", "FWD", "FWD", "MID"]
 BENCH = ["GKP", "DEF", "MID", "FWD"]
@@ -131,6 +143,7 @@ def _finalized_snapshot(*, fetched_at, gw=2):
 def _wire(monkeypatch, *, live=None, finalized=None, current_gw=3, finalized_gw=2):
     monkeypatch.setattr(main.repository, "bootstrap", lambda: _bootstrap(current_gw))
     monkeypatch.setattr(main.repository, "fixtures", _fixtures)
+    monkeypatch.setattr(main.repository, "fixtures_captured_at", lambda: NOW.isoformat())
     monkeypatch.setattr(main, "_current_gameweek", lambda: finalized_gw)
 
     def live_league(_league_id):
@@ -154,10 +167,13 @@ def test_fresh_live_inputs(monkeypatch):
 
     assert body["packet_status"] == "advisory"
     fr = body["freshness"]
-    assert fr["source"] == "official-fpl-live" and fr["status"] == "fresh"
+    assert fr["source"] == "official-fpl-live" and fr["status"] == "provisional"
     assert fr["stale"] is False and fr["bank_known"] is True
     assert body["meta"]["data_source"] == "official-fpl-live"
-    assert body["meta"]["missing_fields"] == []
+    assert "current_account_squad" in body["meta"]["missing_fields"]
+    assert fr["account_state_verified"] is False
+    assert body["transfers"] == [] and body["captains"] == []
+    assert body["competitive"]["elite_template"]
     assert body["gameweek"] == 3
     assert isinstance(body["transfers"], list)
     assert body["inputs"]["bank_known"] is True
@@ -181,15 +197,16 @@ def test_stale_finalized_snapshot_only_predating_live_gw_is_safe_hold(monkeypatc
     assert body["competitive"]["phase"] and body["competitive"]["alignment"] is not None
 
 
-def test_stale_finalized_same_gw_is_labelled_stale_not_hidden(monkeypatch):
+def test_stale_finalized_same_gw_holds_actions(monkeypatch):
     _wire(
         monkeypatch, live=None,
         finalized=_finalized_snapshot(fetched_at=(NOW - timedelta(hours=30)).isoformat(), gw=3),
         current_gw=3, finalized_gw=3,
     )
     body = CLIENT.get("/v1/recommendations/current?league_id=58005").json()
-    assert body["packet_status"] == "advisory"
-    assert body["freshness"]["status"] == "stale" and body["meta"]["stale"] is True
+    assert body["packet_status"] == "safe_hold"
+    assert body["freshness"]["status"] == "safe_hold" and body["meta"]["stale"] is True
+    assert body["transfers"] == [] and body["captains"] == []
 
 
 def test_incomplete_live_snapshot_is_provisional_with_bank_unconfirmed(monkeypatch):
@@ -202,7 +219,7 @@ def test_incomplete_live_snapshot_is_provisional_with_bank_unconfirmed(monkeypat
     assert body["packet_status"] == "advisory"
     assert body["freshness"]["status"] == "provisional"
     assert body["freshness"]["bank_known"] is False
-    assert body["meta"]["missing_fields"] == ["gw_bank"]
+    assert "gw_bank" in body["meta"]["missing_fields"]
     assert body["inputs"]["bank_known"] is False
     for transfer in body["transfers"]:
         assert transfer["legal_checks"]["bank_known"] is False
@@ -213,8 +230,8 @@ def test_mixed_source_live_league_plus_fresh_catalogue(monkeypatch):
     body = CLIENT.get("/v1/recommendations/current?league_id=58005").json()
     # league context is live; catalogue-derived numbers still resolve.
     assert body["freshness"]["source"] == "official-fpl-live"
-    assert body["captains"], "captain ranking needs catalogue ep_next/form"
-    assert all("fixture" in c for c in body["captains"])
+    assert body["competitive"]["core_template"], "league research still needs catalogue ep_next/form"
+    assert all("fixture" in c for c in body["competitive"]["core_template"])
 
 
 @pytest.mark.parametrize("captured_at", [
@@ -308,6 +325,7 @@ def test_resolver_unit_prefers_fresh_live_over_stale_finalized(monkeypatch):
     class Repo:
         def bootstrap(self): return _bootstrap(3)
         def fixtures(self, _gw): return _fixtures(_gw)
+        def fixtures_captured_at(self): return NOW.isoformat()
         def live_league(self, _lid):
             return _live_snapshot(captured_at=(NOW - timedelta(minutes=5)).isoformat())
         def league(self, _lid, _gw):
@@ -315,5 +333,29 @@ def test_resolver_unit_prefers_fresh_live_over_stale_finalized(monkeypatch):
 
     resolved = resolve_recommendation_inputs(Repo(), 58005, TEAM_ID, 2, now=NOW)
     assert resolved.source == "official-fpl-live"
-    assert resolved.status == "fresh" and resolved.usable is True
+    assert resolved.status == "provisional" and resolved.usable is True
     assert resolved.gameweek == 3
+
+
+@pytest.mark.parametrize("timestamp", [None, "bad", "2026-09-04T12:00:00", "2020-01-01T00:00:00Z", "2027-01-01T00:00:00Z"])
+@pytest.mark.parametrize("reference", ["catalogue", "fixtures"])
+def test_reference_freshness_cannot_be_hidden_by_new_live_capture(monkeypatch, timestamp, reference):
+    _wire(monkeypatch, live=_live_snapshot(captured_at=NOW.isoformat()))
+    if reference == "catalogue":
+        bootstrap = _bootstrap(3)
+        bootstrap["_meta"]["fetched_at"] = timestamp
+        monkeypatch.setattr(main.repository, "bootstrap", lambda: bootstrap)
+    else:
+        monkeypatch.setattr(main.repository, "fixtures_captured_at", lambda: timestamp)
+    body = CLIENT.get("/v1/recommendations/current").json()
+    assert body["packet_status"] == "needs_refresh"
+    assert body["transfers"] == []
+    assert reference in body["freshness"]["reason"]
+
+
+def test_old_explicit_pin_also_holds_actions(monkeypatch):
+    _wire(monkeypatch, finalized=_finalized_snapshot(fetched_at=(NOW - timedelta(hours=73)).isoformat()), current_gw=2)
+    body = CLIENT.get("/v1/decision/current?league_id=58005&gw=2").json()
+    assert body["packet_status"] == "safe_hold"
+    assert body["transfers"] == []
+    assert body["executable"] is False
