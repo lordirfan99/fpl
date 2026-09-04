@@ -22,6 +22,12 @@ def main() -> int:
     status, body, _ = fetch(f"{API}/ready", 50_000)
     readiness = json.loads(body)
     assert status == 200 and readiness["ready"] is True, readiness
+    # Unlike /ready, this checks the background collector's actual output.
+    for league_id in (58005, 131997):
+        status, body, _ = fetch(f"{API}/v1/leagues/{league_id}/live/status", 50_000)
+        live_status = json.loads(body)
+        if status != 200 or live_status.get("ready") is not True:
+            raise RuntimeError(f"Live league {league_id} snapshot is stale or unavailable: {live_status}")
     status, body, headers = fetch(f"{API}/v1/leagues/58005/summary?page=1&page_size=50", 250_000)
     summary = json.loads(body)
     assert status == 200 and len(summary["managers"]) <= 50

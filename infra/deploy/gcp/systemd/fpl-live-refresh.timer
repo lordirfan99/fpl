@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh FPL live leagues on the existing VM every 30 minutes
+
+[Timer]
+# Preserve the former scheduler's UTC window; explicit UTC ignores VM timezone.
+OnCalendar=*-*-* 07..23:00,30:00 UTC
+Persistent=true
+RandomizedDelaySec=60
+Unit=fpl-live-refresh.service
+
+[Install]
+WantedBy=timers.target

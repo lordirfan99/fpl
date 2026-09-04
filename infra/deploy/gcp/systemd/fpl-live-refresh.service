@@ -1,0 +1,25 @@
+[Unit]
+Description=FPL public live league snapshot collector
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=fpl
+Group=fpl
+WorkingDirectory=/opt/fpl-live-refresh/current
+Environment=PYTHONUNBUFFERED=1
+Environment=FPL_SNAPSHOT_BUCKET=irfan-374115-fpl-snapshots
+EnvironmentFile=-/etc/fpl-live-refresh.env
+ExecStart=/opt/fpl-live-refresh/current/.venv/bin/python infra/scripts/refresh_live_leagues.py
+TimeoutStartSec=1200
+Nice=10
+CPUQuota=50%
+MemoryMax=512M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+StandardOutput=journal
+StandardError=journal
+

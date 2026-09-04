@@ -1,5 +1,18 @@
 # Runbook
 
+## Live refresh migration (4 September 2026)
+
+The owner requires VM scheduling for live league refresh. Follow
+[the VM release procedure](../infra/LIVE-REFRESH-VM.md); code preparation does
+not mean production has changed. The old Cloud Scheduler endpoint was returning
+404. No new Cloud Scheduler or Cloud Run collector should be provisioned.
+
+Observed at 08:55 UTC: API revision `0cfe832` on `fpl-scout-api-00074-6r2`,
+Telegram active with zero restarts, VM auto-runner/daily-pull/keepalive successful,
+and VM timers active. The legacy freeze and last-known-good table below are
+historical migration notes, not a verified description of current production.
+The VM's exact deployed commit was not identifiable from its runtime directory.
+
 ## Last known-good
 
 | Component | Tag / ref | Notes |

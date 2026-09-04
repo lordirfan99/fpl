@@ -1,5 +1,10 @@
 # Scheduled jobs
 
+> **4 September owner decision:** live league refresh is moving to the existing
+> VM, not Cloud Scheduler. Use [LIVE-REFRESH-VM.md](LIVE-REFRESH-VM.md) for the
+> reviewed release, verification and retirement steps. The Cloud Run sizing and
+> provisioning instructions below are historical and must not be applied.
+
 The five recurring data jobs used to run as **Cloud Run Jobs** triggered by
 **Cloud Scheduler**. At ~1 vCPU each and two firing every 30 min they ran ~3×
 over the Cloud Run free tier (~180k vCPU-s/month) → ~USD 10 / RM 47 a month.
@@ -17,7 +22,7 @@ so they moved back to Actions.
 | `scheduled-fixtures.yml` (`fixtures`) | GitHub Actions `17 * * * *` | ⏳ blocked on WIF wiring |
 | `scheduled-capture-journal.yml` (`capture-journal`) | GitHub Actions `17 * * * *` | ⏳ blocked on WIF wiring |
 | `scheduled-finalize-gameweek.yml` (`finalize-gameweek`) | GitHub Actions `23 * * * *` | ⏳ blocked on WIF wiring |
-| `fpl-live-league-refresh` (`refresh_live_leagues.py`) | Cloud Run, 30 min | see step 4 |
+| `fpl-live-league-refresh` (`refresh_live_leagues.py`) | VM systemd, 30 min | replacement prepared; deployment pending; see LIVE-REFRESH-VM.md |
 
 Each workflow just runs `python infra/scripts/run_scheduled_task.py <task>` —
 identical to the container `CMD`. `schedule:` cron on Actions is best-effort
