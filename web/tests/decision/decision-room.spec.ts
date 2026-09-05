@@ -13,7 +13,9 @@ for (const width of [390, 1440]) {
     const response = await page.goto("/this-week");
     expect(response?.headers()["cache-control"]).toContain("no-store");
     await expect(page.getByRole("heading", { name: "Your actual team" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "6 points to the top-10% cutoff" })).toBeVisible();
     await expect(page.getByText("Plan synthetic-test-plan", { exact: false })).toBeVisible();
+    await expect(page.getByText("Recorded target-group captaincy: 50.0% in GW3.")).toBeVisible();
     await page.getByRole("button", { name: "Proposed squad", exact: true }).click();
     await expect(page.getByLabel("Proposed starting eleven")).toContainText("IN");
     await page.getByRole("button", { name: /Test Player 16/ }).click();
@@ -28,6 +30,8 @@ for (const width of [390, 1440]) {
 test("signed-out and signed-in non-owner cannot retrieve the private packet", async ({ page, context }) => {
   await page.goto("/this-week");
   await expect(page.getByText("Your personal plan stays private")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "6 points to the top-10% cutoff" })).toBeVisible();
+  await expect(page.getByText("Test Player 16", { exact: true })).toBeVisible();
   expect((await page.request.get("/api/private/dashboard")).status()).toBe(401);
   const token = await encode({ token: { email: "attacker@example.com", ownerVerified: true }, secret: "test-only-secret-not-for-production-123456789", salt: "authjs.session-token" });
   await context.addCookies([{ name: "authjs.session-token", value: token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
@@ -45,6 +49,19 @@ for (const mode of ["wildcard", "freehit", "unavailable"]) {
     await page.goto("/this-week");
     await expect(page.getByRole("heading", { name: mode === "unavailable" ? "Plan unavailable" : /compare your full squad/ })).toBeVisible();
     if (mode === "unavailable") await expect(page.getByText("synthetic-test-plan", { exact: false })).toHaveCount(0);
-    else await expect(page.getByText("Unlimited", { exact: true })).toBeVisible();
+    else {
+      await expect(page.getByText("Unlimited", { exact: true })).toBeVisible();
+      if (mode === "freehit") await expect(page.getByText("Returning squad").first()).toBeVisible();
+    }
   });
 }
+
+test("Plan navigation uses the same canonical private packet", async ({ page, context }) => {
+  const token = await encode({ token: { email: "owner@example.com", ownerVerified: true }, secret: "test-only-secret-not-for-production-123456789", salt: "authjs.session-token" });
+  await context.addCookies([{ name: "authjs.session-token", value: token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
+  const response = await page.goto("/planner");
+  expect(response?.headers()["cache-control"]).toContain("no-store");
+  await expect(page.getByRole("heading", { name: "Your current decision plan" })).toBeVisible();
+  await expect(page.getByText("Plan synthetic-test-plan", { exact: false })).toBeVisible();
+  await expect(page.getByText("Hold the transfer for now")).toHaveCount(0);
+});

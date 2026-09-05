@@ -36,6 +36,7 @@ from .schemas import (
 )
 from .settings import settings
 from .private_dashboard import router as private_dashboard_router
+from .decision_context import build_context
 from .validation import snapshot_quality
 
 
@@ -107,6 +108,13 @@ def me() -> dict[str, int]:
         "default_league_id": settings.default_league_id,
         "current_gameweek": _current_gameweek(),
     }
+
+
+@app.get("/v1/leagues/{league_id}/decision-context")
+def league_decision_context(league_id: int):
+    if league_id not in {58005, 131997}:
+        raise HTTPException(status_code=404, detail="League not configured for decision context")
+    return build_context(repository, league_id, settings.my_team_id)
 
 
 @app.get("/v1/live/team")

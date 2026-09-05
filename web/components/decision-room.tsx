@@ -27,7 +27,7 @@ function Evidence({ player, packet }: { player: EvidencePlayer; packet: Decision
     </div></details>;
 }
 
-export function DecisionRoom({ packet, checkedAt }: { packet: DecisionPacket; checkedAt?: string }) {
+export function DecisionRoom({ packet, checkedAt, children, rivalCaptaincy }: { packet: DecisionPacket; checkedAt?: string; children?: React.ReactNode; rivalCaptaincy?: { gameweek?: number; counts: Record<number, number | null> } }) {
   const [proposed, setProposed] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [valid, setValid] = useState(true);
@@ -72,6 +72,7 @@ export function DecisionRoom({ packet, checkedAt }: { packet: DecisionPacket; ch
   const utility = utilityRows.length && utilityRows.every(r => numeric(r.gain) && numeric(r.weight))
     ? utilityRows.reduce((sum, row) => sum + row.gain! * row.weight, 0) : null;
   const paid = packet.alternatives.best_paid_transfer;
+  const fixtureWeeks = packet.chip === "freehit" ? 1 : Math.min(3, 39 - packet.gameweek);
   const barRows = [{ label: "Keep current team", value: 0 }, { label: "Recommended changes", value: utility, proposed: true }];
   // Delayed routes start in other weeks: do not plot unlike horizons together.
   const summary = packet.transfers.length ? packet.transfers.map(t => `${t.out_name} → ${t.in_name}`).join(" · ") : packet.action;
@@ -125,17 +126,19 @@ export function DecisionRoom({ packet, checkedAt }: { packet: DecisionPacket; ch
       {packet.captains.map(c => { const player = packet.players.find(p => p.id === c.id); return <article key={c.id} className={c.id === packet.captain ? "chosen" : ""}><span>{c.id === packet.captain ? "RECOMMENDED CAPTAIN" : "ALTERNATIVE"}</span><h3>{c.name}</h3>
         <ComparisonBars rows={[{ label: "Projected points before captain multiplier", value: c.xpts, proposed: c.id === packet.captain }]} unit="pts" scaleMax={Math.max(1, ...packet.captains.flatMap(c => numeric(c.xpts) ? [c.xpts] : []))} />
         <p>{displayNumber(c.expected_minutes, 0)} expected minutes</p><p>{player ? fixturesFor(packet, player, packet.gameweek).map(f => f.label).join(" + ") || "No scheduled fixture" : "Fixture unavailable"}</p><p>{c.reason}</p>
+        <p>Recorded target-group captaincy: {displayNumber(rivalCaptaincy?.counts[c.id])}{numeric(rivalCaptaincy?.counts[c.id]) ? `% in GW${rivalCaptaincy?.gameweek}` : ""}. Not a forecast of their next captain.</p>
         {player ? <Evidence player={player} packet={packet} /> : null}</article>; })}
     </div><p className="decision-caption">Rankings come from the same VM plan. Rival ownership is context—not a reason to sacrifice projected points.</p></section>
 
     <section className="surface"><span className="evidence-label">Model estimate</span><h2>Look beyond this deadline</h2><div className="decision-weeks">
       {Array.from({ length: Math.min(3, 39 - packet.gameweek) }, (_, offset) => <article key={offset}><h3>GW{packet.gameweek + offset}</h3>
-        <ComparisonBars rows={[{ label: "Current XI", value: weeklyPoints(packet, currentIds, currentCaptain, offset) }, { label: "Proposed XI", value: weeklyPoints(packet, packet.starters, packet.captain, offset), proposed: true }]} unit="pts" />
+        <ComparisonBars rows={[{ label: "Current XI", value: weeklyPoints(packet, currentIds, currentCaptain, offset) }, { label: packet.chip === "freehit" ? (offset === 0 ? "Free Hit XI" : "Returning squad") : "Proposed XI", value: packet.chip === "freehit" && offset > 0 ? null : weeklyPoints(packet, packet.starters, packet.captain, offset), proposed: true }]} unit="pts" />
       </article>)}
-    </div><p className="decision-caption">Same selected XI and captain held across weeks, before transfer hits and future changes. {packet.chip === "freehit" ? "Free Hit lasts one GW: later proposed-XI bars are hypothetical, not your returning squad." : "Not the optimizer’s multi-week transfer roadmap."}</p>
-      <div className="decision-fixtures"><table><caption>Recorded fixtures for the proposed squad · FDR 1 easier → 5 harder</caption><thead><tr><th>Player</th>{Array.from({ length: Math.min(3, 39 - packet.gameweek) }, (_, i) => <th key={i}>GW{packet.gameweek + i}</th>)}</tr></thead>
-        <tbody>{[...packet.starters, ...packet.bench].map(id => { const p = packet.players.find(p => p.id === id); return p ? <tr key={id}><th>{p.name}</th>{Array.from({ length: Math.min(3, 39 - packet.gameweek) }, (_, i) => <td key={i}>{fixturesFor(packet, p, packet.gameweek + i).map(f => <span className={`decision-fdr level-${f.fdr}`} key={f.label}>{f.label} · {f.fdr}</span>)}{fixturesFor(packet, p, packet.gameweek + i).length === 0 ? "No fixture" : null}</td>)}</tr> : null; })}</tbody></table></div>
+    </div><p className="decision-caption">Same selected XI and captain held across weeks, before transfer hits and future changes. {packet.chip === "freehit" ? "Free Hit lasts one GW. The later returning squad is unavailable because this packet does not project it." : "Not the optimizer’s multi-week transfer roadmap."}</p>
+      <div className="decision-fixtures"><table><caption>Recorded fixtures for the proposed squad · FDR 1 easier → 5 harder</caption><thead><tr><th>Player</th>{Array.from({ length: fixtureWeeks }, (_, i) => <th key={i}>GW{packet.gameweek + i}</th>)}</tr></thead>
+        <tbody>{[...packet.starters, ...packet.bench].map(id => { const p = packet.players.find(p => p.id === id); return p ? <tr key={id}><th>{p.name}</th>{Array.from({ length: fixtureWeeks }, (_, i) => <td key={i}>{fixturesFor(packet, p, packet.gameweek + i).map(f => <span className={`decision-fdr level-${f.fdr}`} key={f.label}>{f.label} · {f.fdr}</span>)}{fixturesFor(packet, p, packet.gameweek + i).length === 0 ? "No fixture" : null}</td>)}</tr> : null; })}</tbody></table></div>
     </section>
     <details className="surface decision-provenance"><summary><ShieldCheck size={17} /> Sources and verification</summary><p>Account checked {formatMYT(latestCheckedAt)} · plan account capture {formatMYT(packet.timestamps.account)}</p><p>League {formatMYT(packet.timestamps.league)} · players and fixtures {formatMYT(packet.timestamps.reference)}</p><p>Model {packet.model_version}. No transfers, chip changes or lineup writes are available from this dashboard.</p></details>
+    {children}
   </div>;
 }
