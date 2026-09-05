@@ -25,7 +25,9 @@ steps:
       - --region=${_REGION}
       - --platform=managed
       - --allow-unauthenticated
-      - --set-env-vars=FPL_MY_TEAM_ID=2797967,FPL_DEFAULT_LEAGUE_ID=58005,FPL_SNAPSHOT_BUCKET=irfan-374115-fpl-snapshots,FPL_GIT_SHA=${_GIT_SHA}
+      # Preserve separately managed server-only secrets and private-bucket
+      # bindings. --set-env-vars clears every variable not listed here.
+      - --update-env-vars=FPL_MY_TEAM_ID=2797967,FPL_DEFAULT_LEAGUE_ID=58005,FPL_SNAPSHOT_BUCKET=irfan-374115-fpl-snapshots,FPL_GIT_SHA=${_GIT_SHA}
 
 images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/fpl-scout-api:$BUILD_ID

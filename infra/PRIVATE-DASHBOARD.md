@@ -19,6 +19,8 @@ packets must never enter `data/` build contexts, public snapshots or journal exp
   Neither anonymous users nor Netlify receives direct bucket permissions.
 - API server-only `FPL_PRIVATE_DASHBOARD_BUCKET` and the same read token, stored
   through Secret Manager. Token authorizes only GET `/v1/private/dashboard/current`.
+  The standard API build uses `--update-env-vars`, so later tagged deployments
+  preserve these separately managed bindings instead of clearing them.
 - VM `config/dashboard.json`, owner fpl, mode 0600, contains only
   `{"private_bucket":"<private-bucket-name>","public_snapshot_bucket":"<existing-public-bucket-name>"}`.
   Both identities are required and must differ; obtain the public identity from
