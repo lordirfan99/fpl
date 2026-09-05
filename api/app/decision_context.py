@@ -32,8 +32,7 @@ def valid_manager_rows(managers, population):
     if not isinstance(managers, list) or not positive_int(population):
         return []
     return [m for m in managers if isinstance(m, dict) and positive_int(m.get("entry_id"))
-            and positive_int(m.get("league_rank")) and m["league_rank"] <= population
-            and number(m.get("total_points"))]
+            and positive_int(m.get("league_rank")) and number(m.get("total_points"))]
 
 
 def goal(managers, population, owner):
