@@ -1,7 +1,8 @@
 import "server-only";
 import { isOwner } from "@/auth";
+import type { PrivateDashboard } from "./decision-room";
 
-export async function getPrivateDashboard() {
+export async function getPrivateDashboard(): Promise<PrivateDashboard> {
   if (!await isOwner()) return { status: "signed_out", packet: null };
   const token = process.env.FPL_DASHBOARD_READ_TOKEN;
   if (!token || token.length < 32) return { status: "unavailable", packet: null };
@@ -11,6 +12,8 @@ export async function getPrivateDashboard() {
       headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: AbortSignal.timeout(12000),
     });
     if (!response.ok) return { status: "unavailable", packet: null };
-    return await response.json();
+    const result = await response.json() as PrivateDashboard;
+    if (result.status === "ready" && result.packet?.schema_version === 1) return result;
+    return { status: "unavailable", packet: null, reasons: result.reasons };
   } catch { return { status: "unavailable", packet: null }; }
 }
