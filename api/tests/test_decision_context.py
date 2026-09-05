@@ -15,6 +15,16 @@ def test_top_ten_percent_is_not_top_ten_positions():
     assert result["inside_target"] is False
 
 
+def test_official_rank_gaps_do_not_make_complete_membership_partial():
+    rows = managers()
+    # FPL can retain gaps after managers leave a league, so the last official
+    # rank can be greater than the active membership count.
+    rows[-1]["league_rank"] = 25
+    result = goal(rows, 21, 10)
+    assert result["available"] is True
+    assert result["cutoff_rank"] == 3
+
+
 def test_missing_and_duplicate_standings_never_generate_a_target():
     assert goal(managers(20), 21, 10)["available"] is False
     rows = managers()
