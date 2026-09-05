@@ -1,5 +1,77 @@
 # Runbook
 
+## Decision-first dashboard — public release and private activation gate, 5 September 2026
+
+**Release.** The decision experience was delivered through reviewed PRs
+[#71](https://github.com/lordirfan99/fpl/pull/71),
+[#72](https://github.com/lordirfan99/fpl/pull/72) and
+[#73](https://github.com/lordirfan99/fpl/pull/73). Follow-up deployment PRs
+[#74](https://github.com/lordirfan99/fpl/pull/74),
+[#75](https://github.com/lordirfan99/fpl/pull/75) and
+[#76](https://github.com/lordirfan99/fpl/pull/76) preserve private Cloud Run
+bindings, accept legitimate official-rank gaps, and isolate memory-heavy reads.
+Every PR had both required CI jobs green and no unresolved review threads before
+merge. The current release tag is `v2026.09.05-decision-dashboard-3`, commit
+`4fd0bd0e3ec503bd36ef6eb7796bf4432f4e1230`.
+
+**Public production.** Netlify deploy `6a9c280196fffd65f20e46ac` (workflow
+[33972062559](https://github.com/lordirfan99/fpl/actions/runs/33972062559))
+serves the phone-first This Week screen. Cloud Build
+`ec27d13e-12d4-4884-ab79-1ef87b40327d` deployed the tagged API; revision
+`fpl-scout-api-00083-nkg` carries the private bucket/token binding and serves
+100% of traffic with concurrency one and the original 512 MiB memory limit.
+`/health` reports the release commit, healthy, with writes disabled.
+
+Read-only production checks showed both complete live leagues on the decision
+screen. At the verification capture KK Old Boys was 55 points behind target
+(rank 924; cutoff rank 122; 1,213/1,213 squads) and Overall IFE was 68 points
+behind (2,350/2,350 squads). These values are live recorded facts and will move.
+Phone browser checks rendered both league choices, the gap, signed-out private
+state and rival evidence with no console errors. The Plan route returned
+`private, no-store`, contained no inferred "hold" advice, and labeled public
+fixtures as research. API and Netlify private routes returned 401 with
+`no-store` when unauthorized. The standard production monitor passed after a
+deliberate concurrent full-league/recommendation test.
+
+**Memory incident and correction.** The first concurrent verification on
+revision `fpl-scout-api-00080-fpg` placed two large league reads on one
+concurrency-80 instance. Cloud Run recorded 529 MiB used against 512 MiB,
+terminated the instance and returned 503. Traffic was immediately rolled back
+to `fpl-scout-api-00078-hr4` while PR #76 was reviewed. The corrected revision
+uses concurrency one, not more memory or an always-on instance. Repeating the
+same concurrent workload returned 200 for both decision contexts, both large
+recommendation/decision calls and the complete monitor; the corrected revision
+had no error-level logs in the verification window.
+
+**Private activation is intentionally incomplete.** Bucket
+`irfan-374115-fpl-private-dashboard` is regional `us-central1`, uniform-access,
+and has public access prevention enforced; anonymous object access returned
+403. The VM and API service identities have bucket-scoped roles. Secret Manager
+version 2 supplies the API read token. The authorized API path currently returns
+`status=unavailable` and `packet=null`, because the VM publisher has not been
+installed or enabled. Production-only Netlify owner, read-token and Auth.js
+base/session variables are staged but not redeployed. `AUTH_GOOGLE_ID` and
+`AUTH_GOOGLE_SECRET` remain absent: creating the Google OAuth web client with
+callback `https://fpl-scout-intelligence.netlify.app/api/auth/callback/google`
+requires owner confirmation in Google Cloud. Do not install the VM files, enable
+`fpl-dashboard-account-check.timer`, or claim owner login works until that client
+is created, stored in Netlify, redeployed and tested with
+`azwariirfan@gmail.com` plus a rejected non-owner session.
+
+The existing VM remained healthy and unchanged: Telegram, dashboard bridge,
+Caddy and both SportMania services were active; no failed units were reported;
+`fpl-auto-runner.timer` and `fpl-live-refresh.timer` remained scheduled. No Cloud
+Scheduler job, paid feed, extra VM or always-on service was created.
+
+**Rollback.** Route API traffic to `fpl-scout-api-00078-hr4` to remove the new
+API routes, or to `fpl-scout-api-00081-v4p` to retain the public release without
+the private bindings. For the web, publish Netlify deploy
+`6a9ae4870734954bf0c66dec` (commit `7fbc39f`) as the preceding known-good UI.
+The VM needs no rollback until the private installer is actually run. Retain the
+private bucket and Secret Manager versions for diagnosis; never copy their
+contents into public storage. Follow `infra/PRIVATE-DASHBOARD.md` for the scoped
+VM rollback after activation.
+
 ## Current planning inputs — verified release, 4 September 2026
 
 This section supersedes the earlier freshness/account-state claims below.
