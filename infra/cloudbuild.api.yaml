@@ -25,6 +25,10 @@ steps:
       - --region=${_REGION}
       - --platform=managed
       - --allow-unauthenticated
+      # Full-league snapshots can be tens of MB in memory. Isolate heavy reads
+      # per 512 MiB instance instead of paying for a larger always-allocated
+      # memory tier or allowing unrelated requests to terminate each other.
+      - --concurrency=1
       # Preserve separately managed server-only secrets and private-bucket
       # bindings. --set-env-vars clears every variable not listed here.
       - --update-env-vars=FPL_MY_TEAM_ID=2797967,FPL_DEFAULT_LEAGUE_ID=58005,FPL_SNAPSHOT_BUCKET=irfan-374115-fpl-snapshots,FPL_GIT_SHA=${_GIT_SHA}

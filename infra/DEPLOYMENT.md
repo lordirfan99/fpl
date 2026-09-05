@@ -14,6 +14,10 @@ deployment evidence), see [`docs/CURRENT_STATUS.md`](docs/CURRENT_STATUS.md).
 | Public bridge path | `https://sportmania.duckdns.org/fpl-autopilot/` |
 | Bridge token | Secret Manager `fpl-dashboard-read-token` |
 
+The API keeps request concurrency at one per 512 MiB instance because complete
+league snapshots are memory-heavy. Cloud Run may scale out for brief concurrent
+reads, but no minimum instance or new always-on service is required.
+
 ## Frontend: automatic Netlify deployment
 
 Netlify is connected to `lordirfan99/fpl-league-58005-scout`, branch `master`.
