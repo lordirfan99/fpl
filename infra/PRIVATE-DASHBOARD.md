@@ -6,11 +6,10 @@ packets must never enter `data/` build contexts, public snapshots or journal exp
 
 ## Prerequisites (deployment is blocked until these are verified)
 
-- Owner Google OAuth web client; production callback:
-  `https://fpl-scout-intelligence.netlify.app/api/auth/callback/google`.
-- Netlify server-only `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET`,
-  `AUTH_URL=https://fpl-scout-intelligence.netlify.app`, `AUTH_TRUST_HOST=true`,
-  `FPL_OWNER_EMAIL=azwariirfan@gmail.com`, `FPL_DASHBOARD_READ_TOKEN` (random >=32 chars).
+- Netlify server-only `FPL_DASHBOARD_PASSWORD`, `AUTH_SECRET`,
+  `AUTH_URL=https://fpl-scout-intelligence.netlify.app`, `AUTH_TRUST_HOST=true`, and
+  `FPL_DASHBOARD_READ_TOKEN` (random >=32 chars). The dashboard password is not
+  the FPL account password and must never use a `NEXT_PUBLIC_` name.
   Production secrets must not be made available to untrusted deploy previews.
 - Separate regional private GCS bucket with uniform bucket-level access and
   public access prevention ENFORCED. Never reuse `FPL_SNAPSHOT_BUCKET`.
@@ -48,8 +47,9 @@ extend freshness: the API rejects checks older than 20 minutes.
 ## Acceptance and rollback
 
 Require unauthorized API/Next.js requests to return 401 with `private, no-store`;
-verify bucket anonymous access denied and owner Google sign-in accepted while
-another account is denied. Check cache isolation with two browser sessions.
+verify bucket anonymous access denied, a wrong dashboard password is rejected,
+the configured password creates an HttpOnly owner session, and a forged owner
+claim is denied. Check cache isolation with two browser sessions.
 Compare dashboard plan id, lineup and captain with the VM pending plan; confirm
 zero FPL writes and no notification from the verification job. Test failed and
 changed account checks before releasing the UI.
