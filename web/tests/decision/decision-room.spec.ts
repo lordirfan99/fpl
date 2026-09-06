@@ -3,9 +3,26 @@ import { encode } from "next-auth/jwt";
 import AxeBuilder from "@axe-core/playwright";
 test.beforeEach(async ({ request }) => { await request.get("http://127.0.0.1:4185/__test/mode/normal"); });
 
+test("dashboard password rejects a wrong value and creates an HttpOnly owner session", async ({ page, context }) => {
+  await page.goto("/sign-in");
+  await page.getByLabel("Dashboard password").fill("wrong-password");
+  await page.getByRole("button", { name: "Unlock decision room" }).click();
+  await expect(page.getByRole("main").getByRole("alert")).toHaveText("Incorrect password.");
+  expect((await page.request.get("/api/private/dashboard")).status()).toBe(401);
+
+  await page.getByLabel("Dashboard password").fill("test-dashboard-password");
+  await page.getByRole("button", { name: "Unlock decision room" }).click();
+  await page.waitForURL("**/this-week");
+  await expect(page.getByRole("heading", { name: "Your actual team" })).toBeVisible();
+  expect((await page.request.get("/api/private/dashboard")).status()).toBe(200);
+  const session = (await context.cookies()).find(cookie => cookie.name === "authjs.session-token");
+  expect(session?.httpOnly).toBe(true);
+  expect(session?.sameSite).toBe("Lax");
+});
+
 for (const width of [390, 1440]) {
   test(`verified owner flow at ${width}px`, async ({ page, context }) => {
-    const token = await encode({ token: { email: "owner@example.com", ownerVerified: true }, secret: "test-only-secret-not-for-production-123456789", salt: "authjs.session-token" });
+    const token = await encode({ token: { sub: "fpl-owner", email: "owner@fpl.local", ownerVerified: true }, secret: "test-only-secret-not-for-production-123456789", salt: "authjs.session-token" });
     await context.addCookies([{ name: "authjs.session-token", value: token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
     await page.setViewportSize({ width, height: 900 });
     const errors: string[] = [];
@@ -33,7 +50,7 @@ test("signed-out and signed-in non-owner cannot retrieve the private packet", as
   await expect(page.getByRole("heading", { name: "6 points to the top-10% cutoff" })).toBeVisible();
   await expect(page.getByText("Test Player 16", { exact: true })).toBeVisible();
   expect((await page.request.get("/api/private/dashboard")).status()).toBe(401);
-  const token = await encode({ token: { email: "attacker@example.com", ownerVerified: true }, secret: "test-only-secret-not-for-production-123456789", salt: "authjs.session-token" });
+  const token = await encode({ token: { sub: "not-owner", email: "owner@fpl.local", ownerVerified: true }, secret: "test-only-secret-not-for-production-123456789", salt: "authjs.session-token" });
   await context.addCookies([{ name: "authjs.session-token", value: token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
   await page.reload();
   await expect(page.getByText("Your personal plan stays private")).toBeVisible();
@@ -44,7 +61,7 @@ test("signed-out and signed-in non-owner cannot retrieve the private packet", as
 for (const mode of ["wildcard", "freehit", "unavailable"]) {
   test(`correct decision state for ${mode}`, async ({ page, context, request }) => {
     await request.get(`http://127.0.0.1:4185/__test/mode/${mode}`);
-    const token = await encode({ token: { email: "owner@example.com", ownerVerified: true }, secret: "test-only-secret-not-for-production-123456789", salt: "authjs.session-token" });
+    const token = await encode({ token: { sub: "fpl-owner", email: "owner@fpl.local", ownerVerified: true }, secret: "test-only-secret-not-for-production-123456789", salt: "authjs.session-token" });
     await context.addCookies([{ name: "authjs.session-token", value: token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
     await page.goto("/this-week");
     await expect(page.getByRole("heading", { name: mode === "unavailable" ? "Plan unavailable" : /compare your full squad/ })).toBeVisible();
@@ -57,7 +74,7 @@ for (const mode of ["wildcard", "freehit", "unavailable"]) {
 }
 
 test("Plan navigation uses the same canonical private packet", async ({ page, context }) => {
-  const token = await encode({ token: { email: "owner@example.com", ownerVerified: true }, secret: "test-only-secret-not-for-production-123456789", salt: "authjs.session-token" });
+  const token = await encode({ token: { sub: "fpl-owner", email: "owner@fpl.local", ownerVerified: true }, secret: "test-only-secret-not-for-production-123456789", salt: "authjs.session-token" });
   await context.addCookies([{ name: "authjs.session-token", value: token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
   const response = await page.goto("/planner");
   expect(response?.headers()["cache-control"]).toContain("no-store");
