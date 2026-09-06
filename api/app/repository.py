@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -30,11 +31,14 @@ class LiveSnapshotNotFoundError(FileNotFoundError):
 class SnapshotRepository:
     """Read-only adapter around the existing collector output."""
 
+    REMOTE_REVALIDATE_SECONDS = 30.0
+
     def __init__(self, data_dir: Path, bucket_name: str | None = None):
         self.data_dir = data_dir.resolve()
         self.bucket_name = bucket_name
         self._bucket = storage.Client().bucket(bucket_name) if bucket_name and storage else None
         self._remote_cache: dict[str, tuple[int | None, dict[str, Any]]] = {}
+        self._remote_checked_at: dict[str, float] = {}
         # GCS server-side last-modified per snapshot file. Used as a freshness
         # fallback when a published payload carries no embedded fetched_at.
         self._remote_updated: dict[str, float] = {}
@@ -61,9 +65,15 @@ class SnapshotRepository:
     def _read_remote(self, filename: str) -> dict[str, Any] | None:
         if self._bucket is None:
             return None
+        now = time.monotonic()
+        checked_at = self._remote_checked_at.get(filename)
+        if checked_at is not None and now - checked_at < self.REMOTE_REVALIDATE_SECONDS:
+            cached = self._remote_cache.get(filename)
+            return cached[1] if cached else None
         blob = self._bucket.blob(f"snapshots/{filename}")
         try:
             blob.reload()
+            self._remote_checked_at[filename] = now
             generation = int(blob.generation) if blob.generation else None
             if blob.updated is not None:
                 self._remote_updated[filename] = blob.updated.timestamp()
@@ -74,6 +84,7 @@ class SnapshotRepository:
             self._remote_cache[filename] = (generation, payload)
             return payload
         except Exception as error:  # pragma: no cover - network/permission failures
+            self._remote_checked_at[filename] = now
             print(json.dumps({
                 "level": "warning", "message": "remote_snapshot_read_failed",
                 "filename": filename, "error_type": type(error).__name__,
