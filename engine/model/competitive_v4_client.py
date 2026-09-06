@@ -9,7 +9,7 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-DEFAULT_API = "https://fpl-scout-api-bztsnhv3ea-uc.a.run.app"
+DEFAULT_API = "https://sportmania.duckdns.org/fpl-scout-api"
 
 
 class CompetitiveV4Error(RuntimeError):
