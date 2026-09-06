@@ -28,6 +28,7 @@ def test_caddy_import_rejects_an_ambiguous_config():
 def test_vm_service_is_local_single_worker_and_resource_bounded():
     unit = (ROOT / "infra/deploy/gcp/systemd/fpl-scout-api.service").read_text()
     assert "--host 127.0.0.1 --port 8790 --workers 1" in unit
+    assert "--limit-concurrency 16" in unit
     assert "EnvironmentFile=/etc/fpl-scout-api.env" in unit
     assert "MemoryMax=650M" in unit
     assert "WorkingDirectory=/opt/fpl-live-refresh/current/api" in unit
