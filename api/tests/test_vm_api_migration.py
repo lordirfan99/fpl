@@ -43,6 +43,7 @@ def test_vm_installer_has_tag_match_privacy_health_and_rollback_gates():
         "caddy validate --adapter caddyfile",
         "127.0.0.1:8790/ready",
         "wait_for_url",
+        "systemctl restart fpl-scout-api.service",
         "private-dashboard",
         "--rollback",
     ):

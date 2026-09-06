@@ -121,7 +121,8 @@ python3 infra/scripts/patch_caddy_for_vm_api.py "$CADDY_FILE" "$PATCHED" "$IMPOR
 sudo caddy validate --adapter caddyfile --config "$PATCHED" >/dev/null
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now fpl-scout-api.service
+sudo systemctl enable fpl-scout-api.service
+sudo systemctl restart fpl-scout-api.service
 wait_for_url http://127.0.0.1:8790/health
 wait_for_url http://127.0.0.1:8790/ready
 
