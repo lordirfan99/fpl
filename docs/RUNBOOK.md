@@ -308,9 +308,10 @@ The VM's exact deployed commit was not identifiable from its runtime directory.
 
 | Component | Tag / ref | Notes |
 |---|---|---|
-| api + dashboard | `v2026.09.04-current-planning-inputs` (`7fbc39f`) | API health and Netlify deployment verified; production monitor 33890360103 passed; public league research is provisional and does not claim authenticated personal recommendations |
+| API | `v2026.09.06-cloud-run-retirement-6` (`7152add`) | VM service behind Caddy; readiness, parity, concurrency smoke and full production monitor passed |
+| dashboard | `v2026.09.06-cloud-run-retirement-7` (`044118a`) | Netlify workflow 34006504682; password/private-route and core page browser checks passed |
 | VM planning client + pre-deadline job | `v2026.09.04-current-planning-inputs` (`7fbc39f`) | Two-file scoped installation; authenticated input-only verification passed, no plan saved or card sent; timer restored |
-| live collector | `v2026.09.04-recommendation-freshness-2` (`392161b`) | schema-v2 (`gw_bank` + official `overall_rank` from `entry_history`); manual run `Result=success`, published 58005 (12:17:41Z) + 131997 (12:27:14Z) on 2026-09-04; 30-min timer restarted; no failed units |
+| live collector | `v2026.09.06-cloud-run-retirement-6` (`7152add`) | 30-minute VM timer active; both league live-status checks pass; no failed units |
 | remaining engine + bot | recovered machine image `fpl-zone-recovery-20260904` | Services active; except for the two planning files above, exact source commit not independently established |
 | Telegram bot token | rotated 2026-09-02, in VM `config/credentials.env` only | `@Fplnaf_bot`, chat `-1004464574417` |
 
@@ -336,11 +337,38 @@ gcloud compute ssh instance-20260412-121200 --zone us-central1-f --project irfan
   --command 'sudo systemctl disable --now fpl-auto-runner.timer fpl-daily-pull.timer fpl-league-finalizer.timer'
 ```
 Keep running during a freeze: `fpl-telegram.service`, `fpl-token-keepalive.timer`,
-`fpl-dashboard-bridge*`, the Cloud Run API + Netlify (all read-only / auth-only).
+`fpl-dashboard-bridge*`, `fpl-scout-api.service` and Netlify (read-only / auth-only).
 
-**Unfreeze:** `gcloud scheduler jobs resume …` and `systemctl enable --now …` the
-same units. Verify one manual `fpl-auto-runner` run exits 0 and a card arrives
-before trusting the schedule.
+**Unfreeze:** restore only the intended VM timers. Cloud Scheduler is retired;
+do not recreate it. Verify one manual `fpl-auto-runner` run exits 0 and a card
+arrives before trusting the schedule.
+
+## Cloud Run retirement (6 September 2026)
+
+- Billing diagnosis: 1–5 September cost MYR8.36 with a MYR61.01 forecast. Cloud
+  Run contributed MYR7.45; 18.23 GiB of North America internet egress was the
+  dominant MYR7.30 SKU. A twice-hourly monitor was repeatedly rendering the
+  data-heavy Netlify league page.
+- PRs [#81](https://github.com/lordirfan99/fpl/pull/81),
+  [#84](https://github.com/lordirfan99/fpl/pull/84),
+  [#85](https://github.com/lordirfan99/fpl/pull/85),
+  [#86](https://github.com/lordirfan99/fpl/pull/86) and
+  [#87](https://github.com/lordirfan99/fpl/pull/87) passed CI before merge.
+- The read API moved to the existing VM at
+  `https://sportmania.duckdns.org/fpl-scout-api`. Cloud Run and VM outputs
+  matched on team identity, catalogue hash, league snapshot hash, gameweek,
+  live status and recommendation packet state.
+- Netlify production and the GitHub monitor use the VM origin. The full
+  production monitor passed; workflow 34006832140 passed after deletion.
+- `fpl-scout-api` was deleted from Cloud Run and its old URL returns 404.
+  Service inventory is empty. All 43 advertised regions were checked for jobs:
+  zero were found; `me-central2` was unreachable from the list API.
+- Artifact Registry repository `us-central1/fpl-scout` was deleted after the
+  service/job inventories were empty. It contained 111 image rows and used
+  3,254.399 MB. Cloud Scheduler inventory is empty.
+- VM rollback: run `infra/deploy/install-vm-api.sh <verified-tag> --rollback`
+  from the matching clean tag. Netlify rollback uses its previous published
+  deployment and restores the matching server-only origin/token values.
 
 ## Weekly GW workflow (manual mode)
 

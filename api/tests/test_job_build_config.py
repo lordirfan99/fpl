@@ -1,9 +1,13 @@
 from pathlib import Path
 
 
-def test_job_build_config_does_not_recreate_vm_collector_on_cloud_run():
-    config = (Path(__file__).resolve().parents[2] / "infra" / "cloudbuild.jobs.yaml").read_text(encoding="utf-8")
-    assert "api/Dockerfile.tasks" in config
-    assert "api/Dockerfile.live-refresh" not in config
-    assert "fpl-scheduled-tasks" in config
-    assert "fpl-live-refresh:" not in config
+def test_retired_cloud_run_configs_cannot_be_reapplied():
+    infra = Path(__file__).resolve().parents[2] / "infra"
+    retired = (
+        infra / "cloudbuild.api.yaml",
+        infra / "cloudbuild.jobs.yaml",
+        infra / "scripts/provision_live_refresh_infra.ps1",
+        infra / "scripts/provision_scheduled_tasks.ps1",
+        infra / "deploy/CUTOVER.md",
+    )
+    assert not any(path.exists() for path in retired)

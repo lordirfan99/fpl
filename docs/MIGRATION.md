@@ -1,5 +1,9 @@
 # Migration — legacy repos → `fpl` monorepo
 
+> Historical plan. The production migration and Cloud Run retirement completed
+> on 6 September 2026. Do not execute the unchecked Cloud Run/Scheduler steps;
+> use `docs/RUNBOOK.md` and the tagged VM installers for current operations.
+
 **Method:** clean copy, no git-history merge. A public repo must not inherit a
 secret buried in old history. Legacy repos are archived read-only for reference.
 

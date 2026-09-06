@@ -17,7 +17,7 @@ approval through the existing bot; these changes add no execution path.
 ## Release
 
 Merge only after green CI, create a release tag, and deploy the API from that
-tag using `infra/cloudbuild.api.yaml`. The existing reviewed web workflow deploys
+tag using `infra/deploy/install-vm-api.sh`. The existing reviewed web workflow deploys
 the same merged source. The public collector does not need reinstalling for this
 change: its data schema is unchanged.
 

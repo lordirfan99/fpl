@@ -5,7 +5,7 @@
                           │
           ┌───────────────┼────────────────────────────┐
           ▼                                            ▼
-  engine/ (GCP VM, systemd)                    api/ (Cloud Run, read-only)
+  engine/ (GCP VM, systemd)                    api/ (same VM, read-only)
   - fetch bootstrap/fixtures/my-team           - serves snapshot-backed JSON
   - competitive V4 projection (odds-free)      - /v1/*  league, team, recommendations
   - 3-GW horizon MILP optimizer                - /v1/decision/current (executable:false)
@@ -33,8 +33,8 @@
 - **Snapshots are the store.** Finalized per-GW league data lands in GCS
   (`irfan-374115-fpl-snapshots`); the API serves from there. Live/in-progress data
   is a separate, slower path and never used for journal/audit.
-- **Only Cloud Run jobs publish finalized snapshots.** The VM consumes league
-  intelligence for planning, but does not POST snapshots to the read-only API.
+- **Scheduled publishers are VM timers or bounded GitHub Actions.** They publish
+  artifacts to GCS; none POSTs into the read-only API or uses Cloud Scheduler.
 
 ## Known weak spots (carry forward)
 
@@ -42,7 +42,7 @@
   the API falls back to a ~6s live path and the engine runs `lineup_only_safe`
   (transfers locked, XI/captain only). Not a bug — a data-availability window.
 - **Shared VM:** `instance-20260412-121200` also runs SportMania. Resource contention
-  and blast radius. Long-term: dedicated instance or Cloud Run Job for the engine.
+  and blast radius. Keep memory limits, swap and external heartbeat checks active.
 - **Telegram network flakiness** from GCP → api.telegram.org. All send paths must
   retry once and never crash the caller.
 
@@ -50,9 +50,9 @@
 
 | Resource | Name |
 |---|---|
-| Cloud Run svc | `fpl-scout-api` · `fpl-scout-dashboard` (orphaned) · `fpl-scheduled-tasks` |
-| Background jobs | Fixture/journal/finalization/monitor: GitHub Actions. Live leagues: VM `fpl-live-refresh.timer`; rollout in `infra/LIVE-REFRESH-VM.md`. Legacy cloud jobs are retired after verification. |
-| Cloud Scheduler | one trigger per job above (all **PAUSED** during migration) |
+| Cloud Run | no services or jobs; retired 6 September 2026 |
+| Background jobs | Fixture/journal/finalization/monitor: GitHub Actions. Live leagues and account checks: VM systemd timers. |
+| Cloud Scheduler | no jobs; do not recreate |
 | GCS | `irfan-374115-fpl-snapshots` |
-| VM | `instance-20260412-121200` (us-central1-f) — engine + bot via systemd |
+| VM | `instance-20260412-121200` (us-central1-a) — API + engine + bot via systemd |
 | Netlify | `fpl-scout-intelligence.netlify.app` |
