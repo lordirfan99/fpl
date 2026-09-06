@@ -12,11 +12,15 @@ class FakeBlob:
         self._text = text
         self.generation = generation
         self.updated = updated
+        self.reload_calls = 0
+        self.download_calls = 0
 
     def reload(self) -> None:
+        self.reload_calls += 1
         return None
 
     def download_as_text(self, encoding: str = "utf-8") -> str:
+        self.download_calls += 1
         return self._text
 
 
@@ -26,6 +30,12 @@ class FakeBucket:
 
     def blob(self, name: str) -> FakeBlob:
         return self._blobs[name]
+
+
+class MissingBlob(FakeBlob):
+    def reload(self) -> None:
+        self.reload_calls += 1
+        raise FileNotFoundError("not published")
 
 
 def _repo(tmp_path: Path, local: dict, remote_blob: FakeBlob | None) -> SnapshotRepository:
@@ -61,3 +71,23 @@ def test_stale_remote_without_provenance_does_not_override_newer_image(tmp_path:
 def test_null_meta_does_not_crash_capture_timestamp() -> None:
     assert SnapshotRepository._capture_timestamp({"_meta": None, "fetched_at": None}) is None
     assert SnapshotRepository._capture_timestamp({"_meta": None, "fetched_at": "2026-09-01T00:00:00Z"}) is not None
+
+
+def test_remote_snapshot_is_reused_within_revalidation_window(tmp_path: Path) -> None:
+    payload = {"_meta": {"fetched_at": "2026-09-01T12:00:00+00:00"}, "events": [{"id": 4}]}
+    blob = FakeBlob(json.dumps(payload), generation=2, updated=datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc))
+    repo = _repo(tmp_path, {}, blob)
+
+    assert repo._read_remote("bootstrap_cache.json") == payload
+    assert repo._read_remote("bootstrap_cache.json") == payload
+    assert blob.reload_calls == 1
+    assert blob.download_calls == 1
+
+
+def test_missing_remote_snapshot_is_negatively_cached(tmp_path: Path) -> None:
+    blob = MissingBlob("{}", generation=0, updated=datetime(2026, 9, 1, tzinfo=timezone.utc))
+    repo = _repo(tmp_path, {}, blob)
+
+    assert repo._read_remote("bootstrap_cache.json") is None
+    assert repo._read_remote("bootstrap_cache.json") is None
+    assert blob.reload_calls == 1
