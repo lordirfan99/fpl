@@ -141,3 +141,10 @@ html,body{max-width:100%;overflow-x:hidden}
 .chip-ask button:hover{border-color:var(--mint);background:#effcf7}
 .chip-ask button.quiet{color:var(--muted);font-weight:650}
 .password-sign-in{display:grid;gap:8px;max-width:360px;margin-top:18px}.password-sign-in label{font-size:10px;font-weight:850;color:var(--purple)}.password-sign-in input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink)}.password-sign-in input:focus-visible{outline:3px solid rgba(0,222,160,.25);border-color:var(--mint-dark)}.password-sign-in button{padding:10px 12px;border:0;border-radius:8px;background:var(--purple);color:#fff;font-weight:850;cursor:pointer}.password-sign-in button:disabled{opacity:.65;cursor:wait}.password-sign-in .form-error{min-height:1.2em;margin:0;color:var(--red);font-size:9px}
+
+.compare-back{margin:0}.compare-back a{color:var(--mint-dark);font-size:10px;font-weight:800}
+.compare-chip{display:inline-flex;align-items:center;gap:5px;padding:6px 9px;border:1px solid rgba(0,190,130,.3);border-radius:999px;background:#e8faf2;color:var(--mint-dark);font-size:9px;font-weight:800;cursor:pointer}
+.compare-matches{display:grid;gap:2px;padding:8px 18px;border-bottom:1px solid var(--line);background:#fafbfb}.compare-matches button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px;border:0;border-radius:8px;background:transparent;text-align:left;cursor:pointer}.compare-matches button:hover{background:#eef7f3}.compare-matches strong{font-size:10px}.compare-matches small{color:var(--muted);font-size:8px}
+.compare-table th{white-space:nowrap}.compare-table td{vertical-align:top}.compare-table td small,.compare-table th small{color:var(--muted);font-weight:600;font-size:8px}
+.compare-best{background:#effcf7!important;box-shadow:inset 3px 0 0 var(--mint-dark)}
+.compare-fdr{display:inline-flex;align-items:center;gap:5px;margin:2px 3px 2px 0;padding:4px 6px;border-radius:6px;font-size:8px;font-weight:800}.compare-fdr b{font-size:7px}.compare-fdr.blank{background:#f1f2f4;color:var(--muted)}
