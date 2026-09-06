@@ -20,7 +20,7 @@ def check(base, client, now=None):
               "verified": False, "account_fingerprint": None}
     try:
         result["account_fingerprint"] = account_fingerprint(client.my_team(settings["team_id"]))
-        plan = json.loads((Path(base) / "data" / "processed" / "pending_plan.json").read_text())
+        plan = json.loads((Path(base) / "data" / "processed" / "dashboard_plan.json").read_text())
         result["plan_id"] = plan.get("plan_id")
         result["verified"] = True
     except Exception:

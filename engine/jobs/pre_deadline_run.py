@@ -172,6 +172,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--notifications-disabled", action="store_true",
                         help="Build and persist the plan without sending a Telegram card")
+    parser.add_argument("--dashboard-only", action="store_true",
+                        help="Publish a private preview without replacing the executable pending plan")
     parser.add_argument("--force-notify", action="store_true",
                         help="Send the Telegram card even when the prior plan is unchanged")
     parser.add_argument("--verify-inputs-only", action="store_true",
@@ -967,6 +969,20 @@ def main():
         settings_fp=settings_fingerprint(settings),
         run_id=run_id, source_fp=source_fp)
 
+    # Keep an advisory dashboard preview separate from pending_plan.json. The
+    # Telegram bot never reads this file, so an early weekly preview cannot be
+    # approved or executed accidentally.
+    dashboard_plan_path = os.path.join(BASE, "data", "processed", "dashboard_plan.json")
+    atomic_write_json(dashboard_plan_path, plan)
+    try:
+        from dashboard_packet import export_plan
+        export_plan(BASE, plan, team, players, bootstrap, fixtures)
+    except Exception as error:
+        print(f"private dashboard publication failed: {type(error).__name__}")
+    if args.dashboard_only:
+        print(f"published non-executable dashboard preview for GW{gw}")
+        return
+
     # --- dedup: skip Telegram card if the PLAN is unchanged since last run ---
     plan_sig = {
         "transfers": [[t["element_out"], t["element_in"]] for t in transfers],
@@ -1029,14 +1045,6 @@ def main():
         sys.exit(1)
 
     # --- approval card (rich media tables) ---
-    # Display-only artifact, outside the canonical approval payload/hash.
-    # Optional publication failure must not change the existing Telegram flow.
-    try:
-        from dashboard_packet import export_plan
-        export_plan(BASE, plan, team, players, bootstrap, fixtures)
-    except Exception as error:
-        print(f"private dashboard publication failed: {type(error).__name__}")
-
     sys.path.insert(0, os.path.join(BASE, "bot"))
     from templates import plan_card
     card = plan_card(plan)

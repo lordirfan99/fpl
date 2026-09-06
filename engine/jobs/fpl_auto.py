@@ -100,6 +100,10 @@ def should_generate_plan(state, gw, hours_to_deadline, _unused=None):
     return hours_to_deadline < 26
 
 
+def should_generate_dashboard_preview(hours_to_deadline):
+    return 26 <= hours_to_deadline < 168
+
+
 def main():
     settings = None
     try:
@@ -146,7 +150,7 @@ def main():
                     # Telegram credentials must never block plan generation.
                     print(f"[auto] league alert delivery failed: {repr(exc)[:120]}")
             # Finalized dashboard snapshots are written directly to GCS by the
-            # Cloud Run finalizer.  Do not call the retired VM -> API publisher
+            # reviewed GitHub finalizer. Do not call the retired VM -> API publisher
             # here: the API is read-only and has no snapshot-ingest endpoint.
             # League intelligence above remains local input to the plan.
         else:
@@ -163,10 +167,13 @@ def main():
     if next_gw:
         ev, dl = next_gw
         hrs = (dl - now).total_seconds() / 3600
-        if should_generate_plan(state, ev["id"], hrs):
-            print(f"[auto] GW{ev['id']} deadline in {hrs:.1f}h - running canonical V4.1 pipeline")
+        decision_window = should_generate_plan(state, ev["id"], hrs)
+        dashboard_window = should_generate_dashboard_preview(hrs)
+        if decision_window or dashboard_window:
+            if decision_window:
+                print(f"[auto] GW{ev['id']} deadline in {hrs:.1f}h - running canonical V4.1 pipeline")
             run_env["FPL_REFRESH_FAILURES"] = ",".join(refresh_failures)
-            if (settings or {}).get("v42_candidate", {}).get("shadow_enabled", True):
+            if decision_window and (settings or {}).get("v42_candidate", {}).get("shadow_enabled", True):
                 src, sout, serr = run("pre_deadline_shadow_v42.py", env=run_env)
                 if src == 0:
                     state["v42_shadow_gw"] = ev["id"]
@@ -175,12 +182,17 @@ def main():
                 else:
                     # A candidate failure can never block the live champion.
                     print(f"[auto] V4.2 shadow failed rc={src}: {(serr or sout)[-500:]}")
-            rc, out, err = run("pre_deadline_run.py", env=run_env)
+            args = [] if decision_window else ["--dashboard-only", "--notifications-disabled"]
+            rc, out, err = run("pre_deadline_run.py", args, env=run_env)
             if rc == 0:
-                state["plan_gw"] = ev["id"]
-                state["plan_generated_at"] = now.isoformat()
-                state["plan_run_id"] = run_id
-                reported.append("pipeline")
+                if decision_window:
+                    state["plan_gw"] = ev["id"]
+                    state["plan_generated_at"] = now.isoformat()
+                    state["plan_run_id"] = run_id
+                    reported.append("pipeline")
+                else:
+                    state["dashboard_plan_gw"] = ev["id"]
+                    state["dashboard_plan_generated_at"] = now.isoformat()
             else:
                 print(f"[auto] pipeline failed rc={rc}: {err[-500:]}")
 
