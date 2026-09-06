@@ -15,7 +15,7 @@ See `docs/RUNBOOK.md` for current runtime and rollback records.
 
 Owner decision, 4 September 2026: run live collection on the existing VM;
 do not provision Cloud Scheduler or another Cloud Run collector. API hosting
-stays on Cloud Run. Existing GitHub Actions fixture/journal/monitor jobs stay
+also moved to the VM on 6 September. Existing GitHub Actions fixture/journal/monitor jobs stay
 where they are; this migration replaces only the broken live collector path.
 
 ## Evidence and release status
@@ -116,7 +116,7 @@ GCS storage/operations and the existing API still have their normal costs.
 
 ## 5. API and monitoring rollout
 
-Deploy the tagged API using `infra/cloudbuild.api.yaml`. Verify both
+Deploy the tagged API using `infra/deploy/install-vm-api.sh`. Verify both
 `/v1/leagues/58005/live/status` and `/v1/leagues/131997/live/status` report
 `ready: true`. These bounded responses contain no squads. `/live` also exposes
 age and `stale` without hiding the last complete snapshot.

@@ -12,15 +12,16 @@ deployment evidence), see [`docs/CURRENT_STATUS.md`](docs/CURRENT_STATUS.md).
 | Autopilot | Compute Engine VM `instance-20260412-121200`, zone `us-central1-a` |
 | Bridge | `fpl-dashboard-bridge.service`, local port `8787` |
 | Public bridge path | `https://sportmania.duckdns.org/fpl-autopilot/` |
-| Bridge token | Secret Manager `fpl-dashboard-read-token` |
+| Private API token | root-only VM environment plus a secret Netlify server variable |
 
 The API runs as one resource-bounded uvicorn worker on localhost behind Caddy.
 See [`VM-API.md`](VM-API.md) for the reviewed tagged installer and rollback.
 
 ## Frontend: automatic Netlify deployment
 
-Netlify is connected to `lordirfan99/fpl-league-58005-scout`, branch `master`.
-The root `netlify.toml` sets `web-next` as the base and runs `npm run build`.
+The reviewed `.github/workflows/deploy-web.yml` workflow deploys `web/` from
+`lordirfan99/fpl`. CI must be green before merge and a controlled release
+deployment must name the reviewed tag.
 
 The site must retain this production environment variable:
 
@@ -28,8 +29,8 @@ The site must retain this production environment variable:
 FPL_API_BASE_URL=https://sportmania.duckdns.org/fpl-scout-api
 ```
 
-After that, pushing a reviewed commit to `master` deploys automatically. Pull requests
-receive validation and can receive Netlify previews without a production deploy.
+Dashboard changes merged to `main` deploy automatically; a tagged
+`workflow_dispatch` is used for a controlled infrastructure cutover.
 
 ## Historical Cloud Run deployment (retired; do not apply)
 
@@ -81,8 +82,8 @@ gh variable set GCP_DEPLOY_SERVICE_ACCOUNT --body 'fpl-github-deployer@irfan-374
 gh variable set GCP_WORKLOAD_IDENTITY_PROVIDER --body "projects/$projectNumber/locations/global/workloadIdentityPools/github-actions/providers/github"
 ```
 
-`deploy-api.yml` then submits `cloudbuild.api.yaml` automatically whenever API code,
-fixture data or completed-GW snapshots change.
+This identity is historical and is not used by the VM API deployment. The old
+Cloud Build definitions were removed after retirement to prevent recreation.
 
 ## VM bridge: automatic reviewed-code sync
 
@@ -105,7 +106,7 @@ if the new process is unhealthy.
 `refresh-gameweek.yml` runs every four hours but performs work only when FPL exposes a
 new gameweek with both `finished=true` and `data_checked=true`. It uses the corrected
 multi-league collector, validates both league snapshots and commits atomically. That
-commit automatically triggers Netlify and Cloud Run deployment.
+commit updates GCS-backed evidence; API code is deployed only from a reviewed tag.
 
 The workflow can be manually rerun with a GW override for recovery. Normal weekly
 operation requires no intervention.
@@ -146,18 +147,10 @@ The control-centre payload must report `writes_enabled: false` and
 
 These need a dashboard/console the agent can't reach. None block the season.
 
-### 1. Reconnect Netlify git auto-deploy  (was: manual `netlify deploy`)
-The site currently deploys only when someone runs `netlify deploy` by hand, so
-`web/` fixes (e.g. the hydration timezone fix) don't ship on merge.
+### 1. Netlify deployment
 
-1. Netlify → the site → **Site configuration → Build & deploy → Link repository**
-   → GitHub → `lordirfan99/fpl`, production branch `main`.
-2. `infra/netlify.toml` already holds the build config (`base = web`,
-   `command = npm run build`, `publish = .next`, `@netlify/plugin-nextjs`),
-   so no build settings to enter.
-3. Environment variables: set `FPL_API_BASE_URL` (and `FPL_DATA_BASE_URL` if
-   used) to the Cloud Run API URL under **Environment variables**.
-4. Trigger one deploy to pick up the current `main` (includes PR #49).
+Completed: the repository workflow deploys `main`, and production uses
+`FPL_API_BASE_URL=https://sportmania.duckdns.org/fpl-scout-api`.
 
 ### 2. External heartbeat URL  (fpl-heartbeat)
 Create a check at healthchecks.io (period 30 min, grace 10), then on the VM:

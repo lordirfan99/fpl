@@ -89,31 +89,14 @@ for j in fpl-refresh-fixtures fpl-refresh-gameweek fpl-capture-journal fpl-monit
 done
 ```
 
-The `fpl-scheduled-tasks` image in Artifact Registry is then unused — leave it
-until `fpl-live-league-refresh` is also off Cloud Run, then prune the repo.
+Completed 6 September 2026: the Artifact Registry repository was removed after
+all Cloud Run service/job inventories were empty.
 
-## 4. `fpl-live-league-refresh` — trim it (default) or move it
+## 4. `fpl-live-league-refresh` — completed VM migration
 
-It needs GCS **write** + imports `api/app/live_fpl`. The VM's attached SA is
-`devstorage.read_only`-scoped, so the VM can't publish without stopping the
-instance to widen scopes (a SportMania outage) or a key file on disk.
-
-**Default — keep on Cloud Run, trimmed** (keyless, exact timing, ~RM 6–12/mo):
-
-```bash
-# halves the CPU cost on its own
-gcloud run jobs update fpl-live-league-refresh \
-  --project=irfan-374115 --region=us-central1 \
-  --cpu=0.5 --memory=512Mi --max-retries=1
-
-# optional extra saving: drop the overnight-MYT polls (no live PL then)
-gcloud scheduler jobs update http fpl-live-league-refresh \
-  --project=irfan-374115 --location=us-central1 --schedule="*/30 8-23 * * *"
-```
-
-**Alternatives** if you want RM 0: VM + a scoped `fpl-live-refresh@` key at
-`/opt/fpl-scout/` with `GOOGLE_APPLICATION_CREDENTIALS`; or stop the VM, set its
-access scope to `cloud-platform`, grant the compute SA `objectAdmin`.
+The existing VM now has the required storage write scope and runs
+`fpl-live-refresh.timer`. No service-account key, Cloud Scheduler trigger or
+Cloud Run job is used. See [LIVE-REFRESH-VM.md](LIVE-REFRESH-VM.md).
 
 ---
 

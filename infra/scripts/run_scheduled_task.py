@@ -1,10 +1,10 @@
-"""Single entrypoint for the GCP Cloud Run scheduled tasks.
+"""Single entrypoint for the bounded GitHub Actions scheduled tasks.
 
-Replaces the GitHub Actions cron schedules (refresh-fixtures, capture-journal,
-refresh-gameweek, monitor-production). The GitHub workflows are retained as
-manual ``workflow_dispatch`` fallbacks.
+Runs refresh-fixtures, capture-journal, refresh-gameweek and production
+monitoring from reviewed GitHub workflows. Live collection and private account
+checks stay on VM systemd timers.
 
-Each task is invoked as a Cloud Run Job argument, e.g. ``run_scheduled_task.py
+Each workflow invokes a task argument, e.g. ``run_scheduled_task.py
 finalize-gameweek``. Finalized artifacts are published to the shared snapshot
 bucket under ``snapshots/`` (the read API already resolves those first), so no
 API redeploy is needed per gameweek.
