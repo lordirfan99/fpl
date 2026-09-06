@@ -43,7 +43,7 @@ restore() {
   restore_file "$CADDY_FILE" Caddyfile
   restore_file "$CADDY_FRAGMENT" fpl-scout-api.caddy
   sudo systemctl daemon-reload
-  sudo caddy validate --config "$CADDY_FILE" >/dev/null
+  sudo caddy validate --adapter caddyfile --config "$CADDY_FILE" >/dev/null
   sudo systemctl reload caddy
   if sudo test -f "$BACKUP/api-was-active"; then
     sudo systemctl enable --now fpl-scout-api.service
@@ -108,7 +108,7 @@ sudo install -o root -g root -m 0644 \
 sudo install -o root -g root -m 0644 \
   infra/deploy/gcp/caddy/fpl-scout-api.caddy "$CADDY_FRAGMENT"
 python3 infra/scripts/patch_caddy_for_vm_api.py "$CADDY_FILE" "$PATCHED" "$IMPORT_PATH"
-sudo caddy validate --config "$PATCHED" >/dev/null
+sudo caddy validate --adapter caddyfile --config "$PATCHED" >/dev/null
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now fpl-scout-api.service
@@ -116,7 +116,7 @@ curl --fail --silent --show-error --max-time 60 http://127.0.0.1:8790/health >/d
 curl --fail --silent --show-error --max-time 60 http://127.0.0.1:8790/ready >/dev/null
 
 sudo install -o root -g root -m 0644 "$PATCHED" "$CADDY_FILE"
-sudo caddy validate --config "$CADDY_FILE" >/dev/null
+sudo caddy validate --adapter caddyfile --config "$CADDY_FILE" >/dev/null
 sudo systemctl reload caddy
 curl --fail --silent --show-error --max-time 60 \
   https://sportmania.duckdns.org/fpl-scout-api/health >/dev/null
