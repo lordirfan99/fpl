@@ -51,6 +51,22 @@ POS_MAP = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
 PREFS_FILE = os.path.join(BASE, "config", "player_prefs.json")
 
 
+def publish_dashboard_plan(base, plan, team, players, bootstrap, fixtures, *, required=False):
+    """Only acknowledge a preview after upload and local verification binding."""
+    try:
+        from dashboard_packet import export_plan
+        if not export_plan(base, plan, team, players, bootstrap, fixtures):
+            raise RuntimeError("Private dashboard publication is not configured")
+        atomic_write_json(os.path.join(base, "data", "processed", "dashboard_plan.json"), plan)
+        return True
+    except Exception as error:
+        # Never log credentials or request bodies from upstream exceptions.
+        print(f"private dashboard publication failed: {type(error).__name__}")
+        if required:
+            raise RuntimeError("Dashboard preview was not published") from None
+        return False
+
+
 def competitive_notification_signature(plan):
     """Semantic league context that must invalidate Telegram card dedup."""
     competitive = plan.get("competitive") or {}
@@ -972,13 +988,7 @@ def main():
     # Keep an advisory dashboard preview separate from pending_plan.json. The
     # Telegram bot never reads this file, so an early weekly preview cannot be
     # approved or executed accidentally.
-    dashboard_plan_path = os.path.join(BASE, "data", "processed", "dashboard_plan.json")
-    atomic_write_json(dashboard_plan_path, plan)
-    try:
-        from dashboard_packet import export_plan
-        export_plan(BASE, plan, team, players, bootstrap, fixtures)
-    except Exception as error:
-        print(f"private dashboard publication failed: {type(error).__name__}")
+    publish_dashboard_plan(BASE, plan, team, players, bootstrap, fixtures, required=args.dashboard_only)
     if args.dashboard_only:
         print(f"published non-executable dashboard preview for GW{gw}")
         return
