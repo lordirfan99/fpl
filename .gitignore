@@ -60,3 +60,6 @@ engine/config/*
 uv.lock
 web/test-results/
 web/playwright-report/
+
+# Local Netlify folder
+.netlify
