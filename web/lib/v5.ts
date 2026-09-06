@@ -1,6 +1,6 @@
 import "server-only";
 
-const API_BASE = (process.env.FPL_API_BASE_URL ?? "https://fpl-scout-api-bztsnhv3ea-uc.a.run.app").replace(/\/$/, "");
+const API_BASE = (process.env.FPL_API_BASE_URL ?? "https://sportmania.duckdns.org/fpl-scout-api").replace(/\/$/, "");
 
 export interface V5Minutes { p_start: number; p_bench_appearance: number; expected_minutes: number; p_60_plus: number }
 export interface V5Player {

@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
-API = os.getenv("FPL_API_BASE_URL", "https://fpl-scout-api-bztsnhv3ea-uc.a.run.app").rstrip("/")
+API = os.getenv("FPL_API_BASE_URL", "https://sportmania.duckdns.org/fpl-scout-api").rstrip("/")
 
 def active_season() -> str:
     return json.loads((ROOT / "data" / "journal" / "config.json").read_text(encoding="utf-8"))["active_season"]

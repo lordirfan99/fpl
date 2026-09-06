@@ -3,7 +3,7 @@ import type { Bootstrap, DashboardData, DataStatus, Fixture, FixtureHorizon, Lea
 import { getLiveTeam } from "./live";
 
 const DATA_BASE = process.env.FPL_DATA_BASE_URL ?? "https://fpl-scout-intelligence.netlify.app/data";
-const API_BASE = (process.env.FPL_API_BASE_URL ?? "https://fpl-scout-api-bztsnhv3ea-uc.a.run.app").replace(/\/$/, "");
+const API_BASE = (process.env.FPL_API_BASE_URL ?? "https://sportmania.duckdns.org/fpl-scout-api").replace(/\/$/, "");
 const memoryCache = new Map<string, { expiresAt: number; value: unknown }>();
 export const MY_TEAM_ID = 2797967;
 export const DEFAULT_LEAGUE_ID = 58005;

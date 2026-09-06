@@ -5,7 +5,9 @@ name: scheduled · monitor production
 
 on:
   schedule:
-    - cron: "7,37 * * * *"
+    # A hobby-project availability check does not justify waking the backend
+    # twice an hour. Four lightweight checks per day are enough.
+    - cron: "17 */6 * * *"
   workflow_dispatch:
 
 permissions:
