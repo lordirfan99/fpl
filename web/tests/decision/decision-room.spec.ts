@@ -35,6 +35,9 @@ for (const width of [390, 1440]) {
     await expect(page.getByText("Recorded target-group captaincy: 50.0% in GW3.")).toBeVisible();
     await page.getByRole("button", { name: "Proposed squad", exact: true }).click();
     await expect(page.getByLabel("Proposed starting eleven")).toContainText("IN");
+    await expect(page.getByRole("heading", { name: "Chip plan for the rest of the season" })).toBeVisible();
+    await expect(page.locator(".chip-roadmap")).toContainText("Bench Boost");
+    await expect(page.locator(".chip-roadmap")).toContainText("Target GW8");
     await page.getByRole("button", { name: /Test Player 16/ }).click();
     await expect(page.getByText("Evidence for Test Player 16")).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

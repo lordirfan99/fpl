@@ -69,6 +69,9 @@ def make_packet(plan, team, players, bootstrap, fixtures):
                          if key in {"hold", "next_free_transfer", "two_free_transfers", "best_paid_transfer"}},
         "captains": [select(c, "id name xpts expected_minutes eligible selected reason")
                      for c in summary.get("captain_rankings", [])[:3]],
+        # Advisory season chip plan (double/blank scan). No execution authority.
+        "chip_roadmap": [select(entry, "chip chip_label target_gw confidence reason")
+                         for entry in (summary.get("chip_roadmap") or [])],
         "players": rows,
         "fixtures": [select(f, "id event team_h team_a team_h_difficulty team_a_difficulty kickoff_time")
                      for f in fixtures if f.get("event") in range(gw, min(39, gw + 3))],

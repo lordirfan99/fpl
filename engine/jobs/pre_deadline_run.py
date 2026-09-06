@@ -966,6 +966,23 @@ def main():
         source_manifest=source_manifest,
         team_diff=team_diff,
     )
+    # Advisory season chip plan (double/blank scan). Read-only, fails soft, and
+    # never touches transfers, the XI, or the approval gate — like chip_advisor.
+    try:
+        sys.path.insert(0, os.path.join(BASE, "model"))
+        from chip_roadmap import STANDARD_CHIPS, season_chip_plan
+        held_chips = [code for code in STANDARD_CHIPS if not used_chips.get(code)]
+        if held_chips:
+            plan["decision_summary"]["chip_roadmap"] = season_chip_plan(
+                fixtures, gw,
+                available_chips=held_chips,
+                squad_team_ids=[p.get("club") for p in squad],
+                n_teams=len(bootstrap.get("teams") or []) or 20,
+                last_gw=max((int(ev["id"]) for ev in bootstrap["events"]), default=38),
+            )
+            print(f"chip roadmap: {[(e['chip'], e['target_gw']) for e in plan['decision_summary']['chip_roadmap']]}")
+    except Exception as error:  # pragma: no cover - advisory only
+        print(f"chip roadmap skipped: {repr(error)[:120]}")
     plan_errors = validate_plan(plan, now=now)
     if plan_errors:
         print("!! PLAN VALIDATION FAILED - no plan persisted and no card sent")
