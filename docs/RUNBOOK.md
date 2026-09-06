@@ -1,5 +1,64 @@
 # Runbook
 
+## Password dashboard activation and billing diagnosis — 6 September 2026
+
+**Release.** Google OAuth was replaced with a single server-only dashboard
+password in reviewed [PR #78](https://github.com/lordirfan99/fpl/pull/78).
+Both required CI jobs passed before merge. Netlify workflow
+[34001615979](https://github.com/lordirfan99/fpl/actions/runs/34001615979)
+deployed commit `b9679439eb8d01d0b97be9f79fc372f953412aee` successfully; release tag
+`v2026.09.06-password-dashboard` identifies that web artifact. The production
+password is stored only as `FPL_DASHBOARD_PASSWORD`; it is not committed,
+browser-stored or exposed with a `NEXT_PUBLIC_` name.
+
+The first guarded VM install stopped before changing runtime files because the
+existing virtual environment did not include the Google Cloud Storage client.
+Reviewed [PR #79](https://github.com/lordirfan99/fpl/pull/79) pins and installs
+that focused dependency. Both CI jobs passed before merge. The active VM was
+installed from tag `v2026.09.06-private-dashboard-vm`, commit
+`cddd47450a16498f4d0a847652ab01f28b238b4e`. Runtime file backup is
+`/var/backups/fpl-dashboard/cddd47450a16498f4d0a847652ab01f28b238b4e`.
+
+**Production verification.** A wrong password remained on `/sign-in` with an
+explicit error; the configured password created the private session and opened
+`/this-week`. The authenticated Next.js private route returned 200 with
+`private,no-store`; an unauthenticated request returned 401 with the same cache
+protection. Bucket `irfan-374115-fpl-private-dashboard` has uniform access and
+public access prevention enforced; anonymous object access returned 403. The
+manual read-only account check succeeded and published a verified fingerprint
+for the pending plan. `fpl-dashboard-account-check.timer` is enabled and waiting
+on its 15-minute VM schedule; `fpl-auto-runner.timer` remained active. No Cloud
+Scheduler, new VM, FPL write or Telegram approval path was added.
+
+The personal decision packet currently remains `status=unavailable` and
+`packet=null`: the saved pending plan predates publisher activation. This is the
+required fail-closed result, not hold advice. The normal pre-deadline planner
+will publish the first packet when it next creates a fresh verified canonical
+plan; the dashboard and Telegram then consume the same plan identifier.
+
+**Rollback.** Disable and stop `fpl-dashboard-account-check.timer`, stop the
+auto-runner timer and wait for any planner process, then run
+`infra/deploy/install-private-dashboard.sh v2026.09.06-private-dashboard-vm
+--rollback` from the same clean tagged checkout. Restore the previous
+auto-runner state after verification. Redeploy the preceding Netlify artifact
+to remove password auth. Retain the private bucket for diagnosis and never copy
+its objects into public storage.
+
+**Billing diagnosis (read-only).** The 1–30 September forecast was MYR61.01,
+374.79% above August (about MYR12.85); actual cost for 1–5 September was MYR8.36.
+The project filter proved the spend came from `irfan-374115`. Net cost was
+MYR7.45 Cloud Run, MYR0.89 Compute Engine and MYR0.01 Cloud Storage. The dominant
+SKU was 18.23 GiB of Cloud Run North America internet egress (MYR7.30).
+
+Request logs tied that egress to synthetic Node/Netlify SSR traffic. The
+half-hourly scheduled monitor repeatedly runs a 10-request `/league` load smoke;
+each server render fetches the large `/v1/catalog`, `/v1/leagues/58005` and
+`/v1/leagues/58005/live` payloads with `no-store`. This, not the free-tier VM
+move, explains the increase. No billing or resource setting was changed during
+the diagnosis. The recommended separate fix is to remove that repeated heavy
+page load from scheduled monitoring, keep one compact health/contract check,
+and reserve the full load test for manual or low-frequency runs.
+
 ## Decision-first dashboard — public release and private activation gate, 5 September 2026
 
 **Release.** The decision experience was delivered through reviewed PRs
