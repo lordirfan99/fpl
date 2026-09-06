@@ -99,8 +99,12 @@ async def structured_request_log(request: Request, call_next):
         }), flush=True)
         raise
     response.headers["x-request-id"] = request_id
-    if request.method == "GET" and response.status_code == 200 and "cache-control" not in response.headers:
-        response.headers["cache-control"] = _cache_policy(request.url.path)
+    if request.method == "GET" and "cache-control" not in response.headers:
+        # Only a 200 may be publicly cached; errors and degraded responses are
+        # always no-store so a stale failure cannot be served from a CDN.
+        response.headers["cache-control"] = (
+            _cache_policy(request.url.path) if response.status_code == 200 else "no-store"
+        )
     response.headers["server-timing"] = f'app;dur={(time.perf_counter() - started) * 1000:.2f}'
     print(json.dumps({
         "level": "info", "message": "request_complete", "request_id": request_id,
