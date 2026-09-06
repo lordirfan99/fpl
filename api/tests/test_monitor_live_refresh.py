@@ -43,6 +43,21 @@ def test_monitor_checks_both_leagues_before_reporting_success(monkeypatch):
     assert any("/v1/decision/current?league_id=131997" in url for url in calls)
 
 
+def test_lightweight_monitor_checks_login_without_rendering_heavy_pages(monkeypatch):
+    calls = []
+
+    def fetch(url, limit):
+        calls.append(url)
+        return 200, json.dumps({"ready": True, "managers": [], "packet_status": "advisory",
+                                "freshness": {"status": "provisional", "stale": False},
+                                "meta": {"stale": False}}).encode(), {"server-timing": "ok"}
+
+    monkeypatch.setattr(monitor, "fetch", fetch)
+    assert monitor.main(lightweight=True) == 0
+    assert any(url.endswith("/sign-in") for url in calls)
+    assert not any(url.endswith(("/league", "/compare", "/journal")) for url in calls)
+
+
 @pytest.mark.parametrize("packet", ["safe_hold", "needs_refresh"])
 def test_monitor_accepts_honest_hold_but_not_actions(packet):
     monitor.validate_recommendation({"packet_status": packet, "transfers": []})

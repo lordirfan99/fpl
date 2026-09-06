@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "api"))
 
 BUCKET = (os.getenv("FPL_SNAPSHOT_BUCKET") or os.getenv("FPL_JOURNAL_BUCKET") or "").strip()
-API_URL = os.getenv("FPL_API_BASE_URL", "https://fpl-scout-api-bztsnhv3ea-uc.a.run.app").rstrip("/")
+API_URL = os.getenv("FPL_API_BASE_URL", "https://sportmania.duckdns.org/fpl-scout-api").rstrip("/")
 SITE_URL = os.getenv("FPL_SITE_URL", "https://fpl-scout-intelligence.netlify.app").rstrip("/")
 LEAGUES = (58005, 131997)
 SEASON = "2026-27"
@@ -149,15 +149,9 @@ def task_finalize_gameweek(gameweek: int | None) -> None:
 
 
 def task_monitor() -> None:
-    _run("scripts/monitor_production.py")
-    _run(
-        "scripts/load_smoke.py", f"{API_URL}/v1/leagues/58005/summary?page=1&page_size=50",
-        "--requests", "20", "--concurrency", "4", "--p95-ms", "5000", "--byte-limit", "250000",
-    )
-    _run(
-        "scripts/load_smoke.py", f"{SITE_URL}/league",
-        "--requests", "10", "--concurrency", "2", "--p95-ms", "8000", "--byte-limit", "1500000",
-    )
+    # Scheduled monitoring is deliberately cheap. Full-page and concurrent
+    # load tests are release gates, not recurring production traffic.
+    _run("scripts/monitor_production.py", "--lightweight")
 
 
 def main() -> int:

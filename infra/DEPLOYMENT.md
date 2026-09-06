@@ -8,15 +8,14 @@ deployment evidence), see [`docs/CURRENT_STATUS.md`](docs/CURRENT_STATUS.md).
 | Component | Production target |
 |---|---|
 | Next.js dashboard | Netlify site `fpl-scout-intelligence` |
-| Read API | Cloud Run service `fpl-scout-api`, region `us-central1` |
-| Autopilot | Compute Engine VM `instance-20260412-121200`, zone `us-central1-f` |
+| Read API | Existing VM through `https://sportmania.duckdns.org/fpl-scout-api/` |
+| Autopilot | Compute Engine VM `instance-20260412-121200`, zone `us-central1-a` |
 | Bridge | `fpl-dashboard-bridge.service`, local port `8787` |
 | Public bridge path | `https://sportmania.duckdns.org/fpl-autopilot/` |
 | Bridge token | Secret Manager `fpl-dashboard-read-token` |
 
-The API keeps request concurrency at one per 512 MiB instance because complete
-league snapshots are memory-heavy. Cloud Run may scale out for brief concurrent
-reads, but no minimum instance or new always-on service is required.
+The API runs as one resource-bounded uvicorn worker on localhost behind Caddy.
+See [`VM-API.md`](VM-API.md) for the reviewed tagged installer and rollback.
 
 ## Frontend: automatic Netlify deployment
 
@@ -26,11 +25,16 @@ The root `netlify.toml` sets `web-next` as the base and runs `npm run build`.
 The site must retain this production environment variable:
 
 ```text
-FPL_API_BASE_URL=https://fpl-scout-api-bztsnhv3ea-uc.a.run.app
+FPL_API_BASE_URL=https://sportmania.duckdns.org/fpl-scout-api
 ```
 
 After that, pushing a reviewed commit to `master` deploys automatically. Pull requests
 receive validation and can receive Netlify previews without a production deploy.
+
+## Historical Cloud Run deployment (retired; do not apply)
+
+The section below is retained only to explain old releases. Production no
+longer deploys the read API or scheduled jobs to Cloud Run.
 
 ## GCP: one-time keyless GitHub authentication
 
@@ -109,8 +113,8 @@ operation requires no intervention.
 ## Health checks
 
 ```powershell
-Invoke-RestMethod https://fpl-scout-api-bztsnhv3ea-uc.a.run.app/health
-Invoke-RestMethod https://fpl-scout-api-bztsnhv3ea-uc.a.run.app/v1/live/team
+Invoke-RestMethod https://sportmania.duckdns.org/fpl-scout-api/health
+Invoke-RestMethod https://sportmania.duckdns.org/fpl-scout-api/v1/live/team
 Invoke-RestMethod https://sportmania.duckdns.org/fpl-autopilot/health
 ```
 
@@ -130,7 +134,7 @@ The control-centre payload must report `writes_enabled: false` and
 ## Rollback
 
 - Netlify: publish the previous known-good deploy from the Netlify deployment history.
-- Cloud Run: route traffic back to the prior revision.
+- API: use the tagged rollback in [`VM-API.md`](VM-API.md).
 - Bridge: restore `/opt/fpl-autopilot/webapp/dashboard_bridge.py.auto-rollback` and restart
   `fpl-dashboard-bridge.service`.
 - Data: revert the automated `data: finalize GW...` commit; CI will redeploy the last

@@ -18,7 +18,7 @@ so they moved back to Actions.
 
 | Job | Runs on | State |
 |---|---|---|
-| `scheduled-monitor.yml` (`monitor`) | GitHub Actions `7,37 * * * *` | ✅ live + verified |
+| `scheduled-monitor.yml` (`monitor`) | GitHub Actions every 6 h, lightweight | ✅ live + verified |
 | `scheduled-fixtures.yml` (`fixtures`) | GitHub Actions `17 * * * *` | ⏳ blocked on WIF wiring |
 | `scheduled-capture-journal.yml` (`capture-journal`) | GitHub Actions `17 * * * *` | ⏳ blocked on WIF wiring |
 | `scheduled-finalize-gameweek.yml` (`finalize-gameweek`) | GitHub Actions `23 * * * *` | ⏳ blocked on WIF wiring |

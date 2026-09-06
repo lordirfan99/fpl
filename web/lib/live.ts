@@ -1,6 +1,6 @@
 import "server-only";
 
-const API_BASE = (process.env.FPL_API_BASE_URL ?? "https://fpl-scout-api-bztsnhv3ea-uc.a.run.app").replace(/\/$/, "");
+const API_BASE = (process.env.FPL_API_BASE_URL ?? "https://sportmania.duckdns.org/fpl-scout-api").replace(/\/$/, "");
 
 export type LiveTeam = {
   source: "official-fpl-live";

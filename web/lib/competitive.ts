@@ -1,7 +1,7 @@
 import "server-only";
 import type { Pick } from "./types";
 
-const API_BASE = (process.env.FPL_API_BASE_URL ?? "https://fpl-scout-api-bztsnhv3ea-uc.a.run.app").replace(/\/$/, "");
+const API_BASE = (process.env.FPL_API_BASE_URL ?? "https://sportmania.duckdns.org/fpl-scout-api").replace(/\/$/, "");
 
 export type CompetitivePhase = "CATCH" | "MATCH" | "ATTACK" | "CHASE";
 export type CompetitiveRole = "ALIGN" | "CONTROLLED_EDGE" | "INVESTIGATE" | "AVOID" | "NEUTRAL";

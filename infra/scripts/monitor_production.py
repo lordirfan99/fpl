@@ -1,11 +1,12 @@
 """Bounded synthetic production monitor with payload budgets."""
 from __future__ import annotations
 
+import argparse
 import json
 import os
 from urllib.request import Request, urlopen
 
-API = os.getenv("FPL_API_BASE_URL", "https://fpl-scout-api-bztsnhv3ea-uc.a.run.app").rstrip("/")
+API = os.getenv("FPL_API_BASE_URL", "https://sportmania.duckdns.org/fpl-scout-api").rstrip("/")
 SITE = os.getenv("FPL_SITE_URL", "https://fpl-scout-intelligence.netlify.app").rstrip("/")
 
 
@@ -33,7 +34,7 @@ def validate_recommendation(rec: dict) -> None:
         raise RuntimeError("Unverified current account still has personal recommendations")
 
 
-def main() -> int:
+def main(*, lightweight: bool = False) -> int:
     status, body, _ = fetch(f"{API}/ready", 50_000)
     readiness = json.loads(body)
     assert status == 200 and readiness["ready"] is True, readiness
@@ -62,12 +63,19 @@ def main() -> int:
     assert all("squad" not in manager for manager in summary["managers"])
     assert headers.get("server-timing"), headers
     fetch(f"{API}/v1/catalog/compact", 350_000)
-    fetch(f"{SITE}/league", 1_500_000)
-    fetch(f"{SITE}/compare", 1_500_000)
-    fetch(f"{SITE}/journal", 1_500_000)
+    if lightweight:
+        # Login HTML proves Netlify is serving the application without causing
+        # an SSR fetch of multi-megabyte league data.
+        fetch(f"{SITE}/sign-in", 250_000)
+    else:
+        fetch(f"{SITE}/league", 1_500_000)
+        fetch(f"{SITE}/compare", 1_500_000)
+        fetch(f"{SITE}/journal", 1_500_000)
     print("Production readiness, contracts and payload budgets passed")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--lightweight", action="store_true", help="Skip data-heavy SSR page checks")
+    raise SystemExit(main(lightweight=parser.parse_args().lightweight))
