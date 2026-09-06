@@ -38,7 +38,7 @@ def test_vm_installer_has_tag_match_privacy_health_and_rollback_gates():
     for required in (
         "readlink -f \"$CURRENT\"",
         "FPL_DASHBOARD_READ_TOKEN",
-        "caddy validate",
+        "caddy validate --adapter caddyfile",
         "127.0.0.1:8790/ready",
         "private-dashboard",
         "--rollback",
