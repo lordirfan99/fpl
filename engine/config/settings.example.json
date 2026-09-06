@@ -16,6 +16,6 @@
   "competitive_v4": {
     "enabled": false,
     "league_id": 0,
-    "max_snapshot_age_hours": 168
+    "max_snapshot_age_hours": 12
   }
 }

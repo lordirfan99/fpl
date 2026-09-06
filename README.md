@@ -10,7 +10,7 @@ team `2797967`, main league `58005`). Replaces `fpl-league-58005-scout` and
 |---|---|---|
 | `api/` | Read API — FastAPI, snapshot-backed, **read-only** (`execution_authority: manual_fpl`) | existing GCP VM behind `sportmania.duckdns.org/fpl-scout-api` |
 | `web/` | Dashboard — Next.js | Netlify `fpl-scout-intelligence.netlify.app` |
-| `engine/` | Decision engine — competitive V4 projection, horizon MILP optimizer, scheduled jobs | GCP VM `instance-20260412-121200` (us-central1-f), systemd timers |
+| `engine/` | Decision engine — competitive V4 projection, horizon MILP optimizer, scheduled jobs | GCP VM `instance-20260412-121200` (us-central1-a), systemd timers |
 | `bot/` | Telegram approval bot `@Fplnaf_bot` — the only path that can trigger a real FPL write, and only via explicit owner approval | same VM, `fpl-telegram.service` |
 | `infra/` | Tagged VM installers, systemd units and GitHub scheduled-task runners | — |
 | `docs/` | [ARCHITECTURE](docs/ARCHITECTURE.md) · [RUNBOOK](docs/RUNBOOK.md) · [MIGRATION](docs/MIGRATION.md) | — |
