@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 User=fpl
 Group=fpl
-WorkingDirectory=/opt/fpl-live-refresh/current
+WorkingDirectory=/opt/fpl-live-refresh/current/api
 EnvironmentFile=/etc/fpl-scout-api.env
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/fpl-live-refresh/current/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8790 --workers 1 --limit-concurrency 2 --timeout-keep-alive 5
