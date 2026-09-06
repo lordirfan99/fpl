@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import pytest
 from dashboard_packet import account_fingerprint, make_packet, private_bucket
 from dashboard_account_check import check
+from fpl_auto import should_generate_dashboard_preview, should_generate_plan
 
 
 def account():
@@ -70,3 +71,29 @@ def test_check_failure_publishes_invalidation_without_other_client_calls(tmp_pat
         assert payload["verified"] is False
         assert "sentinel" not in json.dumps(payload)
     assert [call[0] for call in client.mock_calls] == ["my_team"]
+
+
+def test_account_check_binds_to_non_executable_dashboard_plan(tmp_path):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/settings.json").write_text('{"team_id":2797967}')
+    (tmp_path / "data/processed").mkdir(parents=True)
+    (tmp_path / "data/processed/dashboard_plan.json").write_text('{"plan_id":"preview-plan"}')
+    client = Mock()
+    client.my_team.return_value = account()
+
+    with patch("dashboard_account_check.publish") as publish:
+        assert check(tmp_path, client) is True
+        payload = publish.call_args.args[2]
+        assert payload["verified"] is True
+        assert payload["plan_id"] == "preview-plan"
+
+
+@pytest.mark.parametrize("hours", [26, 72, 167.9])
+def test_dashboard_preview_runs_before_decision_window(hours):
+    assert should_generate_dashboard_preview(hours) is True
+    assert should_generate_plan({}, 4, hours) is False
+
+
+@pytest.mark.parametrize("hours", [25.9, 168, 240])
+def test_dashboard_preview_never_overlaps_decision_or_distant_windows(hours):
+    assert should_generate_dashboard_preview(hours) is False

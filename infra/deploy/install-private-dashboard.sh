@@ -10,7 +10,7 @@ SHA=$(git rev-parse --verify "refs/tags/$TAG^{commit}")
 [ "$(git rev-parse HEAD)" = "$SHA" ] && [ -z "$(git status --porcelain)" ] || exit 1
 DEST=/opt/fpl-autopilot
 BACKUP="/var/backups/fpl-dashboard/$SHA"
-FILES=(model/dashboard_packet.py jobs/dashboard_account_check.py jobs/pre_deadline_run.py)
+FILES=(model/dashboard_packet.py jobs/dashboard_account_check.py jobs/pre_deadline_run.py jobs/fpl_auto.py)
 UNITS=(fpl-dashboard-account-check.service fpl-dashboard-account-check.timer)
 for timer in fpl-auto-runner.timer fpl-dashboard-account-check.timer; do
   if systemctl is-active --quiet "$timer"; then echo "Stop $timer first"; exit 1; fi
@@ -43,7 +43,7 @@ sudo -u fpl "$DEST/.venv/bin/python" -m pip install \
   --disable-pip-version-check --no-input --no-cache-dir \
   -r engine/requirements-private-dashboard.txt
 sudo -u fpl "$DEST/.venv/bin/python" -c 'import google.cloud.storage,json; from pathlib import Path; assert json.loads(Path("/opt/fpl-autopilot/config/dashboard.json").read_text())["private_bucket"]'
-"$DEST/.venv/bin/python" -c 'import ast,pathlib; [ast.parse(pathlib.Path(p).read_text()) for p in ("engine/model/dashboard_packet.py", "engine/jobs/dashboard_account_check.py", "engine/jobs/pre_deadline_run.py")]'
+"$DEST/.venv/bin/python" -c 'import ast,pathlib; [ast.parse(pathlib.Path(p).read_text()) for p in ("engine/model/dashboard_packet.py", "engine/jobs/dashboard_account_check.py", "engine/jobs/pre_deadline_run.py", "engine/jobs/fpl_auto.py")]'
 sudo install -d -m 0700 "$BACKUP/model" "$BACKUP/jobs"
 for file in "${FILES[@]}"; do
   if sudo test -f "$DEST/$file"; then sudo cp -p "$DEST/$file" "$BACKUP/$file";
