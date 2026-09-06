@@ -105,7 +105,7 @@ def publish(base, name, payload):
 
 def export_plan(base, plan, team, players, bootstrap, fixtures):
     if not private_bucket(base):
-        return
+        return False
     packet = make_packet(plan, team, players, bootstrap, fixtures)
     # No raw plan is copied into the public snapshots or the public journal.
-    publish(base, "plan", packet)
+    return publish(base, "plan", packet)
