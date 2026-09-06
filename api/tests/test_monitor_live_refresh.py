@@ -34,7 +34,7 @@ def test_monitor_checks_both_leagues_before_reporting_success(monkeypatch):
         calls.append(url)
         return 200, json.dumps({"ready": True, "managers": [], "packet_status": "advisory",
                                 "freshness": {"status": "provisional", "stale": False},
-                                "meta": {"stale": False}}).encode(), {"server-timing": "ok"}
+                                "meta": {"stale": False}}).encode(), {"Server-Timing": "ok"}
 
     monkeypatch.setattr(monitor, "fetch", fetch)
     assert monitor.main() == 0

@@ -61,7 +61,8 @@ def main(*, lightweight: bool = False) -> int:
     summary = json.loads(body)
     assert status == 200 and len(summary["managers"]) <= 50
     assert all("squad" not in manager for manager in summary["managers"])
-    assert headers.get("server-timing"), headers
+    normalized_headers = {key.casefold(): value for key, value in headers.items()}
+    assert normalized_headers.get("server-timing"), headers
     fetch(f"{API}/v1/catalog/compact", 350_000)
     if lightweight:
         # Login HTML proves Netlify is serving the application without causing
