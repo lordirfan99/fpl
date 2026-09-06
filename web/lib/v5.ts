@@ -15,7 +15,7 @@ export interface V5Payload {
 
 export async function getV5Projections(): Promise<V5Payload> {
   try {
-    const response = await fetch(`${API_BASE}/v1/projections/current`, { cache: "no-store" });
+    const response = await fetch(`${API_BASE}/v1/projections/current`, { next: { revalidate: 300 } });
     if (!response.ok) throw new Error(`API ${response.status}`);
     const raw = await response.json() as {
       gameweek: number; projection_version: string;
