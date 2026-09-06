@@ -3,9 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from collections import OrderedDict
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from .journal import verify_record_hash
@@ -42,7 +44,9 @@ class SnapshotRepository:
         # GCS server-side last-modified per snapshot file. Used as a freshness
         # fallback when a published payload carries no embedded fetched_at.
         self._remote_updated: dict[str, float] = {}
-        self._hash_cache: dict[int, str] = {}
+        self._hash_cache: OrderedDict[str, tuple[dict[str, Any], str]] = OrderedDict()
+        self._cache_lock = Lock()
+        self._remote_locks: dict[str, Any] = {}
 
     def _path(self, filename: str) -> Path:
         path = (self.data_dir / filename).resolve()
@@ -65,26 +69,38 @@ class SnapshotRepository:
     def _read_remote(self, filename: str) -> dict[str, Any] | None:
         if self._bucket is None:
             return None
+        # Coalesce concurrent cold reads without blocking unrelated artifacts.
+        with self._cache_lock:
+            lock = self._remote_locks.setdefault(filename, Lock())
+        with lock:
+            return self._read_remote_locked(filename)
+
+    def _read_remote_locked(self, filename: str) -> dict[str, Any] | None:
         now = time.monotonic()
         checked_at = self._remote_checked_at.get(filename)
         if checked_at is not None and now - checked_at < self.REMOTE_REVALIDATE_SECONDS:
             cached = self._remote_cache.get(filename)
             return cached[1] if cached else None
-        blob = self._bucket.blob(f"snapshots/{filename}")
         try:
+            blob = self._bucket.blob(f"snapshots/{filename}")
             blob.reload()
-            self._remote_checked_at[filename] = now
             generation = int(blob.generation) if blob.generation else None
             if blob.updated is not None:
                 self._remote_updated[filename] = blob.updated.timestamp()
             cached = self._remote_cache.get(filename)
             if cached and cached[0] == generation:
+                self._remote_checked_at[filename] = time.monotonic()
                 return cached[1]
             payload = json.loads(blob.download_as_text(encoding="utf-8"))
             self._remote_cache[filename] = (generation, payload)
+            self._remote_checked_at[filename] = time.monotonic()
             return payload
         except Exception as error:  # pragma: no cover - network/permission failures
-            self._remote_checked_at[filename] = now
+            # A failed verification cannot resurrect an earlier successful read
+            # during the negative-cache window or retain its freshness metadata.
+            self._remote_cache.pop(filename, None)
+            self._remote_updated.pop(filename, None)
+            self._remote_checked_at[filename] = time.monotonic()
             print(json.dumps({
                 "level": "warning", "message": "remote_snapshot_read_failed",
                 "filename": filename, "error_type": type(error).__name__,
@@ -170,13 +186,21 @@ class SnapshotRepository:
         return payload
 
     def league(self, league_id: int, gameweek: int) -> dict[str, Any]:
-        payload = self.read(f"gw{gameweek}_league{league_id}_data.json")
-        cache_key = id(payload)
-        digest = self._hash_cache.get(cache_key)
-        if digest is None:
-            canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
-            digest = hashlib.sha256(canonical).hexdigest()
-            self._hash_cache[cache_key] = digest
+        filename = f"gw{gameweek}_league{league_id}_data.json"
+        payload = self.read(filename)
+        # Retain the actual object, not its recyclable Python id, and bound the
+        # cache so retired generations cannot accumulate indefinitely.
+        with self._cache_lock:
+            cached = self._hash_cache.get(filename)
+            if cached is not None and cached[0] is payload:
+                digest = cached[1]
+            else:
+                canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+                digest = hashlib.sha256(canonical).hexdigest()
+                self._hash_cache[filename] = (payload, digest)
+            self._hash_cache.move_to_end(filename)
+            while len(self._hash_cache) > 16:
+                self._hash_cache.popitem(last=False)
         enriched = dict(payload)
         enriched["_artifact_sha256"] = digest
         return enriched
