@@ -20,6 +20,14 @@ where they are; this migration replaces only the broken live collector path.
 
 ## Evidence and release status
 
+The read API revalidates the live manifest at most every 30 seconds per league
+and coalesces concurrent reads. An unchanged object/checksum reuses the validated
+snapshot; a changed checksum requires download and SHA-256 verification. Failed
+verification invalidates the cached success. Capture timestamps never advance
+because of a cache read. Deploy this through the tagged API installer, then run
+`monitor_production.py` and `load_smoke.py` against the VM origin. Retain the
+previous API release for installer rollback; no collector schedule change is needed.
+
 At 08:55 UTC on 4 September the old `fpl-live-league-refresh` scheduler was
 enabled but calling the retired `fpl-scheduled-tasks.../tasks/live-refresh`
 service and receiving 404. The remaining Cloud Run job last completed on
