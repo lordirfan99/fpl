@@ -65,5 +65,21 @@ for unit in "${UNITS[@]}"; do
   sudo install -o root -g root -m 0644 "infra/deploy/gcp/systemd/$unit" "/etc/systemd/system/$unit"
 done
 sudo systemctl daemon-reload
+# Verify the installed preview failure contract without touching FPL, GCS or
+# pending approval files. A broken contract triggers the installer rollback.
+sudo -u fpl env PYTHONPATH="$DEST/jobs:$DEST/model:$DEST/optimizer:$DEST/execution" \
+  "$DEST/.venv/bin/python" - <<'PY'
+from unittest.mock import patch
+from pre_deadline_run import publish_dashboard_plan
+with patch("dashboard_packet.export_plan", return_value=False):
+    assert publish_dashboard_plan("/nonexistent", {}, {}, [], {}, []) is False
+    try:
+        publish_dashboard_plan("/nonexistent", {}, {}, [], {}, [], required=True)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("Failed preview incorrectly reported success")
+print("Installed dashboard publication failure contract verified")
+PY
 COMPLETE=1
 echo "Installed $SHA; backup $BACKUP. Timers remain stopped; verify private access before enabling."

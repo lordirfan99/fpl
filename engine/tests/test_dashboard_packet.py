@@ -6,6 +6,7 @@ import pytest
 from dashboard_packet import account_fingerprint, make_packet, private_bucket
 from dashboard_account_check import check
 from fpl_auto import should_generate_dashboard_preview, should_generate_plan
+from pre_deadline_run import publish_dashboard_plan
 
 
 def account():
@@ -97,3 +98,30 @@ def test_dashboard_preview_runs_before_decision_window(hours):
 @pytest.mark.parametrize("hours", [25.9, 168, 240])
 def test_dashboard_preview_never_overlaps_decision_or_distant_windows(hours):
     assert should_generate_dashboard_preview(hours) is False
+
+
+@pytest.mark.parametrize("outcome", [False, RuntimeError("secret sentinel")])
+def test_preview_publication_failure_is_not_success(tmp_path, outcome, capsys):
+    with patch("dashboard_packet.export_plan", return_value=outcome) as export:
+        if isinstance(outcome, Exception):
+            export.side_effect = outcome
+        with pytest.raises(RuntimeError, match="preview was not published"):
+            publish_dashboard_plan(tmp_path, {}, {}, [], {}, [], required=True)
+    assert not (tmp_path / "data/processed/dashboard_plan.json").exists()
+    assert "sentinel" not in capsys.readouterr().out
+
+
+def test_optional_dashboard_failure_does_not_block_telegram_plan(tmp_path):
+    with patch("dashboard_packet.export_plan", side_effect=RuntimeError):
+        assert publish_dashboard_plan(tmp_path, {}, {}, [], {}, []) is False
+
+
+def test_successful_publication_binds_account_check_without_touching_approval(tmp_path):
+    processed = tmp_path / "data/processed"
+    processed.mkdir(parents=True)
+    pending = processed / "pending_plan.json"
+    pending.write_text('{"plan_id":"approval"}')
+    with patch("dashboard_packet.export_plan", return_value=True):
+        assert publish_dashboard_plan(tmp_path, {"plan_id": "preview"}, {}, [], {}, [], required=True)
+    assert json.loads((processed / "dashboard_plan.json").read_text())["plan_id"] == "preview"
+    assert json.loads(pending.read_text())["plan_id"] == "approval"
