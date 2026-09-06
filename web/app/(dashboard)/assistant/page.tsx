@@ -49,6 +49,9 @@ export default async function AssistantPage() {
 
   const move = actionHeld ? undefined : rec?.transfers?.[0];
   const captain = actionHeld ? undefined : rec?.captains?.[0];
+  // The public packet strips the personal captain; the elite captain-consensus
+  // is league research and is always safe to show here.
+  const consensusCaptain = rec?.competitive.captainConsensus?.[0];
   const phase = rec?.competitive.phase;
   const alignment = rec?.competitive.alignment;
   const targetAlignment = rec?.competitive.targetAlignment;
@@ -99,13 +102,17 @@ export default async function AssistantPage() {
         </article> : <div className="empty-state"><ShieldCheck /><h3>{actionHeld ? "Personal plan needs verification" : "Keep your transfer"}</h3><p>{actionHeld ? "Review the latest verified Telegram plan. This public page does not know your current account squad or budget." : "No move clears the model threshold on the freshest available data. Focus on the XI and captain."}</p></div>}
       </section>
       <section className="surface">
-        <div className="section-heading"><div><span>LINEUP CHECK</span><h2>Captain and formation</h2></div><span className="section-chip">Model recommendation</span></div>
+        <div className="section-heading"><div><span>CAPTAIN VS THE FIELD</span><h2>Who the target group captains</h2></div><span className="section-chip">{captain ? "Your plan" : "Elite consensus"}</span></div>
         <div className="captain-list"><article className="captain-row recommended">
           <span>C</span>
-          <div><strong>{captain?.name ?? "Captain pending"}</strong><small>{rec?.competitive.templateFormation ?? "Formation pending"} · GW{targetGameweek ?? "—"}</small></div>
-          <b>{number(captain?.score)}<small>score</small></b>
-          <em>{actionHeld ? "Current account picks must be verified first" : "Confirm final team news before you set your captain"}</em>
-        </article></div>
+          <div><strong>{captain?.name ?? consensusCaptain?.name ?? "Captain pending"}</strong><small>{captain ? `${rec?.competitive.templateFormation ?? "Formation pending"} · GW${targetGameweek ?? "—"}` : consensusCaptain ? `Most-captained in the top cohort · GW${targetGameweek ?? "—"}` : `GW${targetGameweek ?? "—"}`}</small></div>
+          <b>{captain ? number(captain.score) : consensusCaptain?.percentage != null ? `${consensusCaptain.percentage.toFixed(0)}%` : "—"}<small>{captain ? "score" : "of cohort"}</small></b>
+          <em>{captain ? "Confirm final team news before you set your captain" : consensusCaptain ? "This is the field's pick, not your verified captain. The Telegram plan ranks your own XI for the armband." : "Current account picks must be verified first"}</em>
+        </article>{!captain && rec?.competitive.captainConsensus?.[1] ? <article className="captain-row">
+          <span>2</span>
+          <div><strong>{rec.competitive.captainConsensus[1].name}</strong><small>Next most-captained</small></div>
+          <b>{rec.competitive.captainConsensus[1].percentage != null ? `${rec.competitive.captainConsensus[1].percentage.toFixed(0)}%` : "—"}<small>of cohort</small></b>
+        </article> : null}</div>
       </section>
     </div>
 

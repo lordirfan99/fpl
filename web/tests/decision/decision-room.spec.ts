@@ -33,6 +33,8 @@ for (const width of [390, 1440]) {
     await expect(page.getByRole("heading", { name: "6 points to the top-10% cutoff" })).toBeVisible();
     await expect(page.getByText("Plan synthetic-test-plan", { exact: false })).toBeVisible();
     await expect(page.getByText("Recorded target-group captaincy: 50.0% in GW3.")).toBeVisible();
+    // Field captain (Test Player 6, 50%) equals the plan captain -> aligned callout.
+    await expect(page.locator(".captain-vs-field.aligned")).toContainText("also the target group's top pick");
     await page.getByRole("button", { name: "Proposed squad", exact: true }).click();
     await expect(page.getByLabel("Proposed starting eleven")).toContainText("IN");
     await page.getByRole("button", { name: /Test Player 16/ }).click();

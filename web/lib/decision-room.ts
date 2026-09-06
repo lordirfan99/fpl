@@ -46,3 +46,46 @@ export function fixturesFor(packet: DecisionPacket, player: EvidencePlayer, gw: 
     return { label: `${opponent?.short_name ?? "Unknown"} (${home ? "H" : "A"})`, fdr: home ? f.team_h_difficulty : f.team_a_difficulty };
   });
 }
+
+export type FieldCaptain = { element: number; name: string; pct: number };
+
+export type CaptainVsField = {
+  aligned: boolean;
+  yourCaptain: { name: string; xpts: NumberOrNull };
+  field: { name: string; pct: number; xpts: NumberOrNull; owned: boolean };
+  /** your captain xPts minus the field captain's, when both are known. */
+  deltaXpts: NumberOrNull;
+  verdict: string;
+};
+
+/** Compare the plan's captain with the target group's most-captained player. */
+export function captainVsField(packet: DecisionPacket, field: FieldCaptain | undefined): CaptainVsField | null {
+  if (!field) return null;
+  const xptsOf = (id: number) => {
+    const ranked = packet.captains.find(c => c.id === id);
+    if (ranked && numeric(ranked.xpts)) return ranked.xpts;
+    const owned = packet.players.find(p => p.id === id);
+    return owned && numeric(owned.xpts) ? owned.xpts : null;
+  };
+  const yourName = packet.players.find(p => p.id === packet.captain)?.name
+    ?? packet.captains.find(c => c.id === packet.captain)?.name ?? "your captain";
+  const yourXpts = xptsOf(packet.captain);
+  const aligned = field.element === packet.captain;
+  const owned = packet.account.picks.some(p => p.element === field.element);
+  const fieldXpts = xptsOf(field.element);
+  const deltaXpts = numeric(yourXpts) && numeric(fieldXpts) ? Math.round((yourXpts - fieldXpts) * 10) / 10 : null;
+
+  let verdict: string;
+  if (aligned) {
+    verdict = `Your captain ${yourName} is also the target group's top pick (${field.pct.toFixed(0)}%). No captaincy risk against the field.`;
+  } else if (!owned) {
+    verdict = `The target group captains ${field.name} (${field.pct.toFixed(0)}%). You do not own ${field.name}, so a ${field.name} haul costs you ground against roughly ${field.pct.toFixed(0)}% of the group.`;
+  } else if (numeric(deltaXpts)) {
+    verdict = deltaXpts >= 0
+      ? `${yourName} projects ${deltaXpts.toFixed(1)} pts above ${field.name} before the multiplier, so the model backs differing from the ${field.pct.toFixed(0)}% on ${field.name}.`
+      : `${yourName} projects ${Math.abs(deltaXpts).toFixed(1)} pts below ${field.name}; differing from the ${field.pct.toFixed(0)}% on ${field.name} needs a reason beyond points.`;
+  } else {
+    verdict = `The target group captains ${field.name} (${field.pct.toFixed(0)}%); your plan captains ${yourName}. Projected points for one side are unavailable.`;
+  }
+  return { aligned, yourCaptain: { name: yourName, xpts: yourXpts }, field: { name: field.name, pct: field.pct, xpts: fieldXpts, owned }, deltaXpts, verdict };
+}
