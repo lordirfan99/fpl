@@ -39,6 +39,9 @@ if [ "$MODE" = --rollback ]; then
   exit 0
 fi
 sudo test ! -e "$BACKUP" || { echo 'Backup exists'; exit 1; }
+sudo -u fpl "$DEST/.venv/bin/python" -m pip install \
+  --disable-pip-version-check --no-input --no-cache-dir \
+  -r engine/requirements-private-dashboard.txt
 sudo -u fpl "$DEST/.venv/bin/python" -c 'import google.cloud.storage,json; from pathlib import Path; assert json.loads(Path("/opt/fpl-autopilot/config/dashboard.json").read_text())["private_bucket"]'
 "$DEST/.venv/bin/python" -c 'import ast,pathlib; [ast.parse(pathlib.Path(p).read_text()) for p in ("engine/model/dashboard_packet.py", "engine/jobs/dashboard_account_check.py", "engine/jobs/pre_deadline_run.py")]'
 sudo install -d -m 0700 "$BACKUP/model" "$BACKUP/jobs"
