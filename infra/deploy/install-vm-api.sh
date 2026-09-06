@@ -50,6 +50,16 @@ restore() {
   fi
 }
 
+wait_for_url() {
+  local url="$1"
+  for _ in $(seq 1 30); do
+    if curl --fail --silent --show-error --max-time 5 "$url" >/dev/null 2>&1; then return 0; fi
+    sleep 1
+  done
+  echo "Timed out waiting for $url"
+  return 1
+}
+
 if [ "$MODE" = --rollback ]; then
   sudo test -f "$BACKUP/complete" || { echo 'Complete rollback backup unavailable'; exit 1; }
   restore
@@ -112,14 +122,13 @@ sudo caddy validate --adapter caddyfile --config "$PATCHED" >/dev/null
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now fpl-scout-api.service
-curl --fail --silent --show-error --max-time 60 http://127.0.0.1:8790/health >/dev/null
-curl --fail --silent --show-error --max-time 60 http://127.0.0.1:8790/ready >/dev/null
+wait_for_url http://127.0.0.1:8790/health
+wait_for_url http://127.0.0.1:8790/ready
 
 sudo install -o root -g root -m 0644 "$PATCHED" "$CADDY_FILE"
 sudo caddy validate --adapter caddyfile --config "$CADDY_FILE" >/dev/null
 sudo systemctl reload caddy
-curl --fail --silent --show-error --max-time 60 \
-  https://sportmania.duckdns.org/fpl-scout-api/health >/dev/null
+wait_for_url https://sportmania.duckdns.org/fpl-scout-api/health
 
 sudo touch "$BACKUP/complete"
 COMPLETE=1

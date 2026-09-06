@@ -30,6 +30,7 @@ def test_vm_service_is_local_single_worker_and_resource_bounded():
     assert "--host 127.0.0.1 --port 8790 --workers 1" in unit
     assert "EnvironmentFile=/etc/fpl-scout-api.env" in unit
     assert "MemoryMax=650M" in unit
+    assert "WorkingDirectory=/opt/fpl-live-refresh/current/api" in unit
     assert "/opt/fpl-live-refresh/current/.venv/bin/python" in unit
 
 
@@ -40,6 +41,7 @@ def test_vm_installer_has_tag_match_privacy_health_and_rollback_gates():
         "FPL_DASHBOARD_READ_TOKEN",
         "caddy validate --adapter caddyfile",
         "127.0.0.1:8790/ready",
+        "wait_for_url",
         "private-dashboard",
         "--rollback",
     ):
