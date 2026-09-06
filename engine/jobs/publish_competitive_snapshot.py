@@ -22,7 +22,7 @@ from fpl_client import FPLClient  # noqa: E402
 STATE_FILE = os.path.join(BASE, "data", "processed", "league_intelligence", "latest.json")
 OUT_DIR = os.path.join(BASE, "data", "processed", "competitive_snapshots")
 DEFAULT_BUCKET = "irfan-374115-fpl-snapshots"
-DEFAULT_API = "https://fpl-scout-api-bztsnhv3ea-uc.a.run.app"
+DEFAULT_API = "https://sportmania.duckdns.org/fpl-scout-api"
 POSITION = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
 
 

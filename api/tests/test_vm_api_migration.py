@@ -67,6 +67,8 @@ def test_active_clients_do_not_fall_back_to_cloud_run():
         ROOT / "infra/scripts/run_scheduled_task.py",
         ROOT / "infra/scripts/monitor_production.py",
         ROOT / "infra/scripts/capture_predeadline_journal.py",
+        ROOT / "engine/model/competitive_v4_client.py",
+        ROOT / "engine/jobs/publish_competitive_snapshot.py",
         *sorted((ROOT / "web/lib").glob("*.ts")),
     ]
     offenders = [str(path.relative_to(ROOT)) for path in paths if "run.app" in path.read_text()]
