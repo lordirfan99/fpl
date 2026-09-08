@@ -57,6 +57,32 @@ league_registry = LeagueRegistry(settings.data_dir)
 app.include_router(private_dashboard_router)
 SEASON_PATTERN = re.compile(r"^20\d{2}-\d{2}$")
 
+# Cache-Control policy by path prefix. Reference data (catalogue, fixtures,
+# journal) changes at most a few times a day, so it is safe for the browser and
+# Netlify's CDN to serve it for minutes and revalidate in the background. Live
+# and per-account data get short windows; recommendations and anything
+# identity/auth-bound are never cached. Handlers that set their own
+# Cache-Control (private dashboard) are left untouched.
+_NO_STORE_PREFIXES = ("/v1/me", "/v1/private", "/v1/recommendations", "/v1/decision")
+_REFERENCE_LONG = "public, max-age=300, s-maxage=900, stale-while-revalidate=86400"
+_REFERENCE_DAY = "public, max-age=900, s-maxage=3600, stale-while-revalidate=86400"
+_LIVE_SHORT = "public, max-age=20, s-maxage=30, stale-while-revalidate=120"
+_SNAPSHOT = "public, max-age=60, s-maxage=120, stale-while-revalidate=600"
+
+
+def _cache_policy(path: str) -> str:
+    if path in ("/health", "/ready") or any(path.startswith(prefix) for prefix in _NO_STORE_PREFIXES):
+        return "no-store"
+    if path.startswith("/v1/catalog"):
+        return _REFERENCE_LONG
+    if path == "/v1/fixtures" or path.startswith("/v1/journal"):
+        return _REFERENCE_DAY
+    if "/live" in path:
+        return _LIVE_SHORT
+    if path.startswith("/v1/"):
+        return _SNAPSHOT
+    return "no-store"
+
 
 @app.middleware("http")
 async def structured_request_log(request: Request, call_next):
@@ -73,6 +99,12 @@ async def structured_request_log(request: Request, call_next):
         }), flush=True)
         raise
     response.headers["x-request-id"] = request_id
+    if request.method == "GET" and "cache-control" not in response.headers:
+        # Only a 200 may be publicly cached; errors and degraded responses are
+        # always no-store so a stale failure cannot be served from a CDN.
+        response.headers["cache-control"] = (
+            _cache_policy(request.url.path) if response.status_code == 200 else "no-store"
+        )
     response.headers["server-timing"] = f'app;dur={(time.perf_counter() - started) * 1000:.2f}'
     print(json.dumps({
         "level": "info", "message": "request_complete", "request_id": request_id,

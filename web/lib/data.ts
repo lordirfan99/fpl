@@ -16,14 +16,31 @@ class ApiRequestError extends Error {
   }
 }
 
-async function requestApi<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+// Revalidation windows for the Next.js Data Cache, tiered by how often the
+// underlying FPL data actually changes. Repeated fetches of the same URL inside
+// a window are served from cache instead of re-hitting the VM API, so switching
+// tabs/pages reuses data already loaded this session.
+export const REVALIDATE = {
+  catalog: 600,      // player metadata, teams, positions; prices move ~once/day
+  fixtures: 3600,    // fixture list barely changes within a gameweek
+  snapshot: 120,     // finalized league snapshots, elite, optimizer
+  directory: 300,    // league member directory
+  live: 20,          // in-progress gameweek data
+  account: 120,      // configured team's own league position
+} as const;
+
+function fetchInit(revalidate: number | false): RequestInit {
+  return revalidate === false ? { cache: "no-store" } : { next: { revalidate } };
+}
+
+async function requestApi<T>(path: string, revalidate: number | false = REVALIDATE.snapshot): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, fetchInit(revalidate));
   if (!response.ok) throw new ApiRequestError(response.status, path);
   return response.json() as Promise<T>;
 }
 
 export async function getCompactCatalog(): Promise<Bootstrap> {
-  const payload = await requestApi<{ players: Bootstrap["elements"]; teams: Bootstrap["teams"]; events: Bootstrap["events"] }>("/v1/catalog/compact");
+  const payload = await requestApi<{ players: Bootstrap["elements"]; teams: Bootstrap["teams"]; events: Bootstrap["events"] }>("/v1/catalog/compact", REVALIDATE.catalog);
   return { elements: payload.players, teams: payload.teams, events: payload.events };
 }
 
@@ -34,12 +51,12 @@ export async function getLeagueSummary(
   const params = new URLSearchParams({ page: String(options.page ?? 1), page_size: "50" });
   if (options.query) params.set("q", options.query);
   if (options.gameweek === undefined) {
-    return requestApi<LeagueSummary>(`/v1/leagues/${leagueId}/summary?${params}`);
+    return requestApi<LeagueSummary>(`/v1/leagues/${leagueId}/summary?${params}`, REVALIDATE.snapshot);
   }
   const resolved = options.gameweek;
   for (let candidate = resolved; candidate >= 1; candidate -= 1) {
     try {
-      return await requestApi<LeagueSummary>(`/v1/leagues/${leagueId}/summary?gw=${candidate}&${params}`);
+      return await requestApi<LeagueSummary>(`/v1/leagues/${leagueId}/summary?gw=${candidate}&${params}`, REVALIDATE.snapshot);
     } catch (error) {
       if (!(error instanceof ApiRequestError) || ![404, 409].includes(error.status)) throw error;
     }
@@ -49,12 +66,12 @@ export async function getLeagueSummary(
 
 export async function getLeagueDirectory(leagueId = DEFAULT_LEAGUE_ID, gameweek?: number) {
   const suffix = gameweek === undefined ? "" : `?gw=${gameweek}`;
-  const payload = await requestApi<{ gameweek: number; managers: ManagerSummary[] }>(`/v1/leagues/${leagueId}/directory${suffix}`);
+  const payload = await requestApi<{ gameweek: number; managers: ManagerSummary[] }>(`/v1/leagues/${leagueId}/directory${suffix}`, REVALIDATE.directory);
   return payload;
 }
 
 export async function getLeagueManager(leagueId: number, gameweek: number, entryId: number): Promise<Manager> {
-  return requestApi<Manager>(`/v1/leagues/${leagueId}/managers/${entryId}?gw=${gameweek}`);
+  return requestApi<Manager>(`/v1/leagues/${leagueId}/managers/${entryId}?gw=${gameweek}`, REVALIDATE.snapshot);
 }
 
 export async function getTransferOptimizer(leagueId: number, gameweek: number) {
@@ -62,7 +79,7 @@ export async function getTransferOptimizer(leagueId: number, gameweek: number) {
     status: string; optimizer_version: string; target_gameweeks: number[]; free_transfers: number;
     plans: Array<{ transfer_count: number; net_ev?: number; gross_horizon_gain?: number; hit_cost: number; free_transfer_opportunity_cost?: number; bank_after: number; transfers?: Array<{ out_name: string; in_name: string; position: string; weighted_gain: number }> }>;
     disclaimer: string;
-  }>(`/v1/optimizer/transfers?league_id=${leagueId}&gw=${gameweek}&horizon=5&max_transfers=2`);
+  }>(`/v1/optimizer/transfers?league_id=${leagueId}&gw=${gameweek}&horizon=5&max_transfers=2`, REVALIDATE.snapshot);
 }
 
 async function readJson<T>(path: string): Promise<T> {
@@ -82,11 +99,11 @@ export async function getDashboardData(leagueId = DEFAULT_LEAGUE_ID, gameweek?: 
 }
 
 export async function getPlannerData(targetGameweek?: number) {
-  const dashboard = await getDashboardData();
   // The live league read only hydrates the Elite cohort's squads.  Planner
   // must always use the owner's full official 15, otherwise a manager outside
   // that cohort produces an empty horizon (0.0 FDR and TBC for every week).
-  const live = await getLiveTeam();
+  // Neither call depends on the other, so run them together.
+  const [dashboard, live] = await Promise.all([getDashboardData(), getLiveTeam()]);
   const liveSquad: Manager["squad"] = live?.picks.length === 15 ? live.picks.map((pick) => {
     const player = dashboard.bootstrap.elements.find((row) => row.id === pick.element);
     const position = player?.element_type === 1 ? "GKP" : player?.element_type === 2 ? "DEF" : player?.element_type === 3 ? "MID" : "FWD";
@@ -115,7 +132,7 @@ export async function getPlannerData(targetGameweek?: number) {
   const toGameweek = Math.min(fromGameweek + 4, 38);
   let fixtureHorizon: FixtureHorizon;
   if (API_BASE) {
-    const response = await fetch(`${API_BASE}/v1/fixtures?from_gw=${fromGameweek}&to_gw=${toGameweek}`, { cache: "no-store" });
+    const response = await fetch(`${API_BASE}/v1/fixtures?from_gw=${fromGameweek}&to_gw=${toGameweek}`, fetchInit(REVALIDATE.fixtures));
     if (!response.ok) throw new Error(`Scout API returned ${response.status} for fixture horizon`);
     fixtureHorizon = ((await response.json()) as { gameweeks: FixtureHorizon }).gameweeks;
   } else {
@@ -142,28 +159,19 @@ async function getLeagueDataFromApi(leagueId: number, gameweek?: number): Promis
   type LeaguePayload = { meta?: { generated_at?: string; snapshot_at?: string }; managers: Manager[] };
   type CatalogPayload = { players: Bootstrap["elements"]; teams: Bootstrap["teams"]; events: Bootstrap["events"] };
   const request = requestApi;
-  const identity = await request<IdentityPayload>("/v1/me");
-  // A league-analysis page must work even when the configured team is not a
-  // member of the selected league (for example the public prize league).
-  // Treat the personal-team lookup as optional; the league snapshot remains
-  // the source of truth for elite/cohort pages.
-  const catalog = await request<CatalogPayload>("/v1/catalog");
-  // For the current view, ask the live read model first. The catalog is a
-  // reference snapshot and can lag the official FPL gameweek transition.
-  let liveIdentity: { gameweek: number } | null = null;
-  // Live league reads are complete, validated background snapshots. They are
-  // safe for every tracked league and must take precedence over an older
-  // finalized snapshot whenever the user has not explicitly selected a GW.
-  // This request does not call FPL: it reads the Cloud Run collector's latest
-  // immutable snapshot through the API.
+  // Identity, the reference catalogue and the live gameweek marker are
+  // independent — fetch them concurrently instead of in series. The catalogue
+  // is the largest payload; overlapping it with the others removes seconds
+  // from a cold render. All three are served from the Next.js Data Cache on
+  // subsequent navigations within their revalidate window.
   const useLiveReadModel = gameweek === undefined;
-  if (useLiveReadModel) {
-    try {
-      liveIdentity = await request<{ gameweek: number }>(`/v1/live/team?league_id=${leagueId}`);
-    } catch {
-      liveIdentity = null;
-    }
-  }
+  const [identity, catalog, liveIdentity] = await Promise.all([
+    request<IdentityPayload>("/v1/me", REVALIDATE.snapshot),
+    request<CatalogPayload>("/v1/catalog", REVALIDATE.catalog),
+    useLiveReadModel
+      ? request<{ gameweek: number }>(`/v1/live/team?league_id=${leagueId}`, REVALIDATE.live).catch(() => null)
+      : Promise.resolve(null),
+  ]);
   const resolvedGameweek = gameweek ?? liveIdentity?.gameweek ?? catalog.events.find((event) => event.is_current)?.id ?? identity.current_gameweek ?? DEFAULT_GAMEWEEK;
   // League snapshots arrive after the live gameweek advances.  If the
   // selected league has not been collected for the current GW yet, walk back
@@ -175,7 +183,7 @@ async function getLeagueDataFromApi(leagueId: number, gameweek?: number): Promis
   let liveProvisional = false;
   for (let candidate = resolvedGameweek; candidate >= 1; candidate -= 1) {
     try {
-      league = await request<LeaguePayload>(`/v1/leagues/${leagueId}?gw=${candidate}`);
+      league = await request<LeaguePayload>(`/v1/leagues/${leagueId}?gw=${candidate}`, REVALIDATE.snapshot);
       snapshotGameweek = candidate;
       break;
     } catch (error) {
@@ -184,7 +192,7 @@ async function getLeagueDataFromApi(leagueId: number, gameweek?: number): Promis
       // API revision this is reported as either 404 (not collected) or 409
       // (provisional/not finalized); both must use the official live route.
       if (useLiveReadModel && candidate === resolvedGameweek && [404, 409].includes(error.status)) {
-        const live = await request<LeaguePayload & { gameweek: number; provisional?: boolean }>(`/v1/leagues/${leagueId}/live`).catch(() => null);
+        const live = await request<LeaguePayload & { gameweek: number; provisional?: boolean }>(`/v1/leagues/${leagueId}/live`, REVALIDATE.live).catch(() => null);
         if (live?.managers?.length) {
           league = live;
           snapshotGameweek = live.gameweek;
@@ -196,7 +204,7 @@ async function getLeagueDataFromApi(leagueId: number, gameweek?: number): Promis
     }
   }
   if (!league) throw new Error(`No league snapshot available for league ${leagueId}`);
-  const team = await request<TeamPayload>(`/v1/me/team?league_id=${leagueId}&gw=${snapshotGameweek}`).catch(() => null);
+  const team = await request<TeamPayload>(`/v1/me/team?league_id=${leagueId}&gw=${snapshotGameweek}`, REVALIDATE.account).catch(() => null);
   return {
     manager: league.managers.find((entry) => entry.entry_id === MY_TEAM_ID),
     managers: league.managers,

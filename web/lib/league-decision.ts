@@ -8,7 +8,7 @@ export type LeagueDecisionContext = {
 export async function getLeagueDecision(league: number): Promise<LeagueDecisionContext | null> {
   try {
     const base = process.env.FPL_API_BASE_URL ?? "https://sportmania.duckdns.org/fpl-scout-api";
-    const response = await fetch(`${base}/v1/leagues/${league}/decision-context`, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+    const response = await fetch(`${base}/v1/leagues/${league}/decision-context`, { next: { revalidate: 120 }, signal: AbortSignal.timeout(15000) });
     if (!response.ok) return null;
     const value: unknown = await response.json();
     if (!value || typeof value !== "object") return null;

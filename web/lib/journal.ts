@@ -23,7 +23,9 @@ export interface JournalEntry {
 }
 
 async function request<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+  // The season journal is append-only history; a completed gameweek's record
+  // never changes. Serve it from the Data Cache for 15 minutes.
+  const response = await fetch(`${API_BASE}${path}`, { next: { revalidate: 900 } });
   if (!response.ok) throw new Error(`Journal API returned ${response.status} for ${path}`);
   return response.json() as Promise<T>;
 }

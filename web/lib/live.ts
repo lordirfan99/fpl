@@ -22,7 +22,12 @@ export async function getLiveTeam(gameweek?: number, leagueId = 58005): Promise<
   const params = new URLSearchParams({ league_id: String(leagueId) });
   if (gameweek) params.set("gw", String(gameweek));
   try {
-    const response = await fetch(`${API_BASE}/v1/live/team?${params}`, { cache: "no-store" });
+    // In-progress gameweek data: cache briefly so repeat views this session are
+    // instant, and cap the wait so a slow upstream cannot hang the whole
+    // server render (this call is on the /my-team and /assistant critical path).
+    const response = await fetch(`${API_BASE}/v1/live/team?${params}`, {
+      next: { revalidate: 20 }, signal: AbortSignal.timeout(9000),
+    });
     if (!response.ok) return null;
     return await response.json() as LiveTeam;
   } catch {
