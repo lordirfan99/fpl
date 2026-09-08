@@ -8,6 +8,7 @@ export type EvidencePlayer = {
     status: string | null; news: string | null; news_added: string | null; chance_of_playing_next_round: NumberOrNull };
 };
 export type Alternative = { horizon_gain: NumberOrNull; net_after_hit: NumberOrNull; projection_starts_gw: NumberOrNull; moves: { out: string; in: string; hit: boolean }[] };
+export type ChipRoadmapEntry = { chip: string; chip_label: string; target_gw: number | null; confidence: string; reason: string };
 export type DecisionPacket = {
   schema_version: 1; team_id: number; plan_id: string; gameweek: number; deadline: string; generated_at: string;
   account_fingerprint: string; account: { picks: AccountPick[]; transfers: { bank: number; limit: NumberOrNull; made: NumberOrNull; unlimited: boolean | null }; chips: { name: string; status_for_entry: string; played_by_entry: number[] | null }[] };
@@ -18,6 +19,7 @@ export type DecisionPacket = {
   action: string; reason: string;
   horizon: { metric: string; rows: { gw: number; weight: number; current: NumberOrNull; proposed: NumberOrNull; gain: NumberOrNull }[] };
   alternatives: Record<string, Alternative | null>;
+  chip_roadmap?: ChipRoadmapEntry[];
   captains: { id: number; name: string; xpts: NumberOrNull; expected_minutes: NumberOrNull; eligible: boolean; selected: boolean; reason: string }[];
   players: EvidencePlayer[];
   fixtures: { id: number; event: number; team_h: number; team_a: number; team_h_difficulty: number; team_a_difficulty: number; kickoff_time: string | null }[];
