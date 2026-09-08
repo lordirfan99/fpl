@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ArrowRight, Clock3, ShieldCheck } from "lucide-react";
-import { displayNumber, fixturesFor, money, numeric, weeklyPoints, type DecisionPacket, type EvidencePlayer } from "@/lib/decision-room";
+import { captainVsField, displayNumber, fixturesFor, money, numeric, weeklyPoints, type DecisionPacket, type EvidencePlayer, type FieldCaptain } from "@/lib/decision-room";
 import { formatMYT } from "@/lib/format";
 
 export function ComparisonBars({ rows, unit, scaleMax = 1 }: { rows: { label: string; value: number | null; proposed?: boolean }[]; unit: string; scaleMax?: number }) {
@@ -27,7 +27,7 @@ function Evidence({ player, packet }: { player: EvidencePlayer; packet: Decision
     </div></details>;
 }
 
-export function DecisionRoom({ packet, checkedAt, children, rivalCaptaincy }: { packet: DecisionPacket; checkedAt?: string; children?: React.ReactNode; rivalCaptaincy?: { gameweek?: number; counts: Record<number, number | null> } }) {
+export function DecisionRoom({ packet, checkedAt, children, rivalCaptaincy }: { packet: DecisionPacket; checkedAt?: string; children?: React.ReactNode; rivalCaptaincy?: { gameweek?: number; counts: Record<number, number | null>; fieldCaptain?: FieldCaptain } }) {
   const [proposed, setProposed] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [valid, setValid] = useState(true);
@@ -122,7 +122,13 @@ export function DecisionRoom({ packet, checkedAt, children, rivalCaptaincy }: { 
       </details>
     </section></div>
 
-    <section className="surface"><span className="evidence-label">Model estimates + recorded fixtures</span><h2>Choose your captain with evidence</h2><div className="decision-captains">
+    <section className="surface"><span className="evidence-label">Model estimates + recorded fixtures</span><h2>Choose your captain with evidence</h2>
+      {(() => { const vs = captainVsField(packet, rivalCaptaincy?.fieldCaptain); return vs ? <div className={`captain-vs-field ${vs.aligned ? "aligned" : "differ"}`}>
+        <div><span>YOUR CAPTAIN</span><strong>{vs.yourCaptain.name}</strong><small>{displayNumber(vs.yourCaptain.xpts)} projected pts</small></div>
+        <div><span>TARGET GROUP</span><strong>{vs.field.name}</strong><small>{vs.field.pct.toFixed(0)}% captained{numeric(vs.field.xpts) ? ` · ${displayNumber(vs.field.xpts)} pts` : ""}{vs.field.owned ? "" : " · not owned"}</small></div>
+        <p>{vs.verdict}</p>
+      </div> : null; })()}
+      <div className="decision-captains">
       {packet.captains.map(c => { const player = packet.players.find(p => p.id === c.id); return <article key={c.id} className={c.id === packet.captain ? "chosen" : ""}><span>{c.id === packet.captain ? "RECOMMENDED CAPTAIN" : "ALTERNATIVE"}</span><h3>{c.name}</h3>
         <ComparisonBars rows={[{ label: "Projected points before captain multiplier", value: c.xpts, proposed: c.id === packet.captain }]} unit="pts" scaleMax={Math.max(1, ...packet.captains.flatMap(c => numeric(c.xpts) ? [c.xpts] : []))} />
         <p>{displayNumber(c.expected_minutes, 0)} expected minutes</p><p>{player ? fixturesFor(packet, player, packet.gameweek).map(f => f.label).join(" + ") || "No scheduled fixture" : "Fixture unavailable"}</p><p>{c.reason}</p>
