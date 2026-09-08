@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "active_season": "2026-27",
+  "team_id": 2797967,
+  "primary_league_id": 58005,
+  "tracked_league_ids": [58005, 131997],
+  "public_summary": true,
+  "private_notes_by_default": true
+}

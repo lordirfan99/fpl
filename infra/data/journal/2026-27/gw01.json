@@ -1,0 +1,346 @@
+{
+  "schema_version": 1,
+  "season": "2026-27",
+  "gameweek": 1,
+  "status": "final",
+  "generated_at": "2026-08-25T06:51:39Z",
+  "team_id": 2797967,
+  "league_id": 58005,
+  "summary": {
+    "gw_points": 43,
+    "total_points": 43,
+    "overall_rank": 5683594,
+    "league_rank": 626,
+    "elite_average": 46.1,
+    "points_vs_reference": -3.1,
+    "captain": "B.Fernandes",
+    "captain_points": 2,
+    "transfers": 0,
+    "hit_cost": 0,
+    "chip": null,
+    "phase": null,
+    "alignment": null
+  },
+  "decision": {
+    "captured": false,
+    "decision_id": null,
+    "model_version": "competitive-v4.0",
+    "packet_status": null,
+    "competitive": {},
+    "plan": null,
+    "v5_projection_version": null
+  },
+  "outcome": {
+    "squad": [
+      {
+        "element": 1,
+        "name": "Raya",
+        "team": "Arsenal",
+        "position": "GKP",
+        "multiplier": 1,
+        "is_captain": false,
+        "is_vice_captain": false,
+        "points": 6,
+        "minutes": 90
+      },
+      {
+        "element": 4,
+        "name": "Gabriel",
+        "team": "Arsenal",
+        "position": "DEF",
+        "multiplier": 1,
+        "is_captain": false,
+        "is_vice_captain": true,
+        "points": 5,
+        "minutes": 90
+      },
+      {
+        "element": 61,
+        "name": "Truffert",
+        "team": "Bournemouth",
+        "position": "DEF",
+        "multiplier": 1,
+        "is_captain": false,
+        "is_vice_captain": false,
+        "points": 1,
+        "minutes": 90
+      },
+      {
+        "element": 229,
+        "name": "Tarkowski",
+        "team": "Everton",
+        "position": "DEF",
+        "multiplier": 1,
+        "is_captain": false,
+        "is_vice_captain": false,
+        "points": 6,
+        "minutes": 90
+      },
+      {
+        "element": 388,
+        "name": "Gu\u00e9hi",
+        "team": "Man City",
+        "position": "DEF",
+        "multiplier": 1,
+        "is_captain": false,
+        "is_vice_captain": false,
+        "points": 10,
+        "minutes": 90
+      },
+      {
+        "element": 498,
+        "name": "Senesi",
+        "team": "Spurs",
+        "position": "DEF",
+        "multiplier": 1,
+        "is_captain": false,
+        "is_vice_captain": false,
+        "points": 3,
+        "minutes": 90
+      },
+      {
+        "element": 13,
+        "name": "Rice",
+        "team": "Arsenal",
+        "position": "MID",
+        "multiplier": 1,
+        "is_captain": false,
+        "is_vice_captain": false,
+        "points": 3,
+        "minutes": 67
+      },
+      {
+        "element": 397,
+        "name": "Semenyo",
+        "team": "Man City",
+        "position": "MID",
+        "multiplier": 1,
+        "is_captain": false,
+        "is_vice_captain": false,
+        "points": 2,
+        "minutes": 90
+      },
+      {
+        "element": 481,
+        "name": "Anderson",
+        "team": "Man City",
+        "position": "MID",
+        "multiplier": 1,
+        "is_captain": false,
+        "is_vice_captain": false,
+        "points": 2,
+        "minutes": 62
+      },
+      {
+        "element": 426,
+        "name": "B.Fernandes",
+        "team": "Man Utd",
+        "position": "MID",
+        "multiplier": 2,
+        "is_captain": true,
+        "is_vice_captain": false,
+        "points": 2,
+        "minutes": 90
+      },
+      {
+        "element": 346,
+        "name": "Calvert-Lewin",
+        "team": "Leeds",
+        "position": "FWD",
+        "multiplier": 1,
+        "is_captain": false,
+        "is_vice_captain": false,
+        "points": 1,
+        "minutes": 90
+      },
+      {
+        "element": 82,
+        "name": "Kelleher",
+        "team": "Brentford",
+        "position": "GKP",
+        "multiplier": 0,
+        "is_captain": false,
+        "is_vice_captain": false,
+        "points": 7,
+        "minutes": 90
+      },
+      {
+        "element": 545,
+        "name": "Sadiki",
+        "team": "Sunderland",
+        "position": "MID",
+        "multiplier": 0,
+        "is_captain": false,
+        "is_vice_captain": false,
+        "points": 2,
+        "minutes": 90
+      },
+      {
+        "element": 491,
+        "name": "Igor Jesus",
+        "team": "Nott'm Forest",
+        "position": "FWD",
+        "multiplier": 0,
+        "is_captain": false,
+        "is_vice_captain": false,
+        "points": 2,
+        "minutes": 90
+      },
+      {
+        "element": 222,
+        "name": "Strand Larsen",
+        "team": "Crystal Palace",
+        "position": "FWD",
+        "multiplier": 0,
+        "is_captain": false,
+        "is_vice_captain": false,
+        "points": 1,
+        "minutes": 27
+      }
+    ],
+    "transfers": [],
+    "chips": []
+  },
+  "league": {
+    "competitors": 737,
+    "top_owned": [
+      {
+        "name": "Jo\u00e3o Pedro",
+        "pct": 71.2
+      },
+      {
+        "name": "B.Fernandes",
+        "pct": 70.7
+      },
+      {
+        "name": "Haaland",
+        "pct": 67.2
+      },
+      {
+        "name": "Calafiori",
+        "pct": 64.5
+      },
+      {
+        "name": "Mbeumo",
+        "pct": 57.3
+      },
+      {
+        "name": "Tzolis",
+        "pct": 48.8
+      },
+      {
+        "name": "Calvert-Lewin",
+        "pct": 48.0
+      },
+      {
+        "name": "Verbruggen",
+        "pct": 44.9
+      },
+      {
+        "name": "Szoboszlai",
+        "pct": 44.0
+      },
+      {
+        "name": "Kinsky",
+        "pct": 39.5
+      }
+    ],
+    "captain_choices": [
+      {
+        "name": "Haaland",
+        "count": 286,
+        "percentage": 38.8
+      },
+      {
+        "name": "B.Fernandes",
+        "count": 247,
+        "percentage": 33.5
+      },
+      {
+        "name": "Jo\u00e3o Pedro",
+        "count": 39,
+        "percentage": 5.3
+      },
+      {
+        "name": "Mbeumo",
+        "count": 27,
+        "percentage": 3.7
+      },
+      {
+        "name": "Gabriel",
+        "count": 17,
+        "percentage": 2.3
+      },
+      {
+        "name": "Tzolis",
+        "count": 13,
+        "percentage": 1.8
+      },
+      {
+        "name": "Havertz",
+        "count": 13,
+        "percentage": 1.8
+      },
+      {
+        "name": "Saka",
+        "count": 13,
+        "percentage": 1.8
+      }
+    ],
+    "formations": [
+      {
+        "formation": "5-5-3",
+        "count": 737
+      }
+    ],
+    "transfer_trends": {
+      "total_transfers": 0,
+      "teams_with_transfers": 0,
+      "hit_takers": 0,
+      "top_transfers_in": [],
+      "top_transfers_out": []
+    },
+    "chips": {
+      "bboost": 340,
+      "3xc": 62
+    }
+  },
+  "evaluation": {
+    "v5": {
+      "rows": 0,
+      "mae": null,
+      "bias": null
+    },
+    "fpl_ep_next": {
+      "rows": 0,
+      "mae": null,
+      "bias": null
+    },
+    "horizons": []
+  },
+  "learning": {
+    "automated": [
+      "Scored 3.1 points below the league reference.",
+      "Captain B.Fernandes returned 2 points before multiplier."
+    ],
+    "public_lesson": null
+  },
+  "quality": {
+    "status": "partial",
+    "issues": [
+      "predeadline_evidence_missing"
+    ]
+  },
+  "provenance": {
+    "snapshot_at": "2026-08-25T06:51:39Z",
+    "analysis_at": "2026-08-24T07:53:52Z",
+    "predeadline_at": null,
+    "sources": [
+      "official-fpl",
+      "league-snapshot",
+      "competitive-v4",
+      "projection-v5-lab"
+    ]
+  },
+  "record_hash": "57d89e3a2d4a9be8dfd93b2a60bd2137e07cffe519a75bb4ccb3260762b21bf6"
+}
