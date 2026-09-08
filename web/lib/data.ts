@@ -27,6 +27,18 @@ export async function getCompactCatalog(): Promise<Bootstrap> {
   return { elements: payload.players, teams: payload.teams, events: payload.events };
 }
 
+// The full catalogue carries the per-player planning fields (ep_next, form,
+// selected_by_percent, availability) the compact one drops.
+export async function getFullCatalog(): Promise<Bootstrap> {
+  const payload = await requestApi<{ players: Bootstrap["elements"]; teams: Bootstrap["teams"]; events: Bootstrap["events"] }>("/v1/catalog");
+  return { elements: payload.players, teams: payload.teams, events: payload.events };
+}
+
+export async function getFixtureHorizon(fromGameweek: number, toGameweek: number): Promise<FixtureHorizon> {
+  const payload = await requestApi<{ gameweeks: FixtureHorizon }>(`/v1/fixtures?from_gw=${fromGameweek}&to_gw=${toGameweek}`);
+  return payload.gameweeks;
+}
+
 export async function getLeagueSummary(
   leagueId = DEFAULT_LEAGUE_ID,
   options: { gameweek?: number; page?: number; query?: string } = {},
