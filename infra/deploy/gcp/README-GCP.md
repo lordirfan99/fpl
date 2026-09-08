@@ -45,13 +45,20 @@ Empty output = silence. Same semantics as the old no_agent crons.
 
 ## 2. Production target (do not provision another VM)
 
+> **Superseded for current runtime.** After the 4 September 2026 zone recovery the
+> active VM is in **`us-central1-a`**, and API hosting moved onto the same VM on
+> 6 September 2026. `docs/RUNBOOK.md` (§ Current recovered runtime) and
+> `infra/ZONE-RECOVERY.md` are authoritative for zone, IP and deploy commands.
+> The `us-central1-f` references elsewhere in this file describe the original
+> migration and are retained for disaster-recovery history only.
+
 The existing production VM is authoritative:
 
 | Setting | Value |
 |---|---|
 | Project | `irfan-374115` |
 | Instance | `instance-20260412-121200` |
-| Zone | `us-central1-f` |
+| Zone | `us-central1-a` (originally `us-central1-f`; see note above) |
 | Install root | `/opt/fpl-autopilot` |
 | Runtime user | `fpl` |
 
