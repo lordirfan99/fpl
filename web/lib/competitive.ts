@@ -85,7 +85,9 @@ export async function getCompetitiveRecommendation(leagueId: number, gameweek?: 
   // finalized fallback, honest safe_hold). Passing an explicit gw pins one
   // finalized snapshot and is only for historical lookups.
   const query = gameweek == null ? `league_id=${leagueId}` : `league_id=${leagueId}&gw=${gameweek}`;
-  const response = await fetch(`${API_BASE}/v1/decision/current?${query}`, { cache: "no-store" });
+  // Freshness-sensitive: never cached. Time-boxed so a slow recommendation
+  // engine cannot wedge a page that renders this on its critical path.
+  const response = await fetch(`${API_BASE}/v1/decision/current?${query}`, { cache: "no-store", signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new Error(`Scout API returned ${response.status} for V4 competitive recommendation`);
   const raw = await response.json() as Json;
   const competitive = (raw.competitive as Json | undefined) ?? {};
