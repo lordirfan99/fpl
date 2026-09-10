@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run ON the VM from a clean, reviewed release tag. Updates only the two
+# Run ON the VM from a clean, reviewed release tag. Updates only the allowlisted
 # planner files; no bot unit, credentials, pending plan or dependency changes.
 set -euo pipefail
 TAG="${1:?usage: install-recommendation-planner.sh <release-tag> [--rollback]}"
@@ -19,7 +19,7 @@ if pgrep -f 'python.*(pre_deadline_run[.]py|fpl_auto[.]py)' >/dev/null; then
 fi
 DEST=/opt/fpl-autopilot
 BACKUP="/var/backups/fpl-planner/$SHA"
-FILES=(model/competitive_v4_client.py jobs/pre_deadline_run.py)
+FILES=(model/competitive_v4_client.py model/v4_projection.py model/dashboard_packet.py jobs/pre_deadline_run.py)
 for file in "${FILES[@]}"; do
   [ -f "$DEST/$file" ] || { echo "Missing deployed file: $file"; exit 1; }
 done
@@ -35,7 +35,7 @@ if [ "$MODE" = --rollback ]; then
   exit 0
 fi
 sudo test ! -e "$BACKUP" || { echo 'Release backup already exists; refusing to overwrite'; exit 1; }
-"$DEST/.venv/bin/python" -c 'import ast,pathlib; [ast.parse(pathlib.Path(p).read_text()) for p in ("engine/model/competitive_v4_client.py", "engine/jobs/pre_deadline_run.py")]; print("Syntax OK")'
+"$DEST/.venv/bin/python" -c 'import ast,pathlib,sys; [ast.parse(pathlib.Path("engine", p).read_text()) for p in sys.argv[1:]]; print("Syntax OK")' "${FILES[@]}"
 sudo install -d -m 0700 "$BACKUP/model" "$BACKUP/jobs"
 for file in "${FILES[@]}"; do
   sudo cp -p "$DEST/$file" "$BACKUP/$file"

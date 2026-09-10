@@ -13,7 +13,8 @@ def test_planner_install_is_scoped_and_recoverable(tmp_path, fail_copy):
     repo, runtime, fakebin = (tmp_path / name for name in ("repo", "runtime", "bin"))
     for path in (repo, runtime, fakebin):
         path.mkdir()
-    files = ("model/competitive_v4_client.py", "jobs/pre_deadline_run.py")
+    files = ("model/competitive_v4_client.py", "model/v4_projection.py",
+             "model/dashboard_packet.py", "jobs/pre_deadline_run.py")
     for file in files:
         src, dst = repo / "engine" / file, runtime / file
         src.parent.mkdir(parents=True, exist_ok=True)
