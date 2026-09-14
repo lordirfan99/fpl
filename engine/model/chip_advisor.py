@@ -33,6 +33,16 @@ from collections import Counter
 # suggestion confidence / priority ordering
 SUGGEST_PRIORITY = ["3xc", "bboost", "freehit", "wildcard"]
 
+# --- single-gameweek trigger thresholds (see _single_gw_* helpers) ----------
+# A DGW is the ideal chip trigger but it is not the only one, and in a season
+# with no scheduled doubles it never fires. These thresholds let a chip be
+# suggested on ordinary weeks, and are deliberately stricter than the DGW path.
+TC_SINGLE_XPTS = 7.5          # captain projection required without a DGW
+TC_SINGLE_MARGIN = 1.5        # ... and how far clear of the next-best starter
+BB_SINGLE_MIN_EACH = 3.0      # every bench player must clear this
+BB_SINGLE_TOTAL = 16.0        # ... and the bench must total at least this
+EXPIRY_WARN_GWS = 3           # flag an unused chip this close to its deadline
+
 _INJ_STATUSES = ("i", "u")
 
 
@@ -102,6 +112,53 @@ def detect_bgw(fixtures, gw, n_teams=20):
             cnt[f["team_h"]] += 1
             cnt[f["team_a"]] += 1
     return {t for t in range(1, n_teams + 1) if cnt[t] == 0}
+
+
+def chip_deadline(code, gw, windows):
+    """Last gameweek in which `code` can still be played, or None if unknown.
+
+    FPL allocates chips in windows (first half / second half). An unused chip
+    does not roll over: when its window closes it is simply lost. Callers use
+    this to warn before that happens.
+    """
+    if not windows:
+        return None
+    stops = [stop for start, stop in windows.get(code, []) if start <= gw <= stop]
+    return min(stops) if stops else None
+
+
+def _single_gw_tc_candidate(cap, starters):
+    """Is the captain a standout TC pick on an ordinary (non-DGW) week?
+
+    Requires both a high projection AND clear separation from the next-best
+    starter: tripling a captain who is barely ahead of the field buys very
+    little, because the counterfactual is simply captaining that other player.
+    """
+    cap_xpts = (cap.get("xpts") or 0) if cap else 0
+    if not cap or not cap.get("id") or cap_xpts < TC_SINGLE_XPTS:
+        return None
+    others = [(p.get("xpts") or 0) for p in starters if p.get("id") != cap.get("id")]
+    runner_up = max(others) if others else 0
+    margin = cap_xpts - runner_up
+    if margin < TC_SINGLE_MARGIN:
+        return None
+    return {"xpts": cap_xpts, "margin": margin, "runner_up": runner_up}
+
+
+def _single_gw_bb_candidate(bench):
+    """Is the bench strong enough to Bench Boost without a DGW?
+
+    Every bench player must be a credible starter - one blank ruins the chip -
+    and the four together must clear a total worth spending a chip on.
+    """
+    if len(bench) < 4:
+        return None
+    values = [(p.get("xpts") or 0) for p in bench]
+    weakest = min(values)
+    total = sum(values)
+    if weakest < BB_SINGLE_MIN_EACH or total < BB_SINGLE_TOTAL:
+        return None
+    return {"total": total, "weakest": weakest}
 
 
 def _bench_players(plan):
@@ -221,6 +278,24 @@ def advise(plan, fixtures, gw, team_id, players=None, squad=None, bank=0,
                 best)
             if sug:
                 out.append(sug)
+        else:
+            # No DGW anywhere in view. A season can contain no scheduled double
+            # at all, in which case a DGW-only advisor stays silent for months
+            # while the chip quietly expires. Fall back to a single-gameweek
+            # ceiling test on the captain we are already planning to field.
+            single = _single_gw_tc_candidate(cap, plan.get("target_starters", []))
+            if single:
+                deadline = chip_deadline("3xc", gw, windows)
+                expiring = deadline is not None and deadline - gw <= EXPIRY_WARN_GWS
+                detail = (f"{cap.get('name', 'C')} projects {single['xpts']:.1f} xPts, "
+                          f"{single['margin']:.1f} clear of the next starter - "
+                          f"no DGW is scheduled, so this is the kind of single "
+                          f"gameweek a TC has to be spent on.")
+                if expiring:
+                    detail += f" Chip expires after GW{deadline}."
+                out.append({"chip": "3xc", "reason": "Triple Captain",
+                            "detail": detail, "single_gw": True,
+                            "expires_gw": deadline})
 
     # Bench Boost: 3+ bench players >= 4 xPts AND any bench player's team has DGW
     bench = _bench_players(plan)
@@ -242,6 +317,21 @@ def advise(plan, fixtures, gw, team_id, players=None, squad=None, bank=0,
                 best_cheap)
             if sug:
                 out.append(sug)
+        else:
+            # Same reasoning as the TC fallback: with no double scheduled, a
+            # bench where all four are nailed starters is the realistic BB week.
+            single = _single_gw_bb_candidate(bench)
+            if single:
+                deadline = chip_deadline("bboost", gw, windows)
+                expiring = deadline is not None and deadline - gw <= EXPIRY_WARN_GWS
+                detail = (f"All four bench players project {single['weakest']:.1f}+ xPts "
+                          f"({single['total']:.1f} total) - no DGW is scheduled, and a "
+                          f"fully nailed bench is what BB needs in a single gameweek.")
+                if expiring:
+                    detail += f" Chip expires after GW{deadline}."
+                out.append({"chip": "bboost", "reason": "Bench Boost",
+                            "detail": detail, "single_gw": True,
+                            "expires_gw": deadline})
 
     # Free Hit: 4+ squad players blanking (BGW) -> would field < 11 effectively
     all_squad = list(plan.get("target_starters", [])) + list(plan.get("bench", []))

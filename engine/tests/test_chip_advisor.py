@@ -57,10 +57,13 @@ class TestAdvise(unittest.TestCase):
         self.assertIsNotNone(sug)
         self.assertEqual(sug["chip"], "3xc")
 
-    def test_no_tc_without_dgw(self):
-        # captain high xPts but club 1 has NO dgw -> no TC
+    def test_no_tc_without_dgw_unless_captain_is_clear_of_the_field(self):
+        # BEHAVIOUR CHANGE: a high-xPts captain with no DGW used to be silent.
+        # A season can schedule no DGW at all, so the chip would simply expire.
+        # TC may now fire on a single gameweek, but only when the captain is
+        # clearly ahead of the next-best starter - here he is not.
         fx = [_fx(5, 1, 2), _fx(5, 4, 5)]
-        plan = {"target_starters": [_p(100, 1, 8.0)],
+        plan = {"target_starters": [_p(100, 1, 8.0), _p(101, 4, 7.6)],
                 "bench": [_p(200, 4, 2.0)],
                 "captain": _p(100, 1, 8.0)}
         self.assertIsNone(chip_advisor.advise(plan, fx, 5, 1))
@@ -208,6 +211,90 @@ class TestMarketWideSuggestions(unittest.TestCase):
                 "captain": _p(100, 16, 8.0)}
         sug = chip_advisor.advise(plan, fx, 5, 1, used_chips={})
         self.assertEqual(sug["chip"], "3xc")
+
+
+class TestSingleGameweekTriggers(unittest.TestCase):
+    """A season can schedule no DGW/BGW at all (2026/27 as of GW5 has none).
+
+    A DGW-only advisor is silent for the whole first half while the chips
+    expire unused, which is the regression these tests pin down.
+    """
+
+    def test_tc_fires_on_standout_captain_without_any_dgw(self):
+        fx = [_fx(5, 1, 2), _fx(5, 3, 4)]  # clean single gameweek
+        self.assertEqual(chip_advisor.detect_dgw(fx, 5), set())
+        starters = [_p(100, 1, 8.2), _p(2, 2, 5.0), _p(3, 3, 4.4)]
+        plan = {"target_starters": starters, "bench": [], "captain": starters[0]}
+        sug = chip_advisor.advise(plan, fx, 5, 1)
+        self.assertIsNotNone(sug)
+        self.assertEqual(sug["chip"], "3xc")
+        self.assertTrue(sug["single_gw"])
+
+    def test_tc_stays_silent_when_captain_is_not_clear_of_the_field(self):
+        """High xPts alone is not enough - the alternative is just captaining
+        the next-best player, so a thin margin makes the chip near-worthless."""
+        fx = [_fx(5, 1, 2), _fx(5, 3, 4)]
+        starters = [_p(100, 1, 8.2), _p(2, 2, 7.8)]
+        plan = {"target_starters": starters, "bench": [], "captain": starters[0]}
+        self.assertIsNone(chip_advisor.advise(plan, fx, 5, 1))
+
+    def test_bb_fires_when_all_four_bench_players_are_nailed(self):
+        fx = [_fx(5, 1, 2), _fx(5, 3, 4)]
+        bench = [_p(1, 1, 4.5), _p(2, 2, 4.2), _p(3, 3, 4.0), _p(4, 4, 3.8)]
+        plan = {"target_starters": [_p(100, 1, 5.0)], "bench": bench,
+                "captain": _p(100, 1, 5.0)}
+        sug = chip_advisor.advise(plan, fx, 5, 1, players=[_p(900, 1, 6.0)])
+        self.assertIsNotNone(sug)
+        self.assertEqual(sug["chip"], "bboost")
+        self.assertTrue(sug["single_gw"])
+
+    def test_bb_stays_silent_when_one_bench_player_is_a_blank(self):
+        fx = [_fx(5, 1, 2), _fx(5, 3, 4)]
+        bench = [_p(1, 1, 5.5), _p(2, 2, 5.2), _p(3, 3, 5.0), _p(4, 4, 0.5)]
+        plan = {"target_starters": [_p(100, 1, 5.0)], "bench": bench,
+                "captain": _p(100, 1, 5.0)}
+        self.assertIsNone(chip_advisor.advise(plan, fx, 5, 1, players=[_p(900, 1, 6.0)]))
+
+    def test_dgw_evidence_still_wins_over_the_single_gw_fallback(self):
+        """The fallback must not mask a real double gameweek."""
+        fx = [_fx(5, 1, 2), _fx(5, 3, 1)]  # team 1 doubles
+        starters = [_p(100, 1, 8.2), _p(2, 2, 5.0)]
+        plan = {"target_starters": starters, "bench": [], "captain": starters[0]}
+        sug = chip_advisor.advise(plan, fx, 5, 1)
+        self.assertEqual(sug["chip"], "3xc")
+        self.assertNotIn("single_gw", sug)
+        self.assertIn("DGW", sug["detail"])
+
+    def test_expiry_warning_appears_near_the_window_deadline(self):
+        fx = [_fx(17, 1, 2), _fx(17, 3, 4)]
+        starters = [_p(100, 1, 8.2), _p(2, 2, 5.0)]
+        plan = {"target_starters": starters, "bench": [], "captain": starters[0]}
+        windows = {"3xc": [(1, 19), (20, 38)]}
+        sug = chip_advisor.advise(plan, fx, 17, 1, windows=windows)
+        self.assertEqual(sug["expires_gw"], 19)
+        self.assertIn("expires after GW19", sug["detail"])
+
+    def test_no_expiry_warning_early_in_the_window(self):
+        fx = [_fx(5, 1, 2), _fx(5, 3, 4)]
+        starters = [_p(100, 1, 8.2), _p(2, 2, 5.0)]
+        plan = {"target_starters": starters, "bench": [], "captain": starters[0]}
+        windows = {"3xc": [(1, 19), (20, 38)]}
+        sug = chip_advisor.advise(plan, fx, 5, 1, windows=windows)
+        self.assertNotIn("expires after", sug["detail"])
+
+    def test_chip_deadline_resolves_the_active_window(self):
+        windows = {"bboost": [(1, 19), (20, 38)]}
+        self.assertEqual(chip_advisor.chip_deadline("bboost", 5, windows), 19)
+        self.assertEqual(chip_advisor.chip_deadline("bboost", 25, windows), 38)
+        self.assertIsNone(chip_advisor.chip_deadline("bboost", 5, None))
+        self.assertIsNone(chip_advisor.chip_deadline("freehit", 5, windows))
+
+    def test_already_used_chip_is_never_suggested(self):
+        fx = [_fx(5, 1, 2), _fx(5, 3, 4)]
+        starters = [_p(100, 1, 8.2), _p(2, 2, 5.0)]
+        plan = {"target_starters": starters, "bench": [], "captain": starters[0]}
+        self.assertIsNone(chip_advisor.advise(
+            plan, fx, 5, 1, used_chips={"3xc": [3]}, windows={"3xc": [(1, 19)]}))
 
 
 if __name__ == "__main__":
