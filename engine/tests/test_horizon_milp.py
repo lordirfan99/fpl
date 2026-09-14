@@ -94,6 +94,48 @@ def defender_heavy_squad():
     return squad
 
 
+class LineupMaxTests(unittest.TestCase):
+    def test_default_allows_five_defenders(self):
+        squad = defender_heavy_squad()
+        result = optimize_horizon(squad, squad, bank=0, free_transfers=0,
+                                  paid_transfers_allowed=False)
+        self.assertEqual(result["weeks"][0]["formation"], "5-4-1")
+
+    def test_cap_limits_starting_defenders_on_the_normal_path(self):
+        """The regression: v4_max_starting_defenders never reached the MILP."""
+        squad = defender_heavy_squad()
+        result = optimize_horizon(squad, squad, bank=0, free_transfers=0,
+                                  paid_transfers_allowed=False,
+                                  lineup_max={"DEF": 3})
+        defenders = sum(1 for pid in result["weeks"][0]["lineup_ids"]
+                        if next(p for p in squad if p["id"] == pid)["position"] == "DEF")
+        self.assertEqual(defenders, 3)
+        self.assertEqual(len(result["weeks"][0]["lineup_ids"]), 11)
+
+    def test_cap_is_clamped_into_the_legal_band(self):
+        """Out-of-range caps must clamp, not produce an illegal or infeasible XI."""
+        squad = defender_heavy_squad()
+        for requested in (0, 1, 9):
+            with self.subTest(requested=requested):
+                result = optimize_horizon(squad, squad, bank=0, free_transfers=0,
+                                          paid_transfers_allowed=False,
+                                          lineup_max={"DEF": requested})
+                self.assertIn(result["status"], {"Optimal", "Integer Feasible"})
+                defenders = sum(
+                    1 for pid in result["weeks"][0]["lineup_ids"]
+                    if next(p for p in squad if p["id"] == pid)["position"] == "DEF")
+                self.assertGreaterEqual(defenders, 3)
+                self.assertLessEqual(defenders, 5)
+
+    def test_unknown_position_keys_are_ignored(self):
+        squad = defender_heavy_squad()
+        result = optimize_horizon(squad, squad, bank=0, free_transfers=0,
+                                  paid_transfers_allowed=False,
+                                  lineup_max={"BENCH": 2, "DEF": 4})
+        self.assertIn(result["status"], {"Optimal", "Integer Feasible"})
+        self.assertEqual(len(result["weeks"][0]["lineup_ids"]), 11)
+
+
 class ParseFormationTests(unittest.TestCase):
     def test_accepts_legal_shapes(self):
         self.assertEqual(parse_formation("3-4-3"),
@@ -171,7 +213,6 @@ class FormationPriorTests(unittest.TestCase):
                                   formation_prior_weight=5.0)
         self.assertEqual(result["weeks"][0]["formation"], "3-4-3")
         self.assertTrue(result["formation_prior"]["matched"])
-
 
 if __name__ == "__main__":
     unittest.main()

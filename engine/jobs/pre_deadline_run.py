@@ -625,6 +625,7 @@ def main():
                 transfer_friction=float(settings.get("v4_transfer_friction", 0.15)),
                 template_formation=(competitive_context or {}).get("template_formation"),
                 formation_prior_weight=float(settings.get("v4_formation_prior_weight", 0.0)),
+                lineup_max=rebuild_lineup_max,
             )
         except Exception as error:
             print(f"!! V4.1 HORIZON MILP FAILED - no plan persisted: {error!r}")
