@@ -66,6 +66,30 @@ def _formation(lineup: list[dict[str, Any]]) -> str:
     return f"{counts['DEF']}-{counts['MID']}-{counts['FWD']}"
 
 
+def parse_formation(shape: Any) -> dict[str, int] | None:
+    """Parse 'D-M-F' (e.g. '3-4-3') into outfield lineup targets.
+
+    Returns None for anything that is not a legal FPL shape, so a malformed
+    upstream value degrades to "no prior" instead of corrupting the solve.
+    """
+    if not shape or not isinstance(shape, str):
+        return None
+    parts = shape.strip().split("-")
+    if len(parts) != 3:
+        return None
+    try:
+        defenders, midfielders, forwards = (int(part) for part in parts)
+    except (TypeError, ValueError):
+        return None
+    targets = {"DEF": defenders, "MID": midfielders, "FWD": forwards}
+    if sum(targets.values()) != 10:
+        return None
+    for position, count in targets.items():
+        if not LINEUP_MIN[position] <= count <= LINEUP_MAX[position]:
+            return None
+    return targets
+
+
 def optimize_horizon(current_squad: list[dict[str, Any]],
                      candidates: list[dict[str, Any]], bank: int,
                      free_transfers: int, *, horizon: int = 3,
@@ -77,6 +101,8 @@ def optimize_horizon(current_squad: list[dict[str, Any]],
                      captain_min_start: float = 0.75,
                      captain_min_minutes: float = 65.0,
                      transfer_friction: float = 0.15,
+                     template_formation: str | None = None,
+                     formation_prior_weight: float = 0.0,
                      timeout_seconds: int = 25) -> dict[str, Any]:
     """Solve a legal receding-horizon FPL plan and return JSON-safe evidence."""
     if len(current_squad) != 15:
@@ -158,6 +184,25 @@ def optimize_horizon(current_squad: list[dict[str, Any]],
         model += cash[week] == previous_cash + sell - buy
 
     objective = []
+    shape_targets = parse_formation(template_formation)
+    shape_weight = max(0.0, float(formation_prior_weight or 0.0))
+    shape_applied = bool(shape_targets) and shape_weight > 0.0
+    shape_dev = {}
+    if shape_applied:
+        # Soft shape prior. The elite template's formation is evidence about
+        # where points are actually scored, but it must never make a legal
+        # plan infeasible, so deviation is PRICED rather than forbidden: the
+        # solver may still break shape when the xPts gain exceeds the penalty.
+        for week in range(horizon):
+            for position, target in shape_targets.items():
+                pos_ids = [player_id for player_id in ids
+                           if by_id[player_id]["position"] == position]
+                above = pulp.LpVariable(f"shape_above_{position}_{week}", lowBound=0)
+                below = pulp.LpVariable(f"shape_below_{position}_{week}", lowBound=0)
+                played = pulp.lpSum(lineup[player_id][week] for player_id in pos_ids)
+                model += played - target <= above
+                model += target - played <= below
+                shape_dev[(position, week)] = (above, below)
     for week in range(horizon):
         weight = float(weights[week])
         for player_id in ids:
@@ -168,6 +213,10 @@ def optimize_horizon(current_squad: list[dict[str, Any]],
             objective.append(weight * _captain_utility(player, week) * captain[player_id][week])
             objective.append(weight * bench_weight * robust
                              * (squad[player_id][week] - lineup[player_id][week]))
+        if shape_applied:
+            for position in shape_targets:
+                above, below = shape_dev[(position, week)]
+                objective.append(-weight * shape_weight * (above + below))
         objective.append(-weight * 4.0 * hits[week])
         objective.append(-transfer_friction * transfer_count[week])
         objective.append(-0.01 * lost_roll[week])
@@ -228,6 +277,20 @@ def optimize_horizon(current_squad: list[dict[str, Any]],
         "objective": round(float(pulp.value(model.objective) or 0.0), 3),
         "candidate_pool_size": len(players), "weights": list(weights[:horizon]),
         "risk_penalty": risk_penalty, "bench_weight": bench_weight,
+        "formation_prior": {
+            "applied": shape_applied,
+            "template_formation": template_formation,
+            "target": shape_targets,
+            "weight": shape_weight,
+            "chosen_formation": weeks[0]["formation"] if weeks else None,
+            # Compare against the PARSED target, not the raw upstream string:
+            # a value like "3-4-3 " parses fine but would never string-equal
+            # the canonical "3-4-3" that _formation() emits.
+            "matched": bool(
+                shape_applied and weeks
+                and weeks[0]["formation"] == "{DEF}-{MID}-{FWD}".format(**shape_targets)
+            ),
+        },
         "captain_gate": {"min_start": captain_min_start, "min_minutes": captain_min_minutes},
         "weeks": weeks,
     }

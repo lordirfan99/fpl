@@ -623,6 +623,8 @@ def main():
                 captain_min_start=float(settings.get("v4_captain_min_start", 0.75)),
                 captain_min_minutes=float(settings.get("v4_captain_min_minutes", 65)),
                 transfer_friction=float(settings.get("v4_transfer_friction", 0.15)),
+                template_formation=(competitive_context or {}).get("template_formation"),
+                formation_prior_weight=float(settings.get("v4_formation_prior_weight", 0.0)),
             )
         except Exception as error:
             print(f"!! V4.1 HORIZON MILP FAILED - no plan persisted: {error!r}")
