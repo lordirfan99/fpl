@@ -45,13 +45,20 @@ Empty output = silence. Same semantics as the old no_agent crons.
 
 ## 2. Production target (do not provision another VM)
 
+> **Zone note (14 Sep 2026).** The live VM runs in **`us-central1-a`**
+> (34.60.216.122). A same-named instance still exists in `us-central1-f` but is
+> **TERMINATED** — it is the pre-recovery original (see `docs/RUNBOOK.md`
+> § *Current recovered runtime*). Never start both: they share bot tokens and
+> state. Commands below that still say `us-central1-f` describe the original
+> migration and are kept for history.
+
 The existing production VM is authoritative:
 
 | Setting | Value |
 |---|---|
 | Project | `irfan-374115` |
 | Instance | `instance-20260412-121200` |
-| Zone | `us-central1-f` |
+| Zone | `us-central1-a` (see note below) |
 | Install root | `/opt/fpl-autopilot` |
 | Runtime user | `fpl` |
 

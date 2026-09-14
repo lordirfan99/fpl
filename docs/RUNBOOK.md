@@ -333,7 +333,7 @@ for j in fpl-capture-journal fpl-monitor fpl-refresh-fixtures fpl-live-league-re
   gcloud scheduler jobs pause "$j" --location=us-central1 --project=irfan-374115
 done
 # VM write-timers
-gcloud compute ssh instance-20260412-121200 --zone us-central1-f --project irfan-374115 \
+gcloud compute ssh instance-20260412-121200 --zone us-central1-a --project irfan-374115 \
   --command 'sudo systemctl disable --now fpl-auto-runner.timer fpl-daily-pull.timer fpl-league-finalizer.timer'
 ```
 Keep running during a freeze: `fpl-telegram.service`, `fpl-token-keepalive.timer`,
