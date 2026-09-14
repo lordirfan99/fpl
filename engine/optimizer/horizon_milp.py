@@ -77,11 +77,21 @@ def optimize_horizon(current_squad: list[dict[str, Any]],
                      captain_min_start: float = 0.75,
                      captain_min_minutes: float = 65.0,
                      transfer_friction: float = 0.15,
+                     lineup_max: dict[str, int] | None = None,
                      timeout_seconds: int = 25) -> dict[str, Any]:
     """Solve a legal receding-horizon FPL plan and return JSON-safe evidence."""
     if len(current_squad) != 15:
         raise ValueError("current squad must contain 15 players")
     horizon = max(1, min(int(horizon), 3))
+    # Owner-configurable starting-position caps. Defaults to the FPL maximums;
+    # any supplied value is clamped into the legal band so a bad setting can
+    # never make the lineup constraints infeasible.
+    caps = dict(LINEUP_MAX)
+    for position, value in (lineup_max or {}).items():
+        if position in caps:
+            caps[position] = max(LINEUP_MIN[position], min(LINEUP_MAX[position], int(value)))
+    if sum(caps.values()) < 11:
+        raise ValueError(f"lineup_max caps cannot seat 11 players: {caps}")
     protected = {int(value) for value in (protected or set())}
     excluded = {int(value) for value in (excluded or set())}
     players = _prune(current_squad, candidates, horizon)
@@ -137,7 +147,7 @@ def optimize_horizon(current_squad: list[dict[str, Any]],
             pos_ids = [player_id for player_id in ids if by_id[player_id]["position"] == position]
             model += pulp.lpSum(squad[player_id][week] for player_id in pos_ids) == quota
             model += pulp.lpSum(lineup[player_id][week] for player_id in pos_ids) >= LINEUP_MIN[position]
-            model += pulp.lpSum(lineup[player_id][week] for player_id in pos_ids) <= LINEUP_MAX[position]
+            model += pulp.lpSum(lineup[player_id][week] for player_id in pos_ids) <= caps[position]
         for club in sorted({by_id[player_id]["club"] for player_id in ids}):
             club_ids = [player_id for player_id in ids if by_id[player_id]["club"] == club]
             model += pulp.lpSum(squad[player_id][week] for player_id in club_ids) <= 3
