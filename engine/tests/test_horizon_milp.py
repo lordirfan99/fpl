@@ -5,7 +5,7 @@ import unittest
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "optimizer"))
 
-from horizon_milp import optimize_horizon  # noqa: E402
+from horizon_milp import optimize_horizon, parse_formation  # noqa: E402
 
 
 def player(pid, position, club, cost, values, start=0.9, minutes=80):
@@ -73,6 +73,104 @@ class HorizonMilpTests(unittest.TestCase):
         result = optimize_horizon(squad, squad, bank=0, free_transfers=0,
                                   paid_transfers_allowed=False)
         self.assertEqual(result["weeks"][0]["captain_id"], midfielder["id"])
+
+
+def defender_heavy_squad():
+    """A squad whose best XI on pure xPts is 5-4-1.
+
+    Five strong defenders, one strong forward and two weak ones, which is the
+    live GW5 shape that produced the 5-4-1 the elite template disagreed with.
+    """
+    squad = legal_squad()
+    for player_row in squad:
+        if player_row["position"] == "DEF":
+            player_row.update(xpts_by_gw=[6.0, 6.0, 6.0])
+        elif player_row["position"] == "MID":
+            player_row.update(xpts_by_gw=[5.0, 5.0, 5.0])
+    forwards = [p for p in squad if p["position"] == "FWD"]
+    forwards[0].update(xpts_by_gw=[5.5, 5.5, 5.5])
+    forwards[1].update(xpts_by_gw=[1.0, 1.0, 1.0])
+    forwards[2].update(xpts_by_gw=[1.0, 1.0, 1.0])
+    return squad
+
+
+class ParseFormationTests(unittest.TestCase):
+    def test_accepts_legal_shapes(self):
+        self.assertEqual(parse_formation("3-4-3"),
+                         {"DEF": 3, "MID": 4, "FWD": 3})
+        self.assertEqual(parse_formation("5-4-1"),
+                         {"DEF": 5, "MID": 4, "FWD": 1})
+        self.assertEqual(parse_formation("3-5-2"),
+                         {"DEF": 3, "MID": 5, "FWD": 2})
+
+    def test_tolerates_surrounding_whitespace(self):
+        self.assertEqual(parse_formation(" 3-4-3 "),
+                         {"DEF": 3, "MID": 4, "FWD": 3})
+
+    def test_rejects_illegal_or_malformed_shapes(self):
+        for shape in (None, "", "junk", "9-9-9", "3-4-4", "2-5-3", "6-3-1",
+                      42, ["3", "4", "3"], "3-4", "3-4-3-3"):
+            with self.subTest(shape=shape):
+                self.assertIsNone(parse_formation(shape))
+
+
+class FormationPriorTests(unittest.TestCase):
+    def test_default_weight_is_inert(self):
+        """Zero weight must leave the objective bit-identical."""
+        squad = defender_heavy_squad()
+        baseline = optimize_horizon(squad, squad, bank=0, free_transfers=0,
+                                    paid_transfers_allowed=False)
+        with_prior = optimize_horizon(squad, squad, bank=0, free_transfers=0,
+                                      paid_transfers_allowed=False,
+                                      template_formation="3-4-3",
+                                      formation_prior_weight=0.0)
+        self.assertEqual(baseline["objective"], with_prior["objective"])
+        self.assertEqual(baseline["weeks"][0]["formation"],
+                         with_prior["weeks"][0]["formation"])
+        self.assertFalse(with_prior["formation_prior"]["applied"])
+
+    def test_prior_steers_lineup_to_the_template_shape(self):
+        squad = defender_heavy_squad()
+        baseline = optimize_horizon(squad, squad, bank=0, free_transfers=0,
+                                    paid_transfers_allowed=False)
+        self.assertEqual(baseline["weeks"][0]["formation"], "5-4-1")
+        steered = optimize_horizon(squad, squad, bank=0, free_transfers=0,
+                                   paid_transfers_allowed=False,
+                                   template_formation="3-4-3",
+                                   formation_prior_weight=5.0)
+        self.assertEqual(steered["weeks"][0]["formation"], "3-4-3")
+        self.assertTrue(steered["formation_prior"]["matched"])
+        self.assertEqual(steered["formation_prior"]["target"],
+                         {"DEF": 3, "MID": 4, "FWD": 3})
+
+    def test_prior_is_soft_and_never_infeasible(self):
+        """Even an extreme weight must still return a legal, solved plan."""
+        squad = defender_heavy_squad()
+        result = optimize_horizon(squad, squad, bank=0, free_transfers=0,
+                                  paid_transfers_allowed=False,
+                                  template_formation="3-4-3",
+                                  formation_prior_weight=1000.0)
+        self.assertIn(result["status"], {"Optimal", "Integer Feasible"})
+        self.assertEqual(len(result["weeks"][0]["lineup_ids"]), 11)
+
+    def test_malformed_template_degrades_to_no_prior(self):
+        squad = defender_heavy_squad()
+        result = optimize_horizon(squad, squad, bank=0, free_transfers=0,
+                                  paid_transfers_allowed=False,
+                                  template_formation="9-9-9",
+                                  formation_prior_weight=5.0)
+        self.assertFalse(result["formation_prior"]["applied"])
+        self.assertEqual(result["weeks"][0]["formation"], "5-4-1")
+
+    def test_matched_compares_against_parsed_target(self):
+        """'3-4-3 ' parses fine and must not report a false negative."""
+        squad = defender_heavy_squad()
+        result = optimize_horizon(squad, squad, bank=0, free_transfers=0,
+                                  paid_transfers_allowed=False,
+                                  template_formation="3-4-3 ",
+                                  formation_prior_weight=5.0)
+        self.assertEqual(result["weeks"][0]["formation"], "3-4-3")
+        self.assertTrue(result["formation_prior"]["matched"])
 
 
 if __name__ == "__main__":
