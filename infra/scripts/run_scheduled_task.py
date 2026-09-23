@@ -63,9 +63,15 @@ def _bootstrap_events() -> list[dict]:
 
 
 def _latest_final_gameweek() -> int:
-    return max(
-        (event["id"] for event in _bootstrap_events() if event.get("finished") and event.get("data_checked")),
-        default=0,
+    return max(_final_gameweeks(), default=0)
+
+
+def _final_gameweeks() -> list[int]:
+    """Return every finalized GW so missed runs can be replayed in order."""
+    return sorted(
+        int(event["id"])
+        for event in _bootstrap_events()
+        if event.get("finished") and event.get("data_checked")
     )
 
 
@@ -114,14 +120,11 @@ def _validate_gameweek(gameweek: int) -> None:
         print(f"GW{gameweek} league {league}: {len(full['competitors'])} valid managers", flush=True)
 
 
-def task_finalize_gameweek(gameweek: int | None) -> None:
-    gameweek = gameweek or _latest_final_gameweek()
-    if not gameweek:
-        print("no finished and data-checked gameweek is waiting for collection", flush=True)
-        return
+def _finalize_one_gameweek(gameweek: int) -> None:
     required = [f"snapshots/gw{gameweek}_league{league}_{kind}.json" for league in LEAGUES for kind in ("data", "compact")]
-    if all(_bucket().blob(name).exists() for name in required):
-        print(f"GW{gameweek} snapshots already published; nothing to do", flush=True)
+    journal = f"snapshots/journal/{SEASON}/gw{gameweek:02d}.json"
+    if all(_bucket().blob(name).exists() for name in (*required, journal)):
+        print(f"GW{gameweek} snapshots and journal already published; nothing to do", flush=True)
         return
 
     _run("scripts/fetch_fixture_horizon.py")
@@ -146,6 +149,22 @@ def task_finalize_gameweek(gameweek: int | None) -> None:
     if model_validation.is_file():
         _upload(model_validation, f"snapshots/reports/model-validation/{SEASON}.json", immutable=False)
     print(f"GW{gameweek} finalized and published to gs://{BUCKET}/snapshots/", flush=True)
+
+
+def task_finalize_gameweek(gameweek: int | None) -> None:
+    """Finalize an override or replay every missing finalized GW in order."""
+    targets = [gameweek] if gameweek else _final_gameweeks()
+    if not targets:
+        print("no finished and data-checked gameweek is waiting for collection", flush=True)
+        return
+    bucket = _bucket()
+    for target in targets:
+        required = [f"snapshots/gw{target}_league{league}_{kind}.json" for league in LEAGUES for kind in ("data", "compact")]
+        journal = f"snapshots/journal/{SEASON}/gw{target:02d}.json"
+        if all(bucket.blob(name).exists() for name in (*required, journal)):
+            print(f"GW{target} snapshots and journal already published; nothing to do", flush=True)
+            continue
+        _finalize_one_gameweek(target)
 
 
 def task_monitor() -> None:
