@@ -127,6 +127,34 @@ def _finalize_one_gameweek(gameweek: int) -> None:
         print(f"GW{gameweek} snapshots and journal already published; nothing to do", flush=True)
         return
 
+    # Rebuilding index/exports overwrites them from local data/journal only,
+    # so hydrate records that exist remotely but not locally first. Otherwise
+    # replaying a missed week would drop published weeks from the aggregates.
+    journal_dir = ROOT / "data" / "journal" / SEASON
+    journal_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("index.json", "exports/gameweeks.csv", "exports/players.csv", "exports/manifest.json", "exports/README.md"):
+        local, remote = journal_dir / name, f"snapshots/journal/{SEASON}/{name}"
+        if not local.exists() and _bucket().blob(remote).exists():
+            local.parent.mkdir(parents=True, exist_ok=True)
+            local.write_text(_bucket().blob(remote).download_as_text(encoding="utf-8"), encoding="utf-8")
+            print(f"hydrated {name} from gs://{BUCKET}/{remote}", flush=True)
+    for remote in _bucket().list_blobs(prefix=f"snapshots/journal/{SEASON}/"):
+        if not remote.name.endswith(".json") or remote.name.count("/") != 3:
+            continue
+        gw_part = remote.name.rsplit("/", 1)[-1]
+        if not (gw_part.startswith("gw") and gw_part.endswith(".json")):
+            continue
+        local = journal_dir / gw_part
+        if local.exists():
+            continue
+        try:
+            record = json.loads(_bucket().blob(remote.name).download_as_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            print(f"skipping malformed remote journal {remote.name}: {error}", flush=True)
+            continue
+        local.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+        print(f"hydrated {gw_part} from gs://{BUCKET}/{remote.name}", flush=True)
+
     _run("scripts/fetch_fixture_horizon.py")
     _run("scripts/fetch_gw_data_fixed.py", "--gw", str(gameweek), "--league", *map(str, LEAGUES), "--max", "3000", "--workers", "16")
     for league in LEAGUES:
