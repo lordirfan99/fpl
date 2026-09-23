@@ -209,24 +209,35 @@ def _sync_journal_aggregates(bucket) -> bool:
         return False
 
     local_gws = sorted(int(row["gameweek"]) for row in entries)
-    repaired = False
     index_blob = bucket.blob(f"snapshots/journal/{SEASON}/index.json")
+    remote_index = None
     if index_blob.exists():
         try:
-            remote_gws = sorted(int(row["gameweek"]) for row in json.loads(index_blob.download_as_text(encoding="utf-8"))["gameweeks"])
+            remote_index = json.loads(index_blob.download_as_text(encoding="utf-8"))
+            remote_gws = sorted(int(row["gameweek"]) for row in remote_index["gameweeks"])
         except (OSError, json.JSONDecodeError, KeyError):
-            remote_gws = []
+            remote_index, remote_gws = None, []
         if remote_gws == local_gws:
             return False
         print(f"aggregate drift: remote index covers {remote_gws}, local records cover {local_gws}; rebuilding", flush=True)
-    index_blob.upload_from_string(json.dumps(build_index(entries, SEASON), indent=2) + "\n", content_type="application/json")
+    # Derived exports first, index last: the index is the completion marker,
+    # so an interrupted reconciliation is retried on the next run instead of
+    # being mistaken for a completed one.
+    player_lines = ["season,gameweek,element,name,team,position,role,points,minutes"]
+    for row in entries:
+        for player in row.get("outcome", {}).get("squad", []):
+            role = "captain" if player.get("is_captain") else "vice" if player.get("is_vice_captain") else "starter" if player.get("multiplier") else "bench"
+            values = [row["season"], row["gameweek"], player.get("element"), player.get("name"), player.get("team"), player.get("position"), role, player.get("points"), player.get("minutes")]
+            player_lines.append(",".join('"' + str(value).replace('"', '""') + '"' for value in values))
     bucket.blob(f"snapshots/journal/{SEASON}/exports/gameweeks.csv").upload_from_string(journal_csv(entries), content_type="text/csv")
+    bucket.blob(f"snapshots/journal/{SEASON}/exports/players.csv").upload_from_string("\n".join(player_lines) + "\n", content_type="text/csv")
     bucket.blob(f"snapshots/journal/{SEASON}/exports/manifest.json").upload_from_string(
         json.dumps({"schema_version": 1, "season": SEASON, "gameweeks": local_gws, "private_notes_included": False}, indent=2) + "\n",
         content_type="application/json",
     )
+    index_blob.upload_from_string(json.dumps(build_index(entries, SEASON), indent=2) + "\n", content_type="application/json")
     print(f"published rebuilt journal aggregates for {local_gws}", flush=True)
-    return repaired
+    return True
 
 
 def task_finalize_gameweek(gameweek: int | None) -> None:
