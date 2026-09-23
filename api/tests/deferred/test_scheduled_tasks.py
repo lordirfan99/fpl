@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
-SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "run_scheduled_task.py"
+SCRIPT = Path(__file__).resolve().parents[3] / "infra" / "scripts" / "run_scheduled_task.py"
 SPEC = importlib.util.spec_from_file_location("run_scheduled_task", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC and SPEC.loader
@@ -29,6 +29,15 @@ def test_latest_final_gameweek_picks_highest_finished_and_data_checked(monkeypat
 def test_latest_final_gameweek_is_zero_before_any_gameweek_completes(monkeypatch) -> None:
     monkeypatch.setattr(MODULE, "_bootstrap_events", lambda: [{"id": 1, "finished": False, "data_checked": False}])
     assert MODULE._latest_final_gameweek() == 0
+
+
+def test_final_gameweeks_returns_all_completed_weeks_in_order(monkeypatch) -> None:
+    monkeypatch.setattr(MODULE, "_bootstrap_events", lambda: [
+        {"id": 4, "finished": True, "data_checked": True},
+        {"id": 2, "finished": True, "data_checked": True},
+        {"id": 3, "finished": True, "data_checked": False},
+    ])
+    assert MODULE._final_gameweeks() == [2, 4]
 
 
 def test_task_names_match_the_provisioned_cloud_run_jobs() -> None:
