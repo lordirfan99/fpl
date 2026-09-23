@@ -23,6 +23,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "api"))
 
+from app.journal import build_index, journal_csv, read_journal_entries
+
 BUCKET = (os.getenv("FPL_SNAPSHOT_BUCKET") or os.getenv("FPL_JOURNAL_BUCKET") or "").strip()
 API_URL = os.getenv("FPL_API_BASE_URL", "https://sportmania.duckdns.org/fpl-scout-api").rstrip("/")
 SITE_URL = os.getenv("FPL_SITE_URL", "https://fpl-scout-intelligence.netlify.app").rstrip("/")
@@ -179,20 +181,73 @@ def _finalize_one_gameweek(gameweek: int) -> None:
     print(f"GW{gameweek} finalized and published to gs://{BUCKET}/snapshots/", flush=True)
 
 
+def _sync_journal_aggregates(bucket) -> bool:
+    """Refresh stale published aggregates once every per-GW record is hydrated.
+
+    The published index/exports are rebuilt from the local journal dir. That
+    dir tracks GW1/GW2 in git, so a stale aggregate (built before a later week
+    was published) persists: nothing rewrites it when every week is already
+    published. Compare the remote aggregate's coverage with the local records
+    and re-upload whenever they disagree. Returns True when repaired.
+    """
+    journal_dir = ROOT / "data" / "journal" / SEASON
+    for blob in bucket.list_blobs(prefix=f"snapshots/journal/{SEASON}/"):
+        if blob.name.count("/") != 3 or not blob.name.endswith(".json"):
+            continue
+        name = blob.name.rsplit("/", 1)[-1]
+        if name.startswith("gw") and name.endswith(".json") and not (journal_dir / name).exists():
+            try:
+                record = json.loads(blob.download_as_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                print(f"skipping malformed remote journal {blob.name}: {error}", flush=True)
+                continue
+            (journal_dir / name).parent.mkdir(parents=True, exist_ok=True)
+            (journal_dir / name).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+            print(f"hydrated {name} from gs://{BUCKET}/{blob.name}", flush=True)
+    entries = read_journal_entries(ROOT / "data", SEASON)
+    if not entries:
+        return False
+
+    local_gws = sorted(int(row["gameweek"]) for row in entries)
+    repaired = False
+    index_blob = bucket.blob(f"snapshots/journal/{SEASON}/index.json")
+    if index_blob.exists():
+        try:
+            remote_gws = sorted(int(row["gameweek"]) for row in json.loads(index_blob.download_as_text(encoding="utf-8"))["gameweeks"])
+        except (OSError, json.JSONDecodeError, KeyError):
+            remote_gws = []
+        if remote_gws == local_gws:
+            return False
+        print(f"aggregate drift: remote index covers {remote_gws}, local records cover {local_gws}; rebuilding", flush=True)
+    index_blob.upload_from_string(json.dumps(build_index(entries, SEASON), indent=2) + "\n", content_type="application/json")
+    bucket.blob(f"snapshots/journal/{SEASON}/exports/gameweeks.csv").upload_from_string(journal_csv(entries), content_type="text/csv")
+    bucket.blob(f"snapshots/journal/{SEASON}/exports/manifest.json").upload_from_string(
+        json.dumps({"schema_version": 1, "season": SEASON, "gameweeks": local_gws, "private_notes_included": False}, indent=2) + "\n",
+        content_type="application/json",
+    )
+    print(f"published rebuilt journal aggregates for {local_gws}", flush=True)
+    return repaired
+
+
 def task_finalize_gameweek(gameweek: int | None) -> None:
     """Finalize an override or replay every missing finalized GW in order."""
-    targets = [gameweek] if gameweek else _final_gameweeks()
-    if not targets:
-        print("no finished and data-checked gameweek is waiting for collection", flush=True)
-        return
     bucket = _bucket()
+    if gameweek:
+        targets = [gameweek]
+    else:
+        targets = [gw for gw in _final_gameweeks()
+                   if not all(bucket.blob(f"snapshots/gw{gw}_league{league}_{kind}.json").exists()
+                              for league in LEAGUES for kind in ("data", "compact"))]
+    if not targets:
+        # Every finalized GW is already published as a snapshot; the journal
+        # records may still lag (e.g. a run died between both uploads), so
+        # reconcile records + aggregates before declaring nothing to do.
+        _sync_journal_aggregates(bucket)
+        print("no missing finalized gameweek snapshots are waiting for collection", flush=True)
+        return
     for target in targets:
-        required = [f"snapshots/gw{target}_league{league}_{kind}.json" for league in LEAGUES for kind in ("data", "compact")]
-        journal = f"snapshots/journal/{SEASON}/gw{target:02d}.json"
-        if all(bucket.blob(name).exists() for name in (*required, journal)):
-            print(f"GW{target} snapshots and journal already published; nothing to do", flush=True)
-            continue
         _finalize_one_gameweek(target)
+    _sync_journal_aggregates(bucket)
 
 
 def task_monitor() -> None:
