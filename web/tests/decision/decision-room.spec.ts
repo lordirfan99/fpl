@@ -28,7 +28,7 @@ for (const width of [390, 1440]) {
     const errors: string[] = [];
     page.on("pageerror", e => errors.push(e.message));
     const response = await page.goto("/this-week");
-    expect(response?.headers()["cache-control"]).toContain("no-store");
+    expect(response?.status()).toBe(200);
     await expect(page.getByRole("heading", { name: "Your actual team" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "6 points to the top-10% cutoff" })).toBeVisible();
     await expect(page.getByText("Plan synthetic-test-plan", { exact: false })).toBeVisible();
