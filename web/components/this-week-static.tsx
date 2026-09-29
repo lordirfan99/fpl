@@ -17,12 +17,11 @@ type Context = {
     points_gap?: number;
     inside_target?: boolean;
   };
-  ownership?: { sample_count?: number; population?: number };
+  ownership?: { sample_count?: number; population?: number; rows?: { element: number; name: string; target_captain_pct?: number | null }[] };
 };
 
 type PrivateResponse = { status?: string; packet?: DecisionPacket | null; account_checked_at?: string };
 
-const API = "https://sportmania.duckdns.org/fpl-scout-api";
 const leagues = [
   { id: 58005, name: "KK Old Boys" },
   { id: 131997, name: "Overall IFE" },
@@ -43,7 +42,7 @@ export function ThisWeekStatic() {
   useEffect(() => {
     const controller = new AbortController();
     setState("loading");
-    fetch(`${API}/v1/leagues/${leagueId}/decision-context`, { signal: controller.signal })
+    fetch(`/api/public/league-decision?league=${leagueId}`, { signal: controller.signal })
       .then(response => response.ok ? response.json() as Promise<Context> : Promise.reject(new Error("unavailable")))
       .then(value => { setContext(value); setState("ready"); })
       .catch(error => { if (error.name !== "AbortError") setState("unavailable"); });
@@ -53,9 +52,9 @@ export function ThisWeekStatic() {
   useEffect(() => {
     const controller = new AbortController();
     fetch("/api/private/dashboard", { cache: "no-store", signal: AbortSignal.timeout(5000) })
-      .then(response => response.ok ? response.json() as Promise<PrivateResponse> : Promise.reject(new Error("unavailable")))
+      .then(response => response.ok ? response.json() as Promise<PrivateResponse> : Promise.reject(new Error(response.status === 401 ? "signed_out" : "unavailable")))
       .then(value => setPrivatePlan(value))
-      .catch(() => setPrivatePlan({ status: "unavailable" }));
+      .catch(error => setPrivatePlan({ status: error.message === "signed_out" ? "signed_out" : "unavailable" }));
     return () => controller.abort();
   }, []);
 
@@ -67,6 +66,7 @@ export function ThisWeekStatic() {
     {state === "loading" ? <section className="surface decision-unavailable" aria-busy="true"><h2>Loading {selected.name} evidence…</h2><p>This page is static-first. Live league data loads separately and cannot block the page.</p></section> : null}
     {state === "unavailable" ? <section className="surface decision-unavailable"><h2>League evidence temporarily unavailable</h2><p>The static page is ready. The live snapshot API did not respond in time.</p><button type="button" onClick={() => setLeagueId(id => id)}>Retry</button></section> : null}
     {state === "ready" && context ? <section className="surface goal-progress"><span className="evidence-label">RECORDED FACT · {selected.name}</span><h2>{complete ? `${Math.abs(goal!.points_gap ?? 0)} points ${goal!.points_gap && goal!.points_gap > 0 ? "to" : "ahead of"} the top-10% cutoff` : "Target progress unavailable"}</h2><p>{complete ? `Rank ${goal!.owner_rank!.toLocaleString()} / ${goal!.manager_count!.toLocaleString()} · Target rank ${goal!.cutoff_rank} or better` : "Complete standings are required before calculating a cutoff."}</p><p className="decision-caption">GW{context.gameweek ?? "?"} · {context.status === "historical" ? "Historical capture" : "Live recorded snapshot"}</p></section> : null}
-    {privatePlan?.status === "ready" && privatePlan.packet ? <DecisionRoom packet={privatePlan.packet} checkedAt={privatePlan.account_checked_at} /> : <section className="surface"><h2>{privatePlan?.status === "unavailable" ? "Plan unavailable" : "Your private plan"}</h2><p>{privatePlan?.status === "unavailable" ? "The verified plan is not available right now. This does not imply a hold recommendation." : "The verified squad, bank and transfer plan loads privately after the static page is ready."}</p><Link href="/sign-in">Unlock private plan</Link></section>}
+    {state === "ready" && context?.ownership?.rows?.length ? <section className="surface rival-exposure"><h2>Recorded rival picks</h2><ul>{context.ownership.rows.slice(0, 8).map(player => <li key={player.element}>{player.name}</li>)}</ul></section> : null}
+    {privatePlan?.status === "ready" && privatePlan.packet ? <DecisionRoom packet={privatePlan.packet} checkedAt={privatePlan.account_checked_at} rivalCaptaincy={{ gameweek: context?.gameweek, counts: Object.fromEntries((context?.ownership?.rows ?? []).map(player => [player.element, player.target_captain_pct ?? null])) }} /> : <section className="surface"><h2>{privatePlan?.status === "signed_out" ? "Your personal plan stays private" : privatePlan?.status === "unavailable" ? "Plan unavailable" : "Your private plan"}</h2><p>{privatePlan?.status === "signed_out" ? "Enter the dashboard password to see your verified squad, bank and the same plan as Telegram." : privatePlan?.status === "unavailable" ? "The verified plan is not available right now. This does not imply a hold recommendation." : "The verified squad, bank and transfer plan loads privately after the static page is ready."}</p><Link href="/sign-in">Unlock private plan</Link></section>}
   </>;
 }
