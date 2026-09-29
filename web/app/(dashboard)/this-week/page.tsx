@@ -10,7 +10,7 @@ import { resolveLeague, leagues } from "@/components/league-switcher";
 export const dynamic = "force-dynamic";
 export default async function ThisWeekPage({ searchParams }: { searchParams: Promise<{ league?: string }> }) {
   const selected = resolveLeague((await searchParams).league);
-  const [data, league] = await Promise.all([getPrivateDashboard(), getLeagueDecision(selected.id)]);
+  const [data, league] = await Promise.all([getPrivateDashboard(5000), getLeagueDecision(selected.id)]);
   return <div className="page-stack decision-home"><header><span className="evidence-label">YOUR DECISION ROOM</span><h1>This gameweek</h1><p>Your team. Your next move. The evidence behind it.</p></header>
     <nav className="decision-league-switch" aria-label="Decision league">{leagues.map(l => <Link key={l.id} href={`/this-week?league=${l.id}`} aria-current={l.id === selected.id ? "page" : undefined}>{l.name}</Link>)}</nav>
     <GoalProgress context={league} name={selected.name} />

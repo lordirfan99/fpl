@@ -2,14 +2,14 @@ import "server-only";
 import { isOwner } from "@/auth";
 import type { PrivateDashboard } from "./decision-room";
 
-export async function getPrivateDashboard(): Promise<PrivateDashboard> {
+export async function getPrivateDashboard(timeoutMs = 12000): Promise<PrivateDashboard> {
   if (!await isOwner()) return { status: "signed_out", packet: null };
   const token = process.env.FPL_DASHBOARD_READ_TOKEN;
   if (!token || token.length < 32) return { status: "unavailable", packet: null };
   try {
     const base = process.env.FPL_API_BASE_URL ?? "https://sportmania.duckdns.org/fpl-scout-api";
     const response = await fetch(`${base}/v1/private/dashboard/current`, {
-      headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: AbortSignal.timeout(5000),
+      headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) return { status: "unavailable", packet: null };
     const result = await response.json() as PrivateDashboard;
