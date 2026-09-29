@@ -44,7 +44,7 @@ export function ThisWeekStatic() {
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), 5000);
     setState("loading");
-    fetch(`/api/public/league-decision?league=${leagueId}`, { signal: controller.signal })
+    fetch(`/api/public/league-decision/${leagueId}`, { signal: controller.signal })
       .then(response => response.ok ? response.json() as Promise<Context> : Promise.reject(new Error("unavailable")))
       .then(value => { setContext(value); setState("ready"); })
       .catch(error => { if (error.name !== "AbortError") setState("unavailable"); });
