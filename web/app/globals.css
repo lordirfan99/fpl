@@ -141,3 +141,57 @@ html,body{max-width:100%;overflow-x:hidden}
 .chip-ask button:hover{border-color:var(--mint);background:#effcf7}
 .chip-ask button.quiet{color:var(--muted);font-weight:650}
 .password-sign-in{display:grid;gap:8px;max-width:360px;margin-top:18px}.password-sign-in label{font-size:10px;font-weight:850;color:var(--purple)}.password-sign-in input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink)}.password-sign-in input:focus-visible{outline:3px solid rgba(0,222,160,.25);border-color:var(--mint-dark)}.password-sign-in button{padding:10px 12px;border:0;border-radius:8px;background:var(--purple);color:#fff;font-weight:850;cursor:pointer}.password-sign-in button:disabled{opacity:.65;cursor:wait}.password-sign-in .form-error{min-height:1.2em;margin:0;color:var(--red);font-size:9px}
+
+/* ── Decision-first revamp layer ─────────────────────────────────────────
+   One accent, stat-first surfaces, skeleton loading, freshness chips and
+   the gameweek checklist hero. Appended last so it overrides earlier rules
+   without touching per-page styles. */
+:root{--shadow:0 10px 30px rgba(36,20,43,.06)}
+.surface{border-radius:14px}
+.nav-more{margin:2px 0 14px}
+.nav-more>summary{display:flex;align-items:center;gap:8px;padding:11px 12px;border-radius:9px;color:#b79ec0;font-size:8px;font-weight:850;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;list-style:none}
+.nav-more>summary::-webkit-details-marker{display:none}
+.nav-more>summary::after{content:"⋯"}
+.nav-more[open]>summary::after{content:"⋯";color:var(--mint)}
+.nav-more .nav-section{margin-bottom:0}
+
+/* Freshness chip: recorded capture age, never a fake "live" claim */
+.freshness-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid rgba(0,190,130,.3);border-radius:999px;background:#eafff7;color:var(--mint-dark);font-size:8px;font-weight:850;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.freshness-chip.stale{border-color:rgba(241,167,45,.4);background:#fff7e8;color:#8a6116}
+.goal-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+@media(max-width:720px){.goal-heading{flex-direction:column;gap:10px}.freshness-chip{align-self:flex-start}}
+
+/* Skeleton: honest loading state instead of frozen copy */
+.gw-skeleton{display:grid;gap:10px;padding:4px 0}
+.gw-skeleton .bar{display:block;height:12px;border-radius:6px;background:linear-gradient(100deg,#eceef0 40%,#f7f8f9 50%,#eceef0 60%);background-size:200% 100%;animation:gw-shimmer 1.4s ease-in-out infinite}
+.gw-skeleton .bar.title{width:55%;height:18px}
+.gw-skeleton .bar.short{width:35%}
+.gw-skeleton .bar.grid{height:56px;border-radius:10px}
+@keyframes gw-shimmer{from{background-position:120% 0}to{background-position:-20% 0}}
+@media(prefers-reduced-motion:reduce){.gw-skeleton .bar{animation:none}}
+
+/* Gameweek checklist: the whole decision as scannable rows */
+.gw-checklist{border-color:rgba(0,190,130,.28);background:linear-gradient(150deg,#f4fdf9,#fff 42%)}
+.gw-checklist-head{display:flex;justify-content:space-between;gap:20px;padding:18px 18px 14px;border-bottom:1px solid var(--line)}
+.gw-checklist-head p{max-width:640px;margin:6px 0 0;color:var(--muted);font-size:10px;line-height:1.5}
+.gw-checklist-head h2{margin:6px 0 0;font-size:20px}
+.gw-deadline{display:grid;justify-items:end;gap:3px;flex:0 0 auto;min-width:150px;padding:10px 14px;border:1px solid var(--line);border-radius:11px;background:var(--surface-soft);text-align:right}
+.gw-deadline span{color:var(--muted);font-size:8px;font-weight:850;letter-spacing:.1em;text-transform:uppercase}
+.gw-deadline strong{color:var(--purple);font-size:15px}
+.gw-deadline small{color:var(--muted);font-size:8px}
+.gw-checklist-rows{display:grid;margin:0;padding:8px 18px 18px;list-style:none}
+.gw-checklist-rows li{display:grid;grid-template-columns:120px minmax(0,1fr) auto;align-items:baseline;gap:12px;padding:10px 0;border-bottom:1px dashed var(--line)}
+.gw-checklist-rows li:last-child{border-bottom:0}
+.gw-checklist-rows span{color:var(--muted);font-size:8px;font-weight:850;letter-spacing:.09em;text-transform:uppercase}
+.gw-checklist-rows strong{color:var(--ink);font-size:11px;line-height:1.45;overflow-wrap:anywhere}
+.gw-checklist-rows small{color:var(--mint-dark);font-size:8px;font-weight:800;text-align:right}
+.gw-checklist.locked{border-style:dashed}
+.gw-checklist.locked .gw-checklist-rows strong{color:var(--muted)}
+.gw-checklist.locked>a{display:inline-block;margin:4px 18px 18px;padding:10px 13px;border-radius:9px;background:var(--purple);color:#fff;font-size:9px;font-weight:850}
+@media(max-width:720px){
+  .gw-checklist-head{flex-direction:column;gap:12px;padding:16px 14px 12px}
+  .gw-deadline{justify-items:start;min-width:0;width:100%;text-align:left}
+  .gw-checklist-rows{padding:6px 14px 14px}
+  .gw-checklist-rows li{grid-template-columns:96px minmax(0,1fr);gap:8px}
+  .gw-checklist-rows small{grid-column:2;text-align:left}
+}
