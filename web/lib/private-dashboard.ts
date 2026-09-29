@@ -2,7 +2,7 @@ import "server-only";
 import { isOwner } from "@/auth";
 import type { PrivateDashboard } from "./decision-room";
 
-export async function getPrivateDashboard(): Promise<PrivateDashboard> {
+export async function getPrivateDashboard(timeoutMs = 12000): Promise<PrivateDashboard> {
   if (!await isOwner()) return { status: "signed_out", packet: null };
   const token = process.env.FPL_DASHBOARD_READ_TOKEN;
   if (!token || token.length < 32) return { status: "unavailable", packet: null };
