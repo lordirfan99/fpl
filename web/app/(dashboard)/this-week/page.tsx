@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import "@/app/decision-room.css";
 import "@/app/league-decision.css";
 import { DecisionRoom } from "@/components/decision-room";
@@ -8,15 +9,31 @@ import { GoalProgress, RivalExposure } from "@/components/league-decision";
 import { resolveLeague, leagues } from "@/components/league-switcher";
 
 export const dynamic = "force-dynamic";
-export default async function ThisWeekPage({ searchParams }: { searchParams: Promise<{ league?: string }> }) {
-  const selected = resolveLeague((await searchParams).league);
+
+type SelectedLeague = ReturnType<typeof resolveLeague>;
+
+function DecisionLoading({ name }: { name: string }) {
+  return <section className="surface decision-unavailable" aria-busy="true">
+    <h2>Loading {name} evidence…</h2>
+    <p>The public league snapshot is loading. Your personal plan remains private and is loaded separately.</p>
+  </section>;
+}
+
+async function DecisionContent({ selected }: { selected: SelectedLeague }) {
   const [data, league] = await Promise.all([getPrivateDashboard(5000), getLeagueDecision(selected.id)]);
-  return <div className="page-stack decision-home"><header><span className="evidence-label">YOUR DECISION ROOM</span><h1>This gameweek</h1><p>Your team. Your next move. The evidence behind it.</p></header>
-    <nav className="decision-league-switch" aria-label="Decision league">{leagues.map(l => <Link key={l.id} href={`/this-week?league=${l.id}`} aria-current={l.id === selected.id ? "page" : undefined}>{l.name}</Link>)}</nav>
+  return <>
     <GoalProgress context={league} name={selected.name} />
     {data.status === "ready" && data.packet ? <DecisionRoom packet={data.packet} checkedAt={data.account_checked_at} rivalCaptaincy={{ gameweek: league?.gameweek, counts: Object.fromEntries((league?.ownership.rows ?? []).map(p => [p.element, p.target_captain_pct])) }}><RivalExposure context={league} ownedIds={data.packet.account.picks.map(p => p.element)} /></DecisionRoom> : <section className="surface decision-unavailable"><h2>{data.status === "signed_out" ? "Your personal plan stays private" : "Plan unavailable"}</h2>
       <p>{data.status === "signed_out" ? "Enter the dashboard password to see your verified squad, bank and the same plan as Telegram." : "A current verified plan is not available. This does not mean you should hold your transfer. Check your latest Telegram plan and its input time."}</p>
       <Link href={data.status === "signed_out" ? "/sign-in" : "/league"}>{data.status === "signed_out" ? "Unlock private plan" : "Explore public league evidence"}</Link></section>}
     {data.status !== "ready" ? <RivalExposure context={league} /> : null}
+  </>;
+}
+
+export default async function ThisWeekPage({ searchParams }: { searchParams: Promise<{ league?: string }> }) {
+  const selected = resolveLeague((await searchParams).league);
+  return <div className="page-stack decision-home"><header><span className="evidence-label">YOUR DECISION ROOM</span><h1>This gameweek</h1><p>Your team. Your next move. The evidence behind it.</p></header>
+    <nav className="decision-league-switch" aria-label="Decision league">{leagues.map(l => <Link key={l.id} href={`/this-week?league=${l.id}`} aria-current={l.id === selected.id ? "page" : undefined}>{l.name}</Link>)}</nav>
+    <Suspense fallback={<DecisionLoading name={selected.name} />}><DecisionContent selected={selected} /></Suspense>
   </div>;
 }
