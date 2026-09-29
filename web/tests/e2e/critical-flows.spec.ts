@@ -111,7 +111,7 @@ test("mobile navigation exposes primary and overflow destinations", async ({ pag
   test.skip(!testInfo.project.name.includes("mobile"), "mobile-only control check");
   await page.goto("/my-team", { waitUntil: "domcontentloaded" });
   const mobileNav = page.getByRole("navigation", { name: "Mobile navigation" });
-  await expect(mobileNav.getByRole("link", { name: "My Team" })).toBeVisible();
+  await expect(mobileNav.getByRole("link", { name: "Players" })).toBeVisible();
   const more = mobileNav.getByRole("button", { name: "More" });
   await expect(more).toBeEnabled();
   await more.click();

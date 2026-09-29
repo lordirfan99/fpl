@@ -2,6 +2,11 @@
   base = "web"
   command = "npm run build"
 
+[functions]
+  # Relative to build.base: user functions (the keep-warm scheduler) live in
+  # web/netlify/functions, separate from the Next.js plugin's internal ones.
+  directory = "netlify/functions"
+
 [build.environment]
   NODE_VERSION = "24"
 
