@@ -8,7 +8,13 @@ export type LeagueDecisionContext = {
 export async function getLeagueDecision(league: number): Promise<LeagueDecisionContext | null> {
   try {
     const base = process.env.FPL_API_BASE_URL ?? "https://sportmania.duckdns.org/fpl-scout-api";
-    const response = await fetch(`${base}/v1/leagues/${league}/decision-context`, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+    // This is public, snapshot-backed research data. Cache it briefly so a
+    // slow/cold API build does not block every page request. The page itself
+    // remains private/no-store because it also contains the owner's dashboard.
+    const response = await fetch(`${base}/v1/leagues/${league}/decision-context`, {
+      next: { revalidate: 300, tags: [`league-decision:${league}`] },
+      signal: AbortSignal.timeout(8000),
+    } as RequestInit & { next: { revalidate: number; tags: string[] } });
     if (!response.ok) return null;
     const value: unknown = await response.json();
     if (!value || typeof value !== "object") return null;
