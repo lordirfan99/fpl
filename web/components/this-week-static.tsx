@@ -17,7 +17,7 @@ type Context = {
     points_gap?: number;
     inside_target?: boolean;
   };
-  ownership?: { sample_count?: number; population?: number; rows?: { element: number; name: string; target_captain_pct?: number | null }[] };
+  ownership?: { sample_count?: number; population?: number; rows?: { element: number; name: string; league_pct?: number; target_pct?: number | null; target_captain_pct?: number | null }[] };
 };
 
 type PrivateResponse = { status?: string; packet?: DecisionPacket | null; account_checked_at?: string };
@@ -31,6 +31,7 @@ export function ThisWeekStatic() {
   const [leagueId, setLeagueId] = useState(58005);
   const [context, setContext] = useState<Context | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [retry, setRetry] = useState(0);
   const [privatePlan, setPrivatePlan] = useState<PrivateResponse | null>(null);
 
   useEffect(() => {
@@ -41,32 +42,34 @@ export function ThisWeekStatic() {
 
   useEffect(() => {
     const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 5000);
     setState("loading");
     fetch(`/api/public/league-decision?league=${leagueId}`, { signal: controller.signal })
       .then(response => response.ok ? response.json() as Promise<Context> : Promise.reject(new Error("unavailable")))
       .then(value => { setContext(value); setState("ready"); })
       .catch(error => { if (error.name !== "AbortError") setState("unavailable"); });
-    return () => controller.abort();
-  }, [leagueId]);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [leagueId, retry]);
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/private/dashboard", { cache: "no-store", signal: AbortSignal.timeout(5000) })
+    const timer = window.setTimeout(() => controller.abort(), 5000);
+    fetch("/api/private/dashboard", { cache: "no-store", signal: controller.signal })
       .then(response => response.ok ? response.json() as Promise<PrivateResponse> : Promise.reject(new Error(response.status === 401 ? "signed_out" : "unavailable")))
       .then(value => setPrivatePlan(value))
       .catch(error => setPrivatePlan({ status: error.message === "signed_out" ? "signed_out" : "unavailable" }));
-    return () => controller.abort();
+    return () => { window.clearTimeout(timer); controller.abort(); };
   }, []);
 
   const selected = leagues.find(league => league.id === leagueId) ?? leagues[0];
   const goal = context?.goal;
   const complete = goal?.available && Number.isInteger(goal.owner_rank) && Number.isInteger(goal.cutoff_rank);
   return <>
-    <nav className="decision-league-switch" aria-label="Decision league">{leagues.map(league => <Link key={league.id} href={`/this-week?league=${league.id}`} aria-current={league.id === selected.id ? "page" : undefined}>{league.name}</Link>)}</nav>
+    <nav className="decision-league-switch" aria-label="Decision league">{leagues.map(league => <a key={league.id} href={`/this-week?league=${league.id}`} aria-current={league.id === selected.id ? "page" : undefined}>{league.name}</a>)}</nav>
     {state === "loading" ? <section className="surface decision-unavailable" aria-busy="true"><h2>Loading {selected.name} evidence…</h2><p>This page is static-first. Live league data loads separately and cannot block the page.</p></section> : null}
-    {state === "unavailable" ? <section className="surface decision-unavailable"><h2>League evidence temporarily unavailable</h2><p>The static page is ready. The live snapshot API did not respond in time.</p><button type="button" onClick={() => setLeagueId(id => id)}>Retry</button></section> : null}
-    {state === "ready" && context ? <section className="surface goal-progress"><span className="evidence-label">RECORDED FACT · {selected.name}</span><h2>{complete ? `${Math.abs(goal!.points_gap ?? 0)} points ${goal!.points_gap && goal!.points_gap > 0 ? "to" : "ahead of"} the top-10% cutoff` : "Target progress unavailable"}</h2><p>{complete ? `Rank ${goal!.owner_rank!.toLocaleString()} / ${goal!.manager_count!.toLocaleString()} · Target rank ${goal!.cutoff_rank} or better` : "Complete standings are required before calculating a cutoff."}</p><p className="decision-caption">GW{context.gameweek ?? "?"} · {context.status === "historical" ? "Historical capture" : "Live recorded snapshot"}</p></section> : null}
-    {state === "ready" && context?.ownership?.rows?.length ? <section className="surface rival-exposure"><h2>Recorded rival picks</h2><ul>{context.ownership.rows.slice(0, 8).map(player => <li key={player.element}>{player.name}</li>)}</ul></section> : null}
+    {state === "unavailable" ? <section className="surface decision-unavailable"><h2>League evidence temporarily unavailable</h2><p>The static page is ready. The live snapshot API did not respond in time.</p><button type="button" onClick={() => setRetry(value => value + 1)}>Retry</button></section> : null}
+    {state === "ready" && context ? <section className="surface goal-progress"><span className="evidence-label">RECORDED FACT · {selected.name}</span><h2>{complete ? `${Math.abs(goal!.points_gap ?? 0)} points ${goal!.points_gap === 0 ? "level with" : goal!.points_gap! > 0 ? "to" : "ahead of"} the top-10% cutoff` : "Target progress unavailable"}</h2><p>{complete ? `Rank ${goal!.owner_rank!.toLocaleString()} / ${goal!.manager_count!.toLocaleString()} · Target rank ${goal!.cutoff_rank} or better` : "Complete standings are required before calculating a cutoff."}</p><p className="decision-caption">GW{context.gameweek ?? "?"} · {context.status === "historical" ? "Historical capture" : "Live recorded snapshot"}</p></section> : null}
+    {state === "ready" && context?.ownership?.rows?.length ? <section className="surface rival-exposure"><h2>Recorded rival picks</h2><ul>{context.ownership.rows.map(player => <li key={player.element}><span>{player.name}</span> · target group {player.target_pct ?? "—"}% · captaincy {player.target_captain_pct ?? "—"}%</li>)}</ul></section> : null}
     {privatePlan?.status === "ready" && privatePlan.packet ? <DecisionRoom packet={privatePlan.packet} checkedAt={privatePlan.account_checked_at} rivalCaptaincy={{ gameweek: context?.gameweek, counts: Object.fromEntries((context?.ownership?.rows ?? []).map(player => [player.element, player.target_captain_pct ?? null])) }} /> : <section className="surface"><h2>{privatePlan?.status === "signed_out" ? "Your personal plan stays private" : privatePlan?.status === "unavailable" ? "Plan unavailable" : "Your private plan"}</h2><p>{privatePlan?.status === "signed_out" ? "Enter the dashboard password to see your verified squad, bank and the same plan as Telegram." : privatePlan?.status === "unavailable" ? "The verified plan is not available right now. This does not imply a hold recommendation." : "The verified squad, bank and transfer plan loads privately after the static page is ready."}</p><Link href="/sign-in">Unlock private plan</Link></section>}
   </>;
 }
