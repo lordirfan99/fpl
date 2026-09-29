@@ -9,7 +9,7 @@ export async function getPrivateDashboard(): Promise<PrivateDashboard> {
   try {
     const base = process.env.FPL_API_BASE_URL ?? "https://sportmania.duckdns.org/fpl-scout-api";
     const response = await fetch(`${base}/v1/private/dashboard/current`, {
-      headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: AbortSignal.timeout(12000),
+      headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) return { status: "unavailable", packet: null };
     const result = await response.json() as PrivateDashboard;
