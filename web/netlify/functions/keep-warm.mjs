@@ -12,7 +12,9 @@ export default async () => {
     `${base}/api/public/league-decision/131997`,
   ];
   const results = await Promise.allSettled(targets.map(async (url) => {
-    const response = await fetch(url);
+    // Scheduled functions run with generous limits; out-wait a cold upstream
+    // build so the cache actually fills instead of being killed at 10s.
+    const response = await fetch(url, { signal: AbortSignal.timeout(120000) });
     return `${response.status} ${new URL(url).pathname}`;
   }));
   const summary = results.map((result) => (result.status === "fulfilled" ? result.value : "error"));

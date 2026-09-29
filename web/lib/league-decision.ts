@@ -13,9 +13,10 @@ export async function getLeagueDecision(league: number): Promise<LeagueDecisionC
     // remains private/no-store because it also contains the owner's dashboard.
     const response = await fetch(`${base}/v1/leagues/${league}/decision-context`, {
       next: { revalidate: 300, tags: [`league-decision:${league}`] },
-      // A cold upstream build can exceed 8s; allow one slow pass to succeed
-      // rather than serving "unavailable" while the snapshot warms.
-      signal: AbortSignal.timeout(20000),
+      // Netlify synchronous functions are killed at 10s; the upstream fetch
+      // must stay under that ceiling or the route 502s instead of degrading
+      // to a clean 503. Cold builds are absorbed by the keep-warm scheduler.
+      signal: AbortSignal.timeout(9000),
     } as RequestInit & { next: { revalidate: number; tags: string[] } });
     if (!response.ok) return null;
     const value: unknown = await response.json();
