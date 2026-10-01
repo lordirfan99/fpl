@@ -1,3 +1,4 @@
+import datetime as dt
 import importlib.util
 import json
 from pathlib import Path
@@ -72,3 +73,62 @@ def test_monitor_rejects_missing_contract_and_unverified_personal_action():
         monitor.validate_recommendation({"packet_status": "advisory", "meta": {"stale": False},
                                          "freshness": {"status": "provisional", "stale": False},
                                          "captains": [{"element": 1}]})
+
+
+def _fresh_rec(**freshness):
+    base = {"status": "fresh", "stale": False, "rank_provenance": "official-entry-history",
+            "bank_known": True, "account_state_verified": True}
+    base.update(freshness)
+    return {"packet_status": "advisory", "meta": {"stale": False}, "freshness": base}
+
+
+def test_monitor_accepts_fresh_packet_with_official_provenance():
+    monitor.validate_recommendation(_fresh_rec())
+
+
+@pytest.mark.parametrize("provenance", ["classic-league-rank-fallback", "unknown", "none"])
+def test_monitor_flags_degraded_rank_provenance_on_fresh_packet(provenance):
+    with pytest.raises(RuntimeError, match="rank_provenance"):
+        monitor.validate_recommendation(_fresh_rec(rank_provenance=provenance))
+
+
+def test_monitor_flags_fresh_packet_with_unknown_bank():
+    with pytest.raises(RuntimeError, match="bank_known"):
+        monitor.validate_recommendation(_fresh_rec(bank_known=False))
+
+
+def test_monitor_ignores_provenance_on_finalized_fallback():
+    # status != "fresh" -> finalized snapshot path; classic-league rank there is
+    # not the same failure and must not trip the fresh-only guard.
+    monitor.validate_recommendation({"packet_status": "advisory", "meta": {"stale": False},
+                                     "freshness": {"status": "provisional", "stale": False,
+                                                   "rank_provenance": "finalized-snapshot",
+                                                   "account_state_verified": True}})
+
+
+NOW = dt.datetime(2026, 9, 4, 12, tzinfo=dt.timezone.utc)
+EVENTS = [
+    {"id": 2, "deadline_time": "2026-08-28T17:30:00Z", "finished": True},
+    {"id": 3, "deadline_time": "2026-09-04T17:30:00Z", "finished": False, "is_next": True},
+    {"id": 4, "deadline_time": "2026-09-11T17:30:00Z", "finished": False},
+]
+
+
+def test_next_deadline_picks_first_upcoming_unfinished_event():
+    assert monitor.next_deadline(EVENTS, now=NOW) == (3, dt.datetime(2026, 9, 4, 17, 30, tzinfo=dt.timezone.utc))
+    assert monitor.next_deadline([], now=NOW) is None
+
+
+def test_plan_currency_fails_when_advisory_lags_the_imminent_deadline():
+    with pytest.raises(RuntimeError, match="GW2 with 5.5h to the GW3 deadline"):
+        monitor.check_plan_currency({"packet_status": "advisory", "gameweek": 2}, EVENTS, now=NOW)
+
+
+def test_plan_currency_passes_when_packet_matches_or_deadline_is_far():
+    assert "GW3" in monitor.check_plan_currency({"packet_status": "advisory", "gameweek": 3}, EVENTS, now=NOW)
+    far = dt.datetime(2026, 9, 1, 12, tzinfo=dt.timezone.utc)  # >24h before the GW3 lock
+    assert "GW2" in monitor.check_plan_currency({"packet_status": "advisory", "gameweek": 2}, EVENTS, now=far)
+
+
+def test_plan_currency_not_applicable_to_an_honest_hold():
+    assert "hold" in monitor.check_plan_currency({"packet_status": "safe_hold", "gameweek": 2}, EVENTS, now=NOW)
