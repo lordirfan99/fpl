@@ -72,6 +72,7 @@ export function DecisionRoom({ packet, checkedAt, children, rivalCaptaincy }: { 
   const utility = utilityRows.length && utilityRows.every(r => numeric(r.gain) && numeric(r.weight))
     ? utilityRows.reduce((sum, row) => sum + row.gain! * row.weight, 0) : null;
   const paid = packet.alternatives.best_paid_transfer;
+  const roadmap = packet.roadmap ?? [];
   const fixtureWeeks = packet.chip === "freehit" ? 1 : Math.min(3, 39 - packet.gameweek);
   const barRows = [{ label: "Keep current team", value: 0 }, { label: "Recommended changes", value: utility, proposed: true }];
   // Delayed routes start in other weeks: do not plot unlike horizons together.
@@ -134,7 +135,16 @@ export function DecisionRoom({ packet, checkedAt, children, rivalCaptaincy }: { 
       {Array.from({ length: Math.min(3, 39 - packet.gameweek) }, (_, offset) => <article key={offset}><h3>GW{packet.gameweek + offset}</h3>
         <ComparisonBars rows={[{ label: "Current XI", value: weeklyPoints(packet, currentIds, currentCaptain, offset) }, { label: packet.chip === "freehit" ? (offset === 0 ? "Free Hit XI" : "Returning squad") : "Proposed XI", value: packet.chip === "freehit" && offset > 0 ? null : weeklyPoints(packet, packet.starters, packet.captain, offset), proposed: true }]} unit="pts" />
       </article>)}
-    </div><p className="decision-caption">Same selected XI and captain held across weeks, before transfer hits and future changes. {packet.chip === "freehit" ? "Free Hit lasts one GW. The later returning squad is unavailable because this packet does not project it." : "Not the optimizer’s multi-week transfer roadmap."}</p>
+    </div><p className="decision-caption">Same selected XI and captain held across weeks, before transfer hits and future changes. {packet.chip === "freehit" ? "Free Hit lasts one GW. The later returning squad is unavailable because this packet does not project it." : "The optimizer's own move-by-move intent is below."}</p>
+      {roadmap.length > 1 ? <div className="decision-roadmap">
+        <h3>Planned moves ahead</h3>
+        <ol>{roadmap.map((week, index) => <li key={week.gw} className={index === 0 ? "committed" : "conditional"}>
+          <span>GW{week.gw}</span>
+          <strong>{week.moves.length ? week.moves.map(m => `${m.out} → ${m.in}${m.hit ? " (−4)" : ""}`).join(" · ") : week.action === "TRANSFER" ? "Transfer" : "Roll / hold"}</strong>
+          <small>{index === 0 ? "This week — the plan above" : "Conditional"}{numeric(week.free_transfers_after) ? ` · ${week.free_transfers_after} FT after` : ""}{numeric(week.bank_after) ? ` · £${week.bank_after.toFixed(1)}m bank` : ""}</small>
+        </li>)}</ol>
+        <p className="decision-caption">Only this week's move is committed. Later weeks are the planner's current intent and are recalculated at every deadline as prices, news and your squad change.</p>
+      </div> : null}
       <div className="decision-fixtures"><table><caption>Recorded fixtures for the proposed squad · FDR 1 easier → 5 harder</caption><thead><tr><th>Player</th>{Array.from({ length: fixtureWeeks }, (_, i) => <th key={i}>GW{packet.gameweek + i}</th>)}</tr></thead>
         <tbody>{[...packet.starters, ...packet.bench].map(id => { const p = packet.players.find(p => p.id === id); return p ? <tr key={id}><th>{p.name}</th>{Array.from({ length: fixtureWeeks }, (_, i) => <td key={i}>{fixturesFor(packet, p, packet.gameweek + i).map(f => <span className={`decision-fdr level-${f.fdr}`} key={f.label}>{f.label} · {f.fdr}</span>)}{fixturesFor(packet, p, packet.gameweek + i).length === 0 ? "No fixture" : null}</td>)}</tr> : null; })}</tbody></table></div>
     </section>

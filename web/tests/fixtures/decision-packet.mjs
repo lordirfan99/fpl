@@ -14,6 +14,11 @@ export function packet() {
     action: "TRANSFER", reason: "Synthetic recommendation: the legal package improves three-GW utility.",
     horizon: { metric: "risk-adjusted utility", rows: [3,4,5].map(gw => ({ gw, weight: 1, current: 50, proposed: 52, gain: 2 })) },
     alternatives: { hold: { horizon_gain: 0, net_after_hit: null, projection_starts_gw: 3, moves: [] } },
+    roadmap: [
+      { gw: 3, action: "TRANSFER", status: "recommended", formation: "3-4-3", bank_after: 0.5, free_transfers_after: 1, mean_points_with_captain: 55, robust_points_with_captain: 48, moves: [{ out: "Test Player 11", in: "Test Player 16", hit: false }] },
+      { gw: 4, action: "TRANSFER", status: "conditional", formation: "3-4-3", bank_after: 0.2, free_transfers_after: 1, mean_points_with_captain: 57, robust_points_with_captain: 49, moves: [{ out: "Test Player 3", in: "Test Player 12", hit: false }] },
+      { gw: 5, action: "ROLL / HOLD", status: "conditional", formation: "3-4-3", bank_after: 0.2, free_transfers_after: 2, mean_points_with_captain: 56, robust_points_with_captain: 47, moves: [] },
+    ],
     captains: players.slice(5,8).map(p => ({ id: p.id, name: p.name, xpts: p.xpts, expected_minutes: 75, eligible: true, selected: p.id === 6, reason: "Reliable minutes and projected points" })),
     players, fixtures: [3,4,5].flatMap(gw => [{ id: gw * 2, event: gw, team_h: 1, team_a: 2, team_h_difficulty: 2, team_a_difficulty: 4, kickoff_time: now }, { id: gw * 2 + 1, event: gw, team_h: 3, team_a: 4, team_h_difficulty: 3, team_a_difficulty: 3, kickoff_time: now }]),
     teams: [1,2,3,4,5].map(id => ({ id, short_name: `T${id}` })), writes_enabled: false };

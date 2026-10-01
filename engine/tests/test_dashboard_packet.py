@@ -61,6 +61,33 @@ def test_packet_is_sanitized_canonical_and_does_not_mutate(chip):
     assert len(packet["starters"] + packet["bench"]) == 15
 
 
+def test_packet_projects_the_multi_gw_roadmap_and_allowlists_it():
+    team = account()
+    players = [{"id": i, "name": f"P{i}", "position": "MID"} for i in range(1, 16)]
+    plan = {"plan_id": "p", "gw": 3, "team_id": 2797967, "generated_at": "now", "deadline": "later",
+            "chip": None, "target_starters": players[:11], "bench": players[11:], "transfers": [],
+            "captain": {"id": 1}, "vice": {"id": 2},
+            "decision_summary": {"source_manifest": {"status": "ready"}, "recommended_action": "ROLL",
+                                 "roadmap": [
+                                     {"gw": 3, "action": "ROLL", "status": "recommended", "formation": "3-4-3",
+                                      "bank_after": 0.5, "free_transfers_after": 1, "mean_points_with_captain": 55.0,
+                                      "robust_points_with_captain": 48.0, "route": None, "secret": "sentinel"},
+                                     {"gw": 4, "action": "TRANSFER", "status": "conditional", "formation": "3-4-3",
+                                      "bank_after": 0.1, "free_transfers_after": 1, "mean_points_with_captain": 57.0,
+                                      "robust_points_with_captain": 49.0,
+                                      "route": {"moves": [{"out": "P5", "in": "P16", "hit": False, "secret": "sentinel"}]}},
+                                 ]}}
+    packet = make_packet(plan, team, players, {"elements": players}, [])
+    assert "sentinel" not in json.dumps(packet)
+    assert [week["gw"] for week in packet["roadmap"]] == [3, 4]
+    assert packet["roadmap"][0]["moves"] == []
+    assert packet["roadmap"][1]["moves"] == [{"out": "P5", "in": "P16", "hit": False}]
+    assert set(packet["roadmap"][1]) == {
+        "gw", "action", "status", "formation", "bank_after", "free_transfers_after",
+        "mean_points_with_captain", "robust_points_with_captain", "moves",
+    }
+
+
 def test_check_failure_publishes_invalidation_without_other_client_calls(tmp_path):
     (tmp_path / "config").mkdir()
     (tmp_path / "config/settings.json").write_text('{"team_id":2797967}')

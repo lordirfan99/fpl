@@ -67,6 +67,13 @@ def make_packet(plan, team, players, bootstrap, fixtures):
             "moves": [select(m, "out in hit") for m in value.get("moves", [])],
         } for key, value in (summary.get("alternatives") or {}).items()
                          if key in {"hold", "next_free_transfer", "two_free_transfers", "best_paid_transfer"}},
+        # The optimizer's own multi-GW intent. Week 0 is the executable plan;
+        # later weeks are conditional and recomputed at every deadline.
+        "roadmap": [{
+            **select(week, "gw action status formation bank_after free_transfers_after "
+                           "mean_points_with_captain robust_points_with_captain"),
+            "moves": [select(move, "out in hit") for move in ((week.get("route") or {}).get("moves") or [])],
+        } for week in (summary.get("roadmap") or [])],
         "captains": [select(c, "id name xpts expected_minutes eligible selected reason")
                      for c in summary.get("captain_rankings", [])[:3]],
         "players": rows,
