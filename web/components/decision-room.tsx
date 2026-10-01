@@ -138,6 +138,16 @@ export function DecisionRoom({ packet, checkedAt, children, rivalCaptaincy }: { 
       <div className="decision-fixtures"><table><caption>Recorded fixtures for the proposed squad · FDR 1 easier → 5 harder</caption><thead><tr><th>Player</th>{Array.from({ length: fixtureWeeks }, (_, i) => <th key={i}>GW{packet.gameweek + i}</th>)}</tr></thead>
         <tbody>{[...packet.starters, ...packet.bench].map(id => { const p = packet.players.find(p => p.id === id); return p ? <tr key={id}><th>{p.name}</th>{Array.from({ length: fixtureWeeks }, (_, i) => <td key={i}>{fixturesFor(packet, p, packet.gameweek + i).map(f => <span className={`decision-fdr level-${f.fdr}`} key={f.label}>{f.label} · {f.fdr}</span>)}{fixturesFor(packet, p, packet.gameweek + i).length === 0 ? "No fixture" : null}</td>)}</tr> : null; })}</tbody></table></div>
     </section>
+
+    {(packet.chip_roadmap ?? []).length ? <section className="surface"><span className="evidence-label">Advisory · not staged</span><h2>Chip plan for the rest of the season</h2>
+      <div className="chip-roadmap">{(packet.chip_roadmap ?? []).map(entry => <article key={entry.chip} className={`conf-${entry.confidence}`}>
+        <div><strong>{entry.chip_label}</strong><span>{entry.target_gw ? `Target GW${entry.target_gw}` : "No dated trigger yet"}</span></div>
+        <p>{entry.reason}</p>
+        <small>{entry.confidence} confidence</small>
+      </article>)}</div>
+      <p className="decision-caption">Derived from the double/blank fixture scan only. Chips are never staged or played from this dashboard — the owner stages a chip and regenerates a fresh plan before approval.</p>
+    </section> : null}
+
     <details className="surface decision-provenance"><summary><ShieldCheck size={17} /> Sources and verification</summary><p>Account checked {formatMYT(latestCheckedAt)} · plan account capture {formatMYT(packet.timestamps.account)}</p><p>League {formatMYT(packet.timestamps.league)} · players and fixtures {formatMYT(packet.timestamps.reference)}</p><p>Model {packet.model_version}. No transfers, chip changes or lineup writes are available from this dashboard.</p></details>
     {children}
   </div>;

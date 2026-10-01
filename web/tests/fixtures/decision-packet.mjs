@@ -14,6 +14,10 @@ export function packet() {
     action: "TRANSFER", reason: "Synthetic recommendation: the legal package improves three-GW utility.",
     horizon: { metric: "risk-adjusted utility", rows: [3,4,5].map(gw => ({ gw, weight: 1, current: 50, proposed: 52, gain: 2 })) },
     alternatives: { hold: { horizon_gain: 0, net_after_hit: null, projection_starts_gw: 3, moves: [] } },
+    chip_roadmap: [
+      { chip: "wildcard", chip_label: "Wildcard", target_gw: 7, confidence: "low", reason: "Hold for a fixture swing; a natural window is the GW7 deadline." },
+      { chip: "bboost", chip_label: "Bench Boost", target_gw: 8, confidence: "medium", reason: "GW8 is the biggest double gameweek in view (6 teams, 5 in your squad)." },
+    ],
     captains: players.slice(5,8).map(p => ({ id: p.id, name: p.name, xpts: p.xpts, expected_minutes: 75, eligible: true, selected: p.id === 6, reason: "Reliable minutes and projected points" })),
     players, fixtures: [3,4,5].flatMap(gw => [{ id: gw * 2, event: gw, team_h: 1, team_a: 2, team_h_difficulty: 2, team_a_difficulty: 4, kickoff_time: now }, { id: gw * 2 + 1, event: gw, team_h: 3, team_a: 4, team_h_difficulty: 3, team_a_difficulty: 3, kickoff_time: now }]),
     teams: [1,2,3,4,5].map(id => ({ id, short_name: `T${id}` })), writes_enabled: false };

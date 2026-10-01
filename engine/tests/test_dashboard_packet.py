@@ -61,6 +61,25 @@ def test_packet_is_sanitized_canonical_and_does_not_mutate(chip):
     assert len(packet["starters"] + packet["bench"]) == 15
 
 
+def test_packet_projects_chip_roadmap_allowlisted():
+    team = account()
+    players = [{"id": i, "name": f"P{i}", "position": "MID"} for i in range(1, 16)]
+    plan = {"plan_id": "p", "gw": 3, "team_id": 2797967, "generated_at": "now", "deadline": "later",
+            "chip": None, "target_starters": players[:11], "bench": players[11:], "transfers": [],
+            "captain": {"id": 1}, "vice": {"id": 2},
+            "decision_summary": {"source_manifest": {"status": "ready"}, "recommended_action": "ROLL",
+                                 "chip_roadmap": [
+                                     {"chip": "bboost", "chip_label": "Bench Boost", "target_gw": 4,
+                                      "confidence": "medium", "reason": "GW4 double.", "secret": "sentinel"},
+                                     {"chip": "wildcard", "chip_label": "Wildcard", "target_gw": None,
+                                      "confidence": "low", "reason": "Hold for a swing."},
+                                 ]}}
+    packet = make_packet(plan, team, players, {"elements": players}, [])
+    assert "sentinel" not in json.dumps(packet)
+    assert [e["chip"] for e in packet["chip_roadmap"]] == ["bboost", "wildcard"]
+    assert set(packet["chip_roadmap"][0]) == {"chip", "chip_label", "target_gw", "confidence", "reason"}
+
+
 def test_check_failure_publishes_invalidation_without_other_client_calls(tmp_path):
     (tmp_path / "config").mkdir()
     (tmp_path / "config/settings.json").write_text('{"team_id":2797967}')
