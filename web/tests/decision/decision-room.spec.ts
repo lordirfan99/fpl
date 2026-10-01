@@ -73,6 +73,18 @@ for (const mode of ["wildcard", "freehit", "unavailable"]) {
   });
 }
 
+test("a hold plan shows the quantified reason, not just an empty transfer card", async ({ page, context, request }) => {
+  await request.get("http://127.0.0.1:4185/__test/mode/hold");
+  const token = await encode({ token: { sub: "fpl-owner", email: "owner@fpl.local", ownerVerified: true }, secret: "test-only-secret-not-for-production-123456789", salt: "authjs.session-token" });
+  await context.addCookies([{ name: "authjs.session-token", value: token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);
+  await page.goto("/this-week");
+  const whyHold = page.locator(".decision-why-hold");
+  await expect(whyHold).toBeVisible();
+  await expect(whyHold).toContainText("Best move available now (Test Player 5 → Test Player 16): 0.6 utility");
+  await expect(whyHold).toContainText("Hold and bank the free transfer: 1.4 utility");
+  await expect(whyHold).toContainText("Even with a −4 hit the best paid move nets -2.9 utility");
+});
+
 test("Plan navigation uses the same canonical private packet", async ({ page, context }) => {
   const token = await encode({ token: { sub: "fpl-owner", email: "owner@fpl.local", ownerVerified: true }, secret: "test-only-secret-not-for-production-123456789", salt: "authjs.session-token" });
   await context.addCookies([{ name: "authjs.session-token", value: token, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }]);

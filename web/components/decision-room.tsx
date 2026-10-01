@@ -72,6 +72,13 @@ export function DecisionRoom({ packet, checkedAt, children, rivalCaptaincy }: { 
   const utility = utilityRows.length && utilityRows.every(r => numeric(r.gain) && numeric(r.weight))
     ? utilityRows.reduce((sum, row) => sum + row.gain! * row.weight, 0) : null;
   const paid = packet.alternatives.best_paid_transfer;
+  // A hold plan: lineup may still change, but no transfer and no chip. The owner
+  // needs the *margin* — what acting now would gain vs banking the free transfer.
+  const isHold = !chip && packet.transfers.length === 0;
+  const holdGain = packet.alternatives.hold?.horizon_gain ?? null;
+  const bestActive = packet.alternatives.next_free_transfer ?? packet.alternatives.two_free_transfers ?? null;
+  const bestActiveGain = bestActive?.horizon_gain ?? null;
+  const bestActiveMoves = bestActive?.moves.map(m => `${m.out} → ${m.in}`).join(" · ") ?? "";
   const fixtureWeeks = packet.chip === "freehit" ? 1 : Math.min(3, 39 - packet.gameweek);
   const barRows = [{ label: "Keep current team", value: 0 }, { label: "Recommended changes", value: utility, proposed: true }];
   // Delayed routes start in other weeks: do not plot unlike horizons together.
@@ -111,6 +118,15 @@ export function DecisionRoom({ packet, checkedAt, children, rivalCaptaincy }: { 
     <section className="surface"><span className="evidence-label">Model estimate · not guaranteed points</span><h2>Is changing worth it?</h2>
       <ComparisonBars rows={barRows} unit="utility gain" />
       <p className="decision-caption">Three-GW risk-adjusted lineup utility, weighted by the planner. This is not a raw points forecast; hit cost is shown separately.</p>
+      {isHold ? <div className="decision-why-hold">
+        <strong>Why the plan is to hold the transfer</strong>
+        <p>An empty transfer card is a decision, not missing data. The margin behind it:</p>
+        <ul>
+          {numeric(bestActiveGain) ? <li>Best move available now{bestActiveMoves ? ` (${bestActiveMoves})` : ""}: <b>{displayNumber(bestActiveGain)}</b> utility over 3 GWs.</li> : null}
+          {numeric(holdGain) ? <li>Hold and bank the free transfer: <b>{displayNumber(holdGain)}</b> utility, and you keep {displayNumber(packet.free_transfers_before, 0)} transfer{packet.free_transfers_before === 1 ? "" : "s"} for a stronger week.</li> : null}
+          {paid && numeric(paid.net_after_hit) ? <li>Even with a −4 hit the best paid move nets <b>{displayNumber(paid.net_after_hit)}</b> utility — below the bar to act.</li> : null}
+        </ul>
+      </div> : null}
       {packet.transfers.map(t => <div className="decision-transfer" key={`${t.element_out}-${t.element_in}`}><strong>{t.out_name} <ArrowRight size={14} /> {t.in_name}</strong>
         <small>Actual selling price: {money((packet.account.picks.find(p => p.element === t.element_out)?.selling_price ?? NaN) / 10)} · {t.hit ? "4-point hit" : chip ? "Active chip" : "Free transfer"}</small></div>)}
       <details className="player-evidence"><summary>Other routes the planner considered</summary>

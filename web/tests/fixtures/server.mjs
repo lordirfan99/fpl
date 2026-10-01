@@ -19,6 +19,19 @@ createServer((req, res) => {
   if (req.url === "/v1/private/dashboard/current" && req.headers.authorization === `Bearer ${"test-read-only-".repeat(4)}`) {
     const value = packet();
     if (["wildcard", "freehit"].includes(mode)) value.chip = mode;
+    if (mode === "hold") {
+      value.transfers = [];
+      value.action = "HOLD";
+      value.reason = "No move clears the model threshold; banking the free transfer is worth more.";
+      value.bank_after = value.account.transfers.bank / 10;
+      value.free_transfers_after = value.free_transfers_before;
+      value.horizon.rows = value.horizon.rows.map(r => ({ ...r, proposed: r.current, gain: 0 }));
+      value.alternatives = {
+        hold: { horizon_gain: 1.4, net_after_hit: null, projection_starts_gw: value.gameweek, moves: [] },
+        next_free_transfer: { horizon_gain: 0.6, net_after_hit: null, projection_starts_gw: value.gameweek, moves: [{ out: "Test Player 5", in: "Test Player 16", hit: false }] },
+        best_paid_transfer: { horizon_gain: 1.1, net_after_hit: -2.9, projection_starts_gw: value.gameweek, moves: [{ out: "Test Player 5", in: "Test Player 16", hit: true }] },
+      };
+    }
     res.end(JSON.stringify(mode === "unavailable" ? { status: "unavailable", packet: null } : { status: "ready", packet: value, account_checked_at: new Date().toISOString() }));
   } else { res.statusCode = 404; res.end("{}"); }
 }).listen(4185, "127.0.0.1");
