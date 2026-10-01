@@ -66,6 +66,12 @@ export function DecisionRoom({ packet, checkedAt, children, rivalCaptaincy }: { 
   const owned = new Set(packet.account.picks.map(p => p.element));
   const proposedIds = new Set([...packet.starters, ...packet.bench]);
   const selected = packet.players.find(p => p.id === selectedId);
+  const playerName = (id: number | undefined) => packet.players.find(p => p.id === id)?.name ?? "Unavailable";
+  const currentVice = packet.account.picks.find(p => p.is_vice_captain)?.element;
+  const newlyStarting = packet.starters.filter(id => !currentIds.includes(id));
+  const noLongerStarting = currentIds.filter(id => !packet.starters.includes(id));
+  const benchKeeper = packet.bench.find(id => packet.players.find(p => p.id === id)?.position === "GKP");
+  const outfieldBench = packet.bench.filter(id => packet.players.find(p => p.id === id)?.position !== "GKP");
   const chip = packet.chip === "wildcard" || packet.chip === "freehit";
   const hitCost = packet.transfers.filter(t => t.hit).length * 4;
   const utilityRows = packet.horizon.rows;
@@ -98,6 +104,17 @@ export function DecisionRoom({ packet, checkedAt, children, rivalCaptaincy }: { 
     </section>
     <dl className="decision-account"><div><dt>Bank now</dt><dd>{money(packet.account.transfers.bank / 10)}</dd></div><div><dt>Bank after</dt><dd>{money(packet.bank_after)}</dd></div>
       <div><dt>Free transfers</dt><dd>{chip || packet.account.transfers.unlimited ? "Unlimited" : displayNumber(packet.free_transfers_before, 0)}</dd></div><div><dt>Hit cost</dt><dd>{hitCost} points</dd></div></dl>
+
+    <section className="surface" aria-label="Deadline checklist"><span className="evidence-label">Proposed choices · same verified plan</span><h2>Before the deadline</h2>
+      <p>Rolling a transfer does not mean leaving your lineup unchanged. Review these choices separately.</p>
+      <dl className="evidence-grid"><div><dt>Captain</dt><dd>{playerName(packet.captain)}</dd><small>{currentCaptain === packet.captain ? "Unchanged from your current team" : `Currently ${playerName(currentCaptain)}`}</small></div>
+        <div><dt>Vice-captain</dt><dd>{playerName(packet.vice)}</dd><small>{currentVice === packet.vice ? "Unchanged from your current team" : `Currently ${playerName(currentVice)}`}</small></div>
+        <div><dt>Into the starting XI</dt><dd>{newlyStarting.length ? newlyStarting.map(playerName).join(" · ") : "No changes"}</dd></div>
+        <div><dt>Out of the starting XI</dt><dd>{noLongerStarting.length ? noLongerStarting.map(playerName).join(" · ") : "No changes"}</dd></div></dl>
+      <p><strong>Outfield bench priority:</strong> {outfieldBench.map((id, i) => `${i + 1}. ${playerName(id)}`).join(" → ") || "Unavailable"}</p>
+      <p><strong>Reserve goalkeeper:</strong> {playerName(benchKeeper)}</p>
+      <p className="decision-caption">These are model recommendations, not completed FPL changes. Automatic substitutions still depend on appearance and legal formation. Review the proposed squad below; approval remains outside this dashboard.</p>
+    </section>
 
     <div className="decision-columns"><section className="surface decision-squad"><div className="decision-section-title"><div><span className="evidence-label">Recorded team → proposed team</span><h2>Your actual team</h2></div></div>
       <div className="decision-toggle" aria-label="Squad view"><button aria-pressed={!proposed} onClick={() => setProposed(false)}>Current squad</button><button aria-pressed={proposed} onClick={() => setProposed(true)}>Proposed squad</button></div>
