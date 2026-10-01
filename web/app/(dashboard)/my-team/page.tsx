@@ -3,7 +3,7 @@ import { MetricCard } from "@/components/metric-card";
 import { PageHeader } from "@/components/page-header";
 import { Pitch } from "@/components/pitch";
 import { getCompetitiveRecommendation } from "@/lib/competitive";
-import { getDashboardData } from "@/lib/data";
+import { DEFAULT_LEAGUE_ID, getDashboardData } from "@/lib/data";
 import { getLiveTeam } from "@/lib/live";
 import { deriveSeasonContext } from "@/lib/season";
 import type { Pick } from "@/lib/types";
@@ -12,8 +12,14 @@ import { formatMYT } from "@/lib/format";
 const positionFromElementType = (elementType?: number): Pick["position"] => elementType === 1 ? "GKP" : elementType === 2 ? "DEF" : elementType === 3 ? "MID" : "FWD";
 
 export default async function MyTeamPage() {
-  const [data, live] = await Promise.all([getDashboardData(), getLiveTeam()]);
-  const rec = await getCompetitiveRecommendation(data.leagueId).catch(() => null);
+  // All three are independent — the captured squad, the in-progress gameweek
+  // and the league research recommendation. Fetch them together so the page
+  // renders as soon as the slowest one returns, not their sum.
+  const [data, live, rec] = await Promise.all([
+    getDashboardData(),
+    getLiveTeam(),
+    getCompetitiveRecommendation(DEFAULT_LEAGUE_ID).catch(() => null),
+  ]);
   const { manager } = data;
 
   const season = deriveSeasonContext(data.bootstrap.events, { finalizedGw: data.gameweek, liveGameweek: live?.gameweek });
