@@ -6,7 +6,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.repository import SnapshotRepository
+import pytest
+
+from app.repository import LiveSnapshotNotFoundError, SnapshotRepository
 
 
 class FakeBlob:
@@ -134,3 +136,65 @@ def test_hash_cache_tracks_payload_identity_and_is_bounded(tmp_path, monkeypatch
     for league_id in range(20):
         repo.league(league_id, 1)
     assert len(repo._hash_cache) == 16
+
+
+def live_repo(tmp_path):
+    now = datetime(2026, 9, 6, tzinfo=timezone.utc)
+    payload = {"status": "complete", "league_id": 1, "expected_count": 1,
+               "hydrated_count": 1, "managers": [{"id": 1}], "fetched_at": now.isoformat()}
+    raw = json.dumps(payload)
+    name = "live/gw3/league1/runs/one.json"
+    manifest = {"status": "complete", "snapshot_object": name,
+                "snapshot_sha256": hashlib.sha256(raw.encode()).hexdigest()}
+    pointer = FakeBlob(json.dumps(manifest), 1, now)
+    data = FakeBlob(raw, 1, now)
+    repo = SnapshotRepository(tmp_path)
+    repo._bucket = FakeBucket({"live/league1/current.json": pointer, name: data})
+    return repo, pointer, data, manifest
+
+
+def test_live_reads_coalesce_and_revalidate_pointer_without_redownload(tmp_path, monkeypatch):
+    repo, pointer, data, _ = live_repo(tmp_path)
+    clock = [100.0]
+    monkeypatch.setattr("app.repository.time.monotonic", lambda: clock[0])
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        results = list(executor.map(lambda _: repo.live_league(1), range(32)))
+    assert all(row is results[0] for row in results)
+    assert pointer.download_calls == data.download_calls == 1
+    clock[0] += 31
+    assert repo.live_league(1) is results[0]
+    assert pointer.download_calls == 2
+    assert data.download_calls == 1
+    assert repo.live_league(1)["fetched_at"] == "2026-09-06T00:00:00+00:00"
+
+
+def test_live_changed_pointer_and_failed_revalidation(tmp_path, monkeypatch):
+    repo, pointer, data, manifest = live_repo(tmp_path)
+    clock = [100.0]
+    monkeypatch.setattr("app.repository.time.monotonic", lambda: clock[0])
+    assert repo.live_league(1)["managers"][0]["id"] == 1
+    clock[0] += 31
+    changed = json.loads(data._text)
+    changed["managers"][0]["id"] = 2
+    data._text = json.dumps(changed)
+    manifest["snapshot_sha256"] = hashlib.sha256(data._text.encode()).hexdigest()
+    pointer._text = json.dumps(manifest)
+    assert repo.live_league(1)["managers"][0]["id"] == 2
+    clock[0] += 31
+    pointer._text = "bad json"
+    for _ in range(2):
+        with pytest.raises(LiveSnapshotNotFoundError):
+            repo.live_league(1)
+    assert pointer.download_calls == 3
+    clock[0] += 31
+    pointer._text = json.dumps(manifest)
+    assert repo.live_league(1)["managers"][0]["id"] == 2
+
+
+def test_live_checksum_failure_never_enters_success_cache(tmp_path):
+    repo, pointer, data, _ = live_repo(tmp_path)
+    data._text += " "
+    for _ in range(2):
+        with pytest.raises(LiveSnapshotNotFoundError):
+            repo.live_league(1)
+    assert pointer.download_calls == data.download_calls == 1

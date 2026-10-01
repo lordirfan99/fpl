@@ -47,6 +47,7 @@ class SnapshotRepository:
         self._hash_cache: OrderedDict[str, tuple[dict[str, Any], str]] = OrderedDict()
         self._cache_lock = Lock()
         self._remote_locks: dict[str, Any] = {}
+        self._live_cache: dict[int, tuple[float, tuple[str, str] | None, dict[str, Any] | None]] = {}
 
     def _path(self, filename: str) -> Path:
         path = (self.data_dir / filename).resolve()
@@ -168,12 +169,37 @@ class SnapshotRepository:
         """Read the complete live snapshot named by its validated manifest."""
         if self._bucket is None:
             raise LiveSnapshotNotFoundError("Live snapshot bucket is unavailable")
+        with self._cache_lock:
+            lock = self._remote_locks.setdefault(f"live:{league_id}", Lock())
+        with lock:
+            cached = self._live_cache.get(league_id)
+            if cached and time.monotonic() - cached[0] < self.REMOTE_REVALIDATE_SECONDS:
+                if cached[2] is None:
+                    raise LiveSnapshotNotFoundError(f"Live snapshot for league {league_id} is unavailable")
+                return cached[2]
+            try:
+                signature, payload = self._load_live_league(league_id, cached)
+            except Exception as error:
+                self._live_cache[league_id] = (time.monotonic(), None, None)
+                raise LiveSnapshotNotFoundError(f"Live snapshot for league {league_id} is unavailable") from error
+            self._live_cache[league_id] = (time.monotonic(), signature, payload)
+            return payload
+
+    def _load_live_league(self, league_id: int, cached):
         try:
             manifest = json.loads(self._bucket.blob(f"live/league{league_id}/current.json").download_as_text(encoding="utf-8"))
             object_name = str(manifest.get("snapshot_object") or "")
-            if manifest.get("status") != "complete" or not object_name.startswith(f"live/"):
+            digest = str(manifest.get("snapshot_sha256") or "")
+            if (manifest.get("status") != "complete" or not object_name.startswith("live/")
+                    or f"/league{league_id}/" not in object_name or len(digest) != 64):
                 raise LiveSnapshotNotFoundError(f"Live manifest for league {league_id} is incomplete")
-            payload = json.loads(self._bucket.blob(object_name).download_as_text(encoding="utf-8"))
+            signature = (object_name, digest)
+            if cached and cached[1] == signature and cached[2] is not None:
+                return signature, cached[2]
+            raw = self._bucket.blob(object_name).download_as_text(encoding="utf-8")
+            if hashlib.sha256(raw.encode("utf-8")).hexdigest() != digest:
+                raise ArtifactIntegrityError("Live snapshot does not match manifest checksum")
+            payload = json.loads(raw)
         except LiveSnapshotNotFoundError:
             raise
         except Exception as error:
@@ -183,7 +209,7 @@ class SnapshotRepository:
         expected = int(payload.get("expected_count") or 0)
         if expected <= 0 or int(payload.get("hydrated_count") or 0) != expected or len(payload.get("managers") or []) != expected:
             raise LiveSnapshotNotFoundError(f"Live snapshot for league {league_id} is partial")
-        return payload
+        return signature, payload
 
     def league(self, league_id: int, gameweek: int) -> dict[str, Any]:
         filename = f"gw{gameweek}_league{league_id}_data.json"
