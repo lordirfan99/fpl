@@ -5,6 +5,8 @@ expected minutes and component scoring with an explicit uncertainty penalty.
 Betting odds are deliberately not read here; historical odds remain usable
 only by offline research/backtests.
 """
+import math
+
 from component_xpts import gameweek_xpts
 
 
@@ -72,7 +74,10 @@ def project_player(element, fixtures_by_gw, gw_so_far, gw_ids,
     except (TypeError, ValueError):
         official_next = 0.0
     official_weight = max(0.15, 0.75 - 0.10 * max(0, gw_so_far))
-    if means and official_next > 0:
+    # An official prior may lag a postponement or availability update. It must
+    # never restore points to a known blank or a zero-minute forecast, nor
+    # inject non-finite values into the optimizer.
+    if means and forecasts[0].expected_minutes > 0 and math.isfinite(official_next) and official_next > 0:
         means[0] = official_weight * official_next + (1.0 - official_weight) * means[0]
     weights = [1.0, 0.7, 0.5]
     expected_horizon = sum(w * x for w, x in zip(weights, means))

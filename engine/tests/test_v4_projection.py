@@ -47,6 +47,27 @@ class V4ProjectionTests(unittest.TestCase):
         self.assertEqual(out["xpts"], 0)
         self.assertEqual(out["xpts_horizon"], 0)
 
+    def test_official_prior_cannot_restore_blank_gameweek_points(self):
+        out = project_player(player(ep_next="8.0"), {}, 1, [2])
+        self.assertEqual(out["xpts"], 0)
+        self.assertEqual(out["expected_horizon"], 0)
+
+    def test_official_prior_cannot_restore_unavailable_player_points(self):
+        for status, chance in [("i", 100), ("s", 100), ("u", 100), ("a", 0)]:
+            with self.subTest(status=status, chance=chance):
+                out = project_player(player(ep_next="8.0", status=status, chance_of_playing_next_round=chance),
+                                     self.fixtures, 1, [2, 3, 4])
+                self.assertEqual(out["xpts"], 0)
+                self.assertEqual(out["expected_horizon"], 0)
+                self.assertEqual(out["expected_minutes"], 0)
+
+    def test_nonfinite_official_prior_is_ignored(self):
+        baseline = project_player(player(), self.fixtures, 1, [2])
+        for raw in ["inf", "-inf", "nan", "invalid"]:
+            with self.subTest(raw=raw):
+                out = project_player(player(ep_next=raw), self.fixtures, 1, [2])
+                self.assertEqual(out["xpts"], baseline["xpts"])
+
     def test_official_next_gw_prior_stabilizes_early_projection(self):
         without_prior = project_player(player(ep_next=None), self.fixtures, 1, [2, 3, 4])
         with_prior = project_player(player(ep_next="6.0"), self.fixtures, 1, [2, 3, 4])
