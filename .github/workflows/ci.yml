@@ -34,6 +34,7 @@ jobs:
           bash -n infra/deploy/install-recommendation-planner.sh
           bash -n infra/deploy/install-private-dashboard.sh
           bash -n infra/deploy/install-dashboard-simulator.sh
+          bash -n infra/deploy/install-plan-cash-flow-validation.sh
           schedule=$(sed -n 's/^OnCalendar=//p' infra/deploy/gcp/systemd/fpl-live-refresh.timer)
           test -n "$schedule"
           systemd-analyze calendar "$schedule"
