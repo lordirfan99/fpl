@@ -7,7 +7,12 @@ MODE="${2:-install}"
 cd "$(git rev-parse --show-toplevel)"
 SHA=$(git rev-parse --verify "refs/tags/$TAG^{commit}")
 [ "$(git rev-parse HEAD)" = "$SHA" ] && [ -z "$(git status --porcelain)" ] || exit 1
-UNIT=google-guest-agent.service
+# New guest-agent packages use the plugin manager; older ones use the legacy unit.
+if systemctl is-active --quiet google-guest-agent-manager.service; then
+  UNIT=google-guest-agent-manager.service
+else
+  UNIT=google-guest-agent.service
+fi
 TARGET=/etc/systemd/system/$UNIT.d/90-fpl-memory-guard.conf
 BACKUP=/var/backups/fpl-guest-agent/$SHA
 sudo mkdir -p "$BACKUP" "$(dirname "$TARGET")"
