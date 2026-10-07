@@ -1,17 +1,13 @@
 name: deploy · web to Netlify
 
 # Replaces the manual `netlify deploy`. Builds web/ with the Next.js plugin and
-# deploys to production on every merge to main that touches the dashboard.
+# deploys reviewed release tags to production, following AGENTS.md.
 # Only secret required: NETLIFY_AUTH_TOKEN. The Site ID below is a public
 # identifier (it lives in .netlify/state.json), not a credential.
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "web/**"
-      - "netlify.toml"
-      - ".github/workflows/deploy-web.yml"
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -31,6 +27,9 @@ jobs:
       run:
         working-directory: web
     steps:
+      - name: Guard — tagged release required
+        if: github.ref_type != 'tag'
+        run: echo 'Deploy a reviewed release tag.' && exit 1
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:

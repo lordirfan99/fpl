@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { TransferSimulator } from "./transfer-simulator";
 import { DecisionRoom } from "./decision-room";
 import type { DecisionPacket } from "@/lib/decision-room";
 import { money } from "@/lib/decision-room";
@@ -54,6 +55,7 @@ export function ThisWeekStatic() {
   const [retry, setRetry] = useState(0);
   const autoRetried = useRef(false);
   const [privatePlan, setPrivatePlan] = useState<PrivateResponse | null>(null);
+  const [planValid, setPlanValid] = useState(true);
   const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
@@ -62,30 +64,56 @@ export function ThisWeekStatic() {
     if (leagues.some(league => league.id === selected)) setLeagueId(selected);
   }, []);
 
-  // One silent retry absorbs a cold upstream; the button covers the rest.
+  // Sections arrive independently; a slow private check cannot delay league evidence.
   useEffect(() => {
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 15000);
+    let active = true, receivedLeague = false, receivedPrivate = false;
+    const timer = window.setTimeout(() => controller.abort(), 25000);
     setState("loading");
-    fetch(`/api/public/league-decision/${leagueId}`, { signal: controller.signal })
-      .then(response => response.ok ? response.json() as Promise<Context> : Promise.reject(new Error("unavailable")))
-      .then(value => { setContext(value); setState("ready"); autoRetried.current = false; })
-      .catch(error => {
-        if (error.name !== "AbortError" && !autoRetried.current) { autoRetried.current = true; setRetry(value => value + 1); return; }
-        setState("unavailable");
-      });
-    return () => { window.clearTimeout(timer); controller.abort(); };
+    setContext(null);
+    const consume = (line: string) => {
+      if (!active || !line.trim()) return;
+      const item = JSON.parse(line);
+      if (item.section === "league") {
+        receivedLeague = true;
+        setContext(item.data);
+        setState(item.data ? "ready" : "unavailable");
+      } else if (item.section === "private") {
+        receivedPrivate = true;
+        setPrivatePlan(item.data);
+      }
+    };
+    const load = async () => {
+      try {
+        const response = await fetch(`/api/week?league=${leagueId}`, { cache: "no-store", signal: controller.signal });
+        if (!response.ok || !response.body) throw new Error("unavailable");
+        const reader = response.body.getReader(), decoder = new TextDecoder();
+        let pending = "";
+        while (true) {
+          const chunk = await reader.read();
+          pending += decoder.decode(chunk.value, { stream: !chunk.done });
+          const lines = pending.split("\n");
+          pending = lines.pop() ?? "";
+          lines.forEach(consume);
+          if (chunk.done) break;
+        }
+        if (pending.trim()) consume(pending);
+      } catch { /* Keep any section already received. */ }
+      finally {
+        window.clearTimeout(timer);
+        if (active) {
+          if (!receivedPrivate) setPrivatePlan({ status: "unavailable" });
+          if (!receivedLeague) setState("unavailable");
+          if (!receivedLeague && !autoRetried.current) {
+            autoRetried.current = true;
+            setRetry(value => value + 1);
+          }
+        }
+      }
+    };
+    void load();
+    return () => { active = false; window.clearTimeout(timer); controller.abort(); };
   }, [leagueId, retry]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 15000);
-    fetch("/api/private/dashboard", { cache: "no-store", signal: controller.signal })
-      .then(response => response.ok ? response.json() as Promise<PrivateResponse> : Promise.reject(new Error(response.status === 401 ? "signed_out" : "unavailable")))
-      .then(value => setPrivatePlan(value))
-      .catch(error => setPrivatePlan({ status: error.message === "signed_out" ? "signed_out" : "unavailable" }));
-    return () => { window.clearTimeout(timer); controller.abort(); };
-  }, []);
 
   useEffect(() => {
     setNow(Date.now());
@@ -105,8 +133,8 @@ export function ThisWeekStatic() {
   return <>
     <nav className="decision-league-switch" aria-label="Decision league">{leagues.map(league => <a key={league.id} href={`/this-week?league=${league.id}`} aria-current={league.id === selected.id ? "page" : undefined}>{league.name}</a>)}</nav>
 
-    {state === "loading" ? <section className="surface decision-unavailable" aria-busy="true" role="status"><h2 className="sr-only">Loading {selected.name} evidence</h2><div className="gw-skeleton" aria-hidden="true"><i className="bar title"></i><i className="bar"></i><i className="bar short"></i><i className="bar grid"></i></div><p>This page is static-first. Live league data loads separately and cannot block the page.</p></section> : null}
-    {state === "unavailable" ? <section className="surface decision-unavailable"><h2>League evidence temporarily unavailable</h2><p>The static page is ready. The live snapshot API did not respond in time.</p><button type="button" onClick={() => { autoRetried.current = false; setRetry(value => value + 1); }}>Retry</button></section> : null}
+    {state === "loading" ? <section className="surface decision-unavailable" aria-busy="true" role="status"><h2 className="sr-only">Loading {selected.name} evidence</h2><div className="gw-skeleton" aria-hidden="true"><i className="bar title"></i><i className="bar"></i><i className="bar short"></i><i className="bar grid"></i></div><p>Loading recorded league evidence.</p></section> : null}
+    {state === "unavailable" ? <section className="surface decision-unavailable"><h2>League evidence temporarily unavailable</h2><p>The recorded standings could not be loaded. Try again shortly.</p><button type="button" onClick={() => { autoRetried.current = false; setRetry(value => value + 1); }}>Retry</button></section> : null}
 
     {state === "ready" && context ? <section className="surface goal-progress">
       <div className="goal-heading">
@@ -115,14 +143,14 @@ export function ThisWeekStatic() {
           <h2>{complete ? `${Math.abs(goal!.points_gap ?? 0)} points ${goal!.points_gap === 0 ? "level with" : goal!.points_gap! > 0 ? "to" : "ahead of"} the top-10% cutoff` : "Target progress unavailable"}</h2>
           <p>{complete ? `Rank ${goal!.owner_rank!.toLocaleString()} / ${goal!.manager_count!.toLocaleString()} · Target rank ${goal!.cutoff_rank} or better` : "Complete standings are required before calculating a cutoff."}</p>
         </div>
-        <span className={`freshness-chip${stale ? " stale" : ""}`}>{stale ? "Historical capture" : `Live · captured ${Math.max(0, Math.round(context.freshness?.freshness_hours ?? 0))}h ago`}</span>
+        <span className={`freshness-chip${stale ? " stale" : ""}`}>{stale ? "Historical capture" : (context.snapshot_at && Number.isFinite(Date.parse(context.snapshot_at)) ? `Captured ${formatMYT(context.snapshot_at)}` : "Capture time unavailable")}</span>
       </div>
       <p className="decision-caption">GW{context.gameweek ?? "?"} · {context.status === "historical" ? "Older capture: not current standings." : "Live recorded snapshot."} The cutoff moves as your rivals score.</p>
     </section> : null}
 
     {state === "ready" && context?.ownership?.rows?.length ? <section className="surface rival-exposure"><h2>Recorded rival picks</h2><ul>{context.ownership.rows.slice(0, 8).map(player => <li key={player.element}><span>{player.name}</span> · target group {player.target_pct ?? "—"}% · captaincy {player.target_captain_pct ?? "—"}%</li>)}</ul></section> : null}
 
-    {packet ? <section className="surface gw-checklist" aria-label="Gameweek checklist">
+    {packet && planValid ? <section className="surface gw-checklist" aria-label="Gameweek checklist">
       <div className="gw-checklist-head">
         <div>
           <span className="evidence-label">VERIFIED PLAN · GW{packet.gameweek}</span>
@@ -140,7 +168,7 @@ export function ThisWeekStatic() {
         <ChecklistRow label="Next 3 GWs" value={packet.horizon.rows.map(row => `GW${row.gw}`).join(" · ")} note="Horizon estimates below" />
       </ol>
     </section> : null}
-    {packet ? <DecisionRoom packet={packet} checkedAt={privatePlan!.account_checked_at} rivalCaptaincy={{ gameweek: context?.gameweek, counts: Object.fromEntries((context?.ownership?.rows ?? []).map(player => [player.element, player.target_captain_pct ?? null])) }} /> : null}
+    {packet ? <DecisionRoom key={packet.plan_id + packet.account_fingerprint} onValidityChange={setPlanValid} packet={packet} checkedAt={privatePlan!.account_checked_at} rivalCaptaincy={{ gameweek: context?.gameweek, counts: Object.fromEntries((context?.ownership?.rows ?? []).map(player => [player.element, player.target_captain_pct ?? null])) }}><TransferSimulator key={packet.plan_id + packet.account_fingerprint} packet={packet} /></DecisionRoom> : null}
 
     {!packet && privatePlan?.status === "signed_out" ? <section className="surface gw-checklist locked"><h2>Your personal plan stays private</h2><p>One password unlocks the verified checklist: transfers, captain, XI, bench and bank.</p><ol className="gw-checklist-rows">
       <ChecklistRow label="Transfers" value="Locked" />

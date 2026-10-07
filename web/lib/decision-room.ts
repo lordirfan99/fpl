@@ -1,4 +1,5 @@
 export type NumberOrNull = number | null;
+export type SimulationPlayer = { id: number; name: string; position: string; club: number | null; cost: NumberOrNull; xpts_by_gw: NumberOrNull[] | null; expected_minutes: NumberOrNull };
 export type AccountPick = { element: number; position: number; selling_price: number; is_captain: boolean; is_vice_captain: boolean };
 export type EvidencePlayer = {
   id: number; name: string; position: string; club: number | null; cost: NumberOrNull;
@@ -10,7 +11,7 @@ export type EvidencePlayer = {
 export type Alternative = { horizon_gain: NumberOrNull; net_after_hit: NumberOrNull; projection_starts_gw: NumberOrNull; moves: { out: string; in: string; hit: boolean }[] };
 export type DecisionPacket = {
   schema_version: 1; team_id: number; plan_id: string; gameweek: number; deadline: string; generated_at: string;
-  account_fingerprint: string; account: { picks: AccountPick[]; transfers: { bank: number; limit: NumberOrNull; made: NumberOrNull; unlimited: boolean | null }; chips: { name: string; status_for_entry: string; played_by_entry: number[] | null }[] };
+  account_fingerprint: string; account: { picks: AccountPick[]; transfers: { bank: number; limit: NumberOrNull; made: NumberOrNull; unlimited: boolean | null; status?: string | null }; chips: { name: string; status_for_entry: string; played_by_entry: number[] | null }[] };
   timestamps: { account: string; reference: string; league: string }; model_version: string; chip: string | null;
   bank_after: NumberOrNull; free_transfers_before: NumberOrNull; free_transfers_after: NumberOrNull;
   starters: number[]; bench: number[]; captain: number; vice: number;
@@ -20,6 +21,7 @@ export type DecisionPacket = {
   alternatives: Record<string, Alternative | null>;
   captains: { id: number; name: string; xpts: NumberOrNull; expected_minutes: NumberOrNull; eligible: boolean; selected: boolean; reason: string }[];
   players: EvidencePlayer[];
+  simulation_players?: SimulationPlayer[];
   fixtures: { id: number; event: number; team_h: number; team_a: number; team_h_difficulty: number; team_a_difficulty: number; kickoff_time: string | null }[];
   teams: { id: number; short_name: string }[]; writes_enabled: false;
 };

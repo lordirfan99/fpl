@@ -21,7 +21,7 @@ export async function getLeagueDecision(league: number): Promise<LeagueDecisionC
     const value: unknown = await response.json();
     if (!value || typeof value !== "object") return null;
     const candidate = value as Partial<LeagueDecisionContext>;
-    if (candidate.schema_version !== 1 || !candidate.goal || !Array.isArray(candidate.history)
+    if (candidate.schema_version !== 1 || candidate.league_id !== league || !candidate.goal || !Array.isArray(candidate.history)
       || !candidate.ownership || !Array.isArray(candidate.ownership.rows)) return null;
     return candidate as LeagueDecisionContext;
   } catch { return null; }
