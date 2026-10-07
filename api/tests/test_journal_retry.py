@@ -53,3 +53,9 @@ def test_retry_rejects_corrupt_or_wrong_identity(tmp_path, monkeypatch, corrupt)
     monkeypatch.setattr(sys, 'argv', args)
     with pytest.raises(error):
         MODULE.main()
+
+def test_packaged_journals_pass_integrity_verification():
+    from app.journal import verify_record_hash
+
+    for path in (ROOT / 'infra/data/journal/2026-27').glob('gw*.json'):
+        assert verify_record_hash(json.loads(path.read_text())), path.name
