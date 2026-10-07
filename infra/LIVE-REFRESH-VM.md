@@ -20,6 +20,29 @@ where they are; this migration replaces only the broken live collector path.
 
 ## Evidence and release status
 
+The read API revalidates the live manifest at most every 30 seconds per league
+and coalesces concurrent reads. An unchanged object/checksum reuses the validated
+snapshot; a changed checksum requires download and SHA-256 verification. Failed
+verification invalidates the cached success. Capture timestamps never advance
+because of a cache read. Deploy this through the tagged API installer, then run
+`monitor_production.py` and `load_smoke.py` against the VM origin. Retain the
+previous API release for installer rollback; no collector schedule change is needed.
+
+The October implementation adapts the pending read-coalescing work in PR #94 to
+current main, bounds retained live snapshots to two (including failed reads),
+and gives manifest/download requests 15/20-second transport timeouts with SDK
+retries disabled. A failure returns unavailable, never a cached success with a
+new capture time. It has concurrency, checksum, changed-pointer, recovery,
+cross-league and eviction tests.
+
+Release through a clean `v2026.10.07-live-read-cache` checkout with
+`install-live-refresh.sh`, then `install-vm-api.sh` using a private staged copy
+of the existing environment with only `FPL_GIT_SHA` updated. Keep collection and
+auto-runner timers paused during installation and warm verification; restore
+their prior state afterward. Do not alter tokens or enable FPL writes. Retain
+API revision `8ccc8538816b75a4ea9f144aa2395689dff76944` and its environment for
+rollback. The installer backup is keyed by the new release SHA.
+
 At 08:55 UTC on 4 September the old `fpl-live-league-refresh` scheduler was
 enabled but calling the retired `fpl-scheduled-tasks.../tasks/live-refresh`
 service and receiving 404. The remaining Cloud Run job last completed on
