@@ -304,6 +304,35 @@ and VM timers active. The legacy freeze and last-known-good table below are
 historical migration notes, not a verified description of current production.
 The VM's exact deployed commit was not identifiable from its runtime directory.
 
+## October memory outage — 7 October 2026
+
+Recovery release: [PR #122](https://github.com/lordirfan99/fpl/pull/122),
+`v2026.10.07-outage-recovery` (`a477d33`). Both required CI jobs passed.
+The active VM remains in us-central1-a on e2-micro; no additional VM was created.
+
+Serial output confirmed global OOM kills of the API and Telegram bot. The
+legacy Google guest agent held approximately 568 MiB RAM plus 913 MiB swap,
+with OOM score adjustment -999. The VM had 1 GiB RAM and 1 GiB swap.
+Network links and DNS subsequently failed. Disk snapshot
+`fpl-incident-20261007-before-recovery` reached READY before the VM reset.
+Keep this private snapshot private: it contains application state.
+
+The reset restored SSH, Caddy, the API, Telegram and both SportMania services.
+The tagged installer guards the active google-guest-agent-manager service on
+newer packages, or the legacy google-guest-agent service on older packages.
+Verify MemoryMax=201326592, MemorySwapMax=67108864 and OOMScoreAdjust=0.
+Rollback from the same clean tag with
+`bash infra/deploy/install-guest-agent-memory-guard.sh v2026.10.07-outage-recovery --rollback`.
+The previous drop-in is retained under `/var/backups/fpl-guest-agent/`.
+
+The GitHub finalizer was paused during diagnosis. The previously active VM
+auto-runner, daily-pull, league-finalizer and live-refresh timers were stopped
+temporarily and restored. Journal retries now preserve hash-verified frozen
+records and regenerate exports. Missing journal records are included even
+when league snapshots already exist. Invalid hashes and wrong identities
+still fail closed. Check readiness and both live-status endpoints after
+recovery; an HTTP response alone does not prove data freshness.
+
 ## Last known-good
 
 | Component | Tag / ref | Notes |
