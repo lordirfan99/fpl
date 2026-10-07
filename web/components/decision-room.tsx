@@ -27,7 +27,7 @@ function Evidence({ player, packet }: { player: EvidencePlayer; packet: Decision
     </div></details>;
 }
 
-export function DecisionRoom({ packet, checkedAt, children, rivalCaptaincy }: { packet: DecisionPacket; checkedAt?: string; children?: React.ReactNode; rivalCaptaincy?: { gameweek?: number; counts: Record<number, number | null> } }) {
+export function DecisionRoom({ packet, checkedAt, children, rivalCaptaincy, onValidityChange }: { packet: DecisionPacket; checkedAt?: string; onValidityChange?: (valid: boolean) => void; children?: React.ReactNode; rivalCaptaincy?: { gameweek?: number; counts: Record<number, number | null> } }) {
   const [proposed, setProposed] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [valid, setValid] = useState(true);
@@ -39,7 +39,7 @@ export function DecisionRoom({ packet, checkedAt, children, rivalCaptaincy }: { 
         if (active) setValid(false);
       }
       try {
-        const response = await fetch("/api/private/dashboard", { cache: "no-store", signal: AbortSignal.timeout(12000) });
+        const response = await fetch("/api/private/dashboard?view=check", { cache: "no-store", signal: AbortSignal.timeout(12000) });
         const latest = await response.json();
         if (active) {
           const freshCheck = Date.parse(latest.account_checked_at);
@@ -56,6 +56,7 @@ export function DecisionRoom({ packet, checkedAt, children, rivalCaptaincy }: { 
     window.addEventListener("focus", focus);
     return () => { active = false; clearInterval(timer); window.removeEventListener("focus", focus); };
   }, [packet.plan_id, packet.account_fingerprint, packet.deadline, latestCheckedAt]);
+  useEffect(() => { onValidityChange?.(valid); }, [valid, onValidityChange]);
   if (!valid) return <section className="surface" role="status"><h2>Plan unavailable</h2><p>The account check expired or this plan changed. Reload to retrieve the latest verified plan. No hold recommendation is implied.</p><button onClick={() => window.location.reload()}>Reload verified plan</button></section>;
 
   const currentIds = packet.account.picks.filter(p => p.position <= 11).sort((a, b) => a.position - b.position).map(p => p.element);

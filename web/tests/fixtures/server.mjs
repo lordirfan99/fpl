@@ -15,10 +15,12 @@ createServer((req, res) => {
   res.setHeader("Content-Type", "application/json");
   if (req.url === "/") { res.end('{"status":"ok"}'); return; }
   if (req.url.startsWith("/__test/mode/")) { mode = req.url.split("/").at(-1); res.end("{}"); return; }
-  if (/^\/v1\/leagues\/(58005|131997)\/decision-context$/.test(req.url)) { res.end(JSON.stringify(leagueContext())); return; }
+  if (/^\/v1\/leagues\/(58005|131997)\/decision-context$/.test(req.url)) { res.end(JSON.stringify({ ...leagueContext(), league_id: Number(req.url.split("/")[3]) })); return; }
   if (req.url === "/v1/private/dashboard/current" && req.headers.authorization === `Bearer ${"test-read-only-".repeat(4)}`) {
     const value = packet();
     if (["wildcard", "freehit"].includes(mode)) value.chip = mode;
-    res.end(JSON.stringify(mode === "unavailable" ? { status: "unavailable", packet: null } : { status: "ready", packet: value, account_checked_at: new Date().toISOString() }));
+    const response = JSON.stringify(mode === "unavailable" ? { status: "unavailable", packet: null } : { status: "ready", packet: value, account_checked_at: new Date().toISOString() });
+    if (mode === "slow-private") setTimeout(() => res.end(response), 2500);
+    else res.end(response);
   } else { res.statusCode = 404; res.end("{}"); }
 }).listen(4185, "127.0.0.1");

@@ -52,6 +52,8 @@ def test_packet_is_sanitized_canonical_and_does_not_mutate(chip):
             "captain": {"id": 1}, "vice": {"id": 2}, "secret": "sentinel",
             "decision_summary": {"source_manifest": {"status": "ready"}, "recommended_action": "ROLL"}}
     original = copy.deepcopy(plan)
+    players.append({"id": 16, "name": "Unowned candidate", "position": "DEF", "club": 3,
+                    "cost": 47, "xpts_by_gw": [2.5, None, 0], "secret": "sentinel"})
     packet = make_packet(plan, team, players, {"elements": players}, [])
     assert plan == original
     assert packet["plan_id"] == "original"
@@ -59,6 +61,12 @@ def test_packet_is_sanitized_canonical_and_does_not_mutate(chip):
     assert packet["writes_enabled"] is False
     assert "sentinel" not in json.dumps(packet)
     assert len(packet["starters"] + packet["bench"]) == 15
+    assert len(packet["simulation_players"]) == len(players)
+    assert packet["simulation_players"][-1]["xpts_by_gw"] == [2.5, None, 0]
+    assert packet["simulation_players"][-1]["cost"] == 47
+    assert 16 not in [p["id"] for p in packet["players"]]
+    assert all(set(p) == {"id", "name", "position", "club", "cost", "xpts_by_gw", "expected_minutes"}
+               for p in packet["simulation_players"])
 
 
 def test_check_failure_publishes_invalidation_without_other_client_calls(tmp_path):

@@ -70,6 +70,10 @@ def make_packet(plan, team, players, bootstrap, fixtures):
         "captains": [select(c, "id name xpts expected_minutes eligible selected reason")
                      for c in summary.get("captain_rankings", [])[:3]],
         "players": rows,
+        # Same captured model as the plan; no per-edit model runs or FPL calls.
+        # Only public player fields, inside the existing private artifact.
+        "simulation_players": [select(p, "id name position club cost xpts_by_gw expected_minutes")
+                               for p in players],
         "fixtures": [select(f, "id event team_h team_a team_h_difficulty team_a_difficulty kickoff_time")
                      for f in fixtures if f.get("event") in range(gw, min(39, gw + 3))],
         "teams": [select(t, "id short_name") for t in bootstrap.get("teams", [])],
