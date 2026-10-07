@@ -354,7 +354,7 @@ redeploy it. FPL writes remain disabled.
 |---|---|---|
 | VM guest-agent memory guard | `v2026.10.07-outage-recovery` (`a477d33`) | Installed on the active plugin manager; 192 MiB RAM / 64 MiB swap caps verified, OOMScoreAdjust=0, no new OOM kills after reset |
 | Scheduled journal finalizer | `v2026.10.07-journal-recovery` (`1f7360a`) | Tagged finalizer and production monitor passed; five archived weeks verified, both live leagues fresh |
-| API | `v2026.09.06-cloud-run-retirement-6` (`7152add`) | VM service behind Caddy; readiness, parity, concurrency smoke and full production monitor passed |
+| API | `v2026.09.06-snapshot-integrity` (`8ccc853`) | Existing binary recovered in place on 7 October; revision verified, readiness and tagged production monitor passed, FPL writes disabled |
 | dashboard | `v2026.09.06-cloud-run-retirement-7` (`044118a`) | Netlify workflow 34006504682; password/private-route and core page browser checks passed |
 | VM planning client + pre-deadline job | `v2026.09.04-current-planning-inputs` (`7fbc39f`) | Two-file scoped installation; authenticated input-only verification passed, no plan saved or card sent; timer restored |
 | live collector | `v2026.09.06-cloud-run-retirement-6` (`7152add`) | 30-minute VM timer active; both league live-status checks pass; no failed units |
