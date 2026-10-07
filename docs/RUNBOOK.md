@@ -337,6 +337,7 @@ recovery; an HTTP response alone does not prove data freshness.
 
 | Component | Tag / ref | Notes |
 |---|---|---|
+| VM guest-agent memory guard | `v2026.10.07-outage-recovery` (`a477d33`) | Installed on the active plugin manager; 192 MiB RAM / 64 MiB swap caps verified, OOMScoreAdjust=0, no new OOM kills after reset |
 | API | `v2026.09.06-cloud-run-retirement-6` (`7152add`) | VM service behind Caddy; readiness, parity, concurrency smoke and full production monitor passed |
 | dashboard | `v2026.09.06-cloud-run-retirement-7` (`044118a`) | Netlify workflow 34006504682; password/private-route and core page browser checks passed |
 | VM planning client + pre-deadline job | `v2026.09.04-current-planning-inputs` (`7fbc39f`) | Two-file scoped installation; authenticated input-only verification passed, no plan saved or card sent; timer restored |
