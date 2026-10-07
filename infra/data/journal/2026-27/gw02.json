@@ -47,7 +47,7 @@
       "disagreements": [
         {
           "element": 165,
-          "name": "João Pedro",
+          "name": "Jo\u00e3o Pedro",
           "position": "FWD",
           "team": "Chelsea",
           "cost": 7.6,
@@ -165,7 +165,7 @@
       "elite_template": [
         {
           "element": 165,
-          "name": "João Pedro",
+          "name": "Jo\u00e3o Pedro",
           "position": "FWD",
           "team": "Chelsea",
           "count": 24,
@@ -334,7 +334,7 @@
         },
         {
           "element": 165,
-          "name": "João Pedro",
+          "name": "Jo\u00e3o Pedro",
           "position": "FWD",
           "team": "Chelsea",
           "count": 1,
@@ -405,7 +405,7 @@
       "plan_id": "60705e1f8bb05496cf58a9c673a6ffe2376cf1e0967d3e1898c76af9a253413b",
       "input_fp": "d28fc24558df67999888771e80787901c3969d94e3d59b2742cbfa004221661e",
       "engine_display": "competitive-v4.0",
-      "engine_note": "competitive-v4.0 canonical packet • competitive-v4.0 projection • optimizer-v4.1",
+      "engine_note": "competitive-v4.0 canonical packet \u2022 competitive-v4.0 projection \u2022 optimizer-v4.1",
       "transfers": [],
       "target_starters": [
         {
@@ -446,7 +446,7 @@
         },
         {
           "id": 388,
-          "name": "Guéhi",
+          "name": "Gu\u00e9hi",
           "position": "DEF",
           "club": 15,
           "cost": 60,
@@ -860,7 +860,7 @@
         "disagreements": [
           {
             "element": 165,
-            "name": "João Pedro",
+            "name": "Jo\u00e3o Pedro",
             "position": "FWD",
             "team": "Chelsea",
             "cost": 7.6,
@@ -922,7 +922,7 @@
         "elite_template": [
           {
             "element": 165,
-            "name": "João Pedro",
+            "name": "Jo\u00e3o Pedro",
             "position": "FWD",
             "team": "Chelsea",
             "count": 24,
@@ -1091,7 +1091,7 @@
           },
           {
             "element": 165,
-            "name": "João Pedro",
+            "name": "Jo\u00e3o Pedro",
             "position": "FWD",
             "team": "Chelsea",
             "count": 1,
@@ -1168,7 +1168,7 @@
           "plan_id": "60705e1f8bb05496cf58a9c673a6ffe2376cf1e0967d3e1898c76af9a253413b",
           "input_fp": "36d24212b7a09eb62a09297cfed069cc7f365c170cd47482e4238aa56cd67fa4",
           "engine_display": "competitive-v4.0",
-          "engine_note": "competitive-v4.0 canonical packet • competitive-v4.0 projection • optimizer-v4.1",
+          "engine_note": "competitive-v4.0 canonical packet \u2022 competitive-v4.0 projection \u2022 optimizer-v4.1",
           "transfers": [],
           "target_starters": [
             {
@@ -1209,7 +1209,7 @@
             },
             {
               "id": 388,
-              "name": "Guéhi",
+              "name": "Gu\u00e9hi",
               "position": "DEF",
               "club": 15,
               "cost": 60,
@@ -1623,7 +1623,7 @@
             "disagreements": [
               {
                 "element": 165,
-                "name": "João Pedro",
+                "name": "Jo\u00e3o Pedro",
                 "position": "FWD",
                 "team": "Chelsea",
                 "cost": 7.6,
@@ -1685,7 +1685,7 @@
             "elite_template": [
               {
                 "element": 165,
-                "name": "João Pedro",
+                "name": "Jo\u00e3o Pedro",
                 "position": "FWD",
                 "team": "Chelsea",
                 "count": 24,
@@ -1854,7 +1854,7 @@
               },
               {
                 "element": 165,
-                "name": "João Pedro",
+                "name": "Jo\u00e3o Pedro",
                 "position": "FWD",
                 "team": "Chelsea",
                 "count": 1,
@@ -1931,7 +1931,7 @@
               "plan_id": "60705e1f8bb05496cf58a9c673a6ffe2376cf1e0967d3e1898c76af9a253413b",
               "input_fp": "69be714ace0c56e1cabe0e768178f20c5b86de8c1ebc0b7dbdf270eb6576dfdd",
               "engine_display": "competitive-v4.0",
-              "engine_note": "competitive-v4.0 canonical packet • competitive-v4.0 projection • optimizer-v4.1",
+              "engine_note": "competitive-v4.0 canonical packet \u2022 competitive-v4.0 projection \u2022 optimizer-v4.1",
               "transfers": [],
               "target_starters": [
                 {
@@ -1972,7 +1972,7 @@
                 },
                 {
                   "id": 388,
-                  "name": "Guéhi",
+                  "name": "Gu\u00e9hi",
                   "position": "DEF",
                   "club": 15,
                   "cost": 60,
@@ -2386,7 +2386,7 @@
                 "disagreements": [
                   {
                     "element": 165,
-                    "name": "João Pedro",
+                    "name": "Jo\u00e3o Pedro",
                     "position": "FWD",
                     "team": "Chelsea",
                     "cost": 7.6,
@@ -2448,7 +2448,7 @@
                 "elite_template": [
                   {
                     "element": 165,
-                    "name": "João Pedro",
+                    "name": "Jo\u00e3o Pedro",
                     "position": "FWD",
                     "team": "Chelsea",
                     "count": 24,
@@ -2617,7 +2617,7 @@
                   },
                   {
                     "element": 165,
-                    "name": "João Pedro",
+                    "name": "Jo\u00e3o Pedro",
                     "position": "FWD",
                     "team": "Chelsea",
                     "count": 1,
@@ -2694,7 +2694,7 @@
                   "plan_id": "60705e1f8bb05496cf58a9c673a6ffe2376cf1e0967d3e1898c76af9a253413b",
                   "input_fp": "93f81837da8cbe5d8b8b1e2f00fd52b4967bab9114cfc379c9023432287bedda",
                   "engine_display": "competitive-v4.0",
-                  "engine_note": "competitive-v4.0 canonical packet • competitive-v4.0 projection • optimizer-v4.1",
+                  "engine_note": "competitive-v4.0 canonical packet \u2022 competitive-v4.0 projection \u2022 optimizer-v4.1",
                   "transfers": [],
                   "target_starters": [
                     {
@@ -2735,7 +2735,7 @@
                     },
                     {
                       "id": 388,
-                      "name": "Guéhi",
+                      "name": "Gu\u00e9hi",
                       "position": "DEF",
                       "club": 15,
                       "cost": 60,
@@ -3149,7 +3149,7 @@
                     "disagreements": [
                       {
                         "element": 165,
-                        "name": "João Pedro",
+                        "name": "Jo\u00e3o Pedro",
                         "position": "FWD",
                         "team": "Chelsea",
                         "cost": 7.6,
@@ -3211,7 +3211,7 @@
                     "elite_template": [
                       {
                         "element": 165,
-                        "name": "João Pedro",
+                        "name": "Jo\u00e3o Pedro",
                         "position": "FWD",
                         "team": "Chelsea",
                         "count": 24,
@@ -3380,7 +3380,7 @@
                       },
                       {
                         "element": 165,
-                        "name": "João Pedro",
+                        "name": "Jo\u00e3o Pedro",
                         "position": "FWD",
                         "team": "Chelsea",
                         "count": 1,
@@ -3457,7 +3457,7 @@
                       "plan_id": "60705e1f8bb05496cf58a9c673a6ffe2376cf1e0967d3e1898c76af9a253413b",
                       "input_fp": "f161429862198078257ce4405a202eddf5f0f03df72d90cdbf2c594b5047967e",
                       "engine_display": "competitive-v4.0",
-                      "engine_note": "competitive-v4.0 canonical packet • competitive-v4.0 projection • optimizer-v4.1",
+                      "engine_note": "competitive-v4.0 canonical packet \u2022 competitive-v4.0 projection \u2022 optimizer-v4.1",
                       "transfers": [],
                       "target_starters": [
                         {
@@ -3498,7 +3498,7 @@
                         },
                         {
                           "id": 388,
-                          "name": "Guéhi",
+                          "name": "Gu\u00e9hi",
                           "position": "DEF",
                           "club": 15,
                           "cost": 60,
@@ -3912,7 +3912,7 @@
                         "disagreements": [
                           {
                             "element": 165,
-                            "name": "João Pedro",
+                            "name": "Jo\u00e3o Pedro",
                             "position": "FWD",
                             "team": "Chelsea",
                             "cost": 7.6,
@@ -3974,7 +3974,7 @@
                         "elite_template": [
                           {
                             "element": 165,
-                            "name": "João Pedro",
+                            "name": "Jo\u00e3o Pedro",
                             "position": "FWD",
                             "team": "Chelsea",
                             "count": 24,
@@ -4143,7 +4143,7 @@
                           },
                           {
                             "element": 165,
-                            "name": "João Pedro",
+                            "name": "Jo\u00e3o Pedro",
                             "position": "FWD",
                             "team": "Chelsea",
                             "count": 1,
@@ -4220,7 +4220,7 @@
                           "plan_id": "60705e1f8bb05496cf58a9c673a6ffe2376cf1e0967d3e1898c76af9a253413b",
                           "input_fp": "97897785cf14ef8f6eb987da97b6c3d9b204af6f34fda7c5148991134ff13ec3",
                           "engine_display": "competitive-v4.0",
-                          "engine_note": "competitive-v4.0 canonical packet • competitive-v4.0 projection • optimizer-v4.1",
+                          "engine_note": "competitive-v4.0 canonical packet \u2022 competitive-v4.0 projection \u2022 optimizer-v4.1",
                           "transfers": [],
                           "target_starters": [
                             {
@@ -4261,7 +4261,7 @@
                             },
                             {
                               "id": 388,
-                              "name": "Guéhi",
+                              "name": "Gu\u00e9hi",
                               "position": "DEF",
                               "club": 15,
                               "cost": 60,
@@ -4675,7 +4675,7 @@
                             "disagreements": [
                               {
                                 "element": 165,
-                                "name": "João Pedro",
+                                "name": "Jo\u00e3o Pedro",
                                 "position": "FWD",
                                 "team": "Chelsea",
                                 "cost": 7.6,
@@ -4737,7 +4737,7 @@
                             "elite_template": [
                               {
                                 "element": 165,
-                                "name": "João Pedro",
+                                "name": "Jo\u00e3o Pedro",
                                 "position": "FWD",
                                 "team": "Chelsea",
                                 "count": 24,
@@ -4906,7 +4906,7 @@
                               },
                               {
                                 "element": 165,
-                                "name": "João Pedro",
+                                "name": "Jo\u00e3o Pedro",
                                 "position": "FWD",
                                 "team": "Chelsea",
                                 "count": 1,
@@ -4983,7 +4983,7 @@
                               "plan_id": "60705e1f8bb05496cf58a9c673a6ffe2376cf1e0967d3e1898c76af9a253413b",
                               "input_fp": "0a1d2ce8ed367f4baba1a24a27bf7ca5029ec9bde00f31bd8e208ba0bca555cc",
                               "engine_display": "competitive-v4.0",
-                              "engine_note": "competitive-v4.0 canonical packet • competitive-v4.0 projection • optimizer-v4.1",
+                              "engine_note": "competitive-v4.0 canonical packet \u2022 competitive-v4.0 projection \u2022 optimizer-v4.1",
                               "transfers": [],
                               "target_starters": [
                                 {
@@ -5024,7 +5024,7 @@
                                 },
                                 {
                                   "id": 388,
-                                  "name": "Guéhi",
+                                  "name": "Gu\u00e9hi",
                                   "position": "DEF",
                                   "club": 15,
                                   "cost": 60,
@@ -5438,7 +5438,7 @@
                                 "disagreements": [
                                   {
                                     "element": 165,
-                                    "name": "João Pedro",
+                                    "name": "Jo\u00e3o Pedro",
                                     "position": "FWD",
                                     "team": "Chelsea",
                                     "cost": 7.6,
@@ -5500,7 +5500,7 @@
                                 "elite_template": [
                                   {
                                     "element": 165,
-                                    "name": "João Pedro",
+                                    "name": "Jo\u00e3o Pedro",
                                     "position": "FWD",
                                     "team": "Chelsea",
                                     "count": 24,
@@ -5669,7 +5669,7 @@
                                   },
                                   {
                                     "element": 165,
-                                    "name": "João Pedro",
+                                    "name": "Jo\u00e3o Pedro",
                                     "position": "FWD",
                                     "team": "Chelsea",
                                     "count": 1,
@@ -5746,7 +5746,7 @@
                                   "plan_id": "60705e1f8bb05496cf58a9c673a6ffe2376cf1e0967d3e1898c76af9a253413b",
                                   "input_fp": "36dc8681eba694d696a2f892d93c38063ea0e601734c0ffe43f86d746a557d94",
                                   "engine_display": "competitive-v4.0",
-                                  "engine_note": "competitive-v4.0 canonical packet • competitive-v4.0 projection • optimizer-v4.1",
+                                  "engine_note": "competitive-v4.0 canonical packet \u2022 competitive-v4.0 projection \u2022 optimizer-v4.1",
                                   "transfers": [],
                                   "target_starters": [
                                     {
@@ -5787,7 +5787,7 @@
                                     },
                                     {
                                       "id": 388,
-                                      "name": "Guéhi",
+                                      "name": "Gu\u00e9hi",
                                       "position": "DEF",
                                       "club": 15,
                                       "cost": 60,
@@ -6201,7 +6201,7 @@
                                     "disagreements": [
                                       {
                                         "element": 165,
-                                        "name": "João Pedro",
+                                        "name": "Jo\u00e3o Pedro",
                                         "position": "FWD",
                                         "team": "Chelsea",
                                         "cost": 7.6,
@@ -6263,7 +6263,7 @@
                                     "elite_template": [
                                       {
                                         "element": 165,
-                                        "name": "João Pedro",
+                                        "name": "Jo\u00e3o Pedro",
                                         "position": "FWD",
                                         "team": "Chelsea",
                                         "count": 24,
@@ -6432,7 +6432,7 @@
                                       },
                                       {
                                         "element": 165,
-                                        "name": "João Pedro",
+                                        "name": "Jo\u00e3o Pedro",
                                         "position": "FWD",
                                         "team": "Chelsea",
                                         "count": 1,
@@ -6509,7 +6509,7 @@
                                       "plan_id": "60705e1f8bb05496cf58a9c673a6ffe2376cf1e0967d3e1898c76af9a253413b",
                                       "input_fp": "1c5511a60b3bb5b0faa0e61be54afefc2dc6f6455b12e59b0a51dac2c6d7f270",
                                       "engine_display": "competitive-v4.0",
-                                      "engine_note": "competitive-v4.0 canonical packet • competitive-v4.0 projection • optimizer-v4.1",
+                                      "engine_note": "competitive-v4.0 canonical packet \u2022 competitive-v4.0 projection \u2022 optimizer-v4.1",
                                       "transfers": [],
                                       "target_starters": [
                                         {
@@ -6550,7 +6550,7 @@
                                         },
                                         {
                                           "id": 388,
-                                          "name": "Guéhi",
+                                          "name": "Gu\u00e9hi",
                                           "position": "DEF",
                                           "club": 15,
                                           "cost": 60,
@@ -6964,7 +6964,7 @@
                                         "disagreements": [
                                           {
                                             "element": 165,
-                                            "name": "João Pedro",
+                                            "name": "Jo\u00e3o Pedro",
                                             "position": "FWD",
                                             "team": "Chelsea",
                                             "cost": 7.6,
@@ -7026,7 +7026,7 @@
                                         "elite_template": [
                                           {
                                             "element": 165,
-                                            "name": "João Pedro",
+                                            "name": "Jo\u00e3o Pedro",
                                             "position": "FWD",
                                             "team": "Chelsea",
                                             "count": 24,
@@ -7195,7 +7195,7 @@
                                           },
                                           {
                                             "element": 165,
-                                            "name": "João Pedro",
+                                            "name": "Jo\u00e3o Pedro",
                                             "position": "FWD",
                                             "team": "Chelsea",
                                             "count": 1,
@@ -7272,7 +7272,7 @@
                                           "plan_id": "60705e1f8bb05496cf58a9c673a6ffe2376cf1e0967d3e1898c76af9a253413b",
                                           "input_fp": "3c70414f7fb64039e263b062740ecfa76924f1841a14b200237252d295701490",
                                           "engine_display": "competitive-v4.0",
-                                          "engine_note": "competitive-v4.0 canonical packet • competitive-v4.0 projection • optimizer-v4.1",
+                                          "engine_note": "competitive-v4.0 canonical packet \u2022 competitive-v4.0 projection \u2022 optimizer-v4.1",
                                           "transfers": [],
                                           "target_starters": [
                                             {
@@ -7313,7 +7313,7 @@
                                             },
                                             {
                                               "id": 388,
-                                              "name": "Guéhi",
+                                              "name": "Gu\u00e9hi",
                                               "position": "DEF",
                                               "club": 15,
                                               "cost": 60,
@@ -7727,7 +7727,7 @@
                                             "disagreements": [
                                               {
                                                 "element": 165,
-                                                "name": "João Pedro",
+                                                "name": "Jo\u00e3o Pedro",
                                                 "position": "FWD",
                                                 "team": "Chelsea",
                                                 "cost": 7.6,
@@ -7789,7 +7789,7 @@
                                             "elite_template": [
                                               {
                                                 "element": 165,
-                                                "name": "João Pedro",
+                                                "name": "Jo\u00e3o Pedro",
                                                 "position": "FWD",
                                                 "team": "Chelsea",
                                                 "count": 24,
@@ -7958,7 +7958,7 @@
                                               },
                                               {
                                                 "element": 165,
-                                                "name": "João Pedro",
+                                                "name": "Jo\u00e3o Pedro",
                                                 "position": "FWD",
                                                 "team": "Chelsea",
                                                 "count": 1,
@@ -8035,7 +8035,7 @@
                                               "plan_id": "60705e1f8bb05496cf58a9c673a6ffe2376cf1e0967d3e1898c76af9a253413b",
                                               "input_fp": "983afc3cfe9883eaafe20a098f6c279cf4942954c128ec04e5a9a442dcef80ae",
                                               "engine_display": "competitive-v4.0",
-                                              "engine_note": "competitive-v4.0 canonical packet • competitive-v4.0 projection • optimizer-v4.1",
+                                              "engine_note": "competitive-v4.0 canonical packet \u2022 competitive-v4.0 projection \u2022 optimizer-v4.1",
                                               "transfers": [],
                                               "target_starters": [
                                                 {
@@ -8076,7 +8076,7 @@
                                                 },
                                                 {
                                                   "id": 388,
-                                                  "name": "Guéhi",
+                                                  "name": "Gu\u00e9hi",
                                                   "position": "DEF",
                                                   "club": 15,
                                                   "cost": 60,
@@ -8490,7 +8490,7 @@
                                                 "disagreements": [
                                                   {
                                                     "element": 165,
-                                                    "name": "João Pedro",
+                                                    "name": "Jo\u00e3o Pedro",
                                                     "position": "FWD",
                                                     "team": "Chelsea",
                                                     "cost": 7.6,
@@ -8552,7 +8552,7 @@
                                                 "elite_template": [
                                                   {
                                                     "element": 165,
-                                                    "name": "João Pedro",
+                                                    "name": "Jo\u00e3o Pedro",
                                                     "position": "FWD",
                                                     "team": "Chelsea",
                                                     "count": 24,
@@ -8721,7 +8721,7 @@
                                                   },
                                                   {
                                                     "element": 165,
-                                                    "name": "João Pedro",
+                                                    "name": "Jo\u00e3o Pedro",
                                                     "position": "FWD",
                                                     "team": "Chelsea",
                                                     "count": 1,
@@ -8798,7 +8798,7 @@
                                                   "plan_id": "60705e1f8bb05496cf58a9c673a6ffe2376cf1e0967d3e1898c76af9a253413b",
                                                   "input_fp": "7712393e265d08e3fcaf638e09878066b3cff1387cc09d73b331dfe4c67ec878",
                                                   "engine_display": "competitive-v4.0",
-                                                  "engine_note": "competitive-v4.0 canonical packet • competitive-v4.0 projection • optimizer-v4.1",
+                                                  "engine_note": "competitive-v4.0 canonical packet \u2022 competitive-v4.0 projection \u2022 optimizer-v4.1",
                                                   "transfers": [],
                                                   "target_starters": [
                                                     {
@@ -8839,7 +8839,7 @@
                                                     },
                                                     {
                                                       "id": 388,
-                                                      "name": "Guéhi",
+                                                      "name": "Gu\u00e9hi",
                                                       "position": "DEF",
                                                       "club": 15,
                                                       "cost": 60,
@@ -9253,7 +9253,7 @@
                                                     "disagreements": [
                                                       {
                                                         "element": 165,
-                                                        "name": "João Pedro",
+                                                        "name": "Jo\u00e3o Pedro",
                                                         "position": "FWD",
                                                         "team": "Chelsea",
                                                         "cost": 7.6,
@@ -9315,7 +9315,7 @@
                                                     "elite_template": [
                                                       {
                                                         "element": 165,
-                                                        "name": "João Pedro",
+                                                        "name": "Jo\u00e3o Pedro",
                                                         "position": "FWD",
                                                         "team": "Chelsea",
                                                         "count": 24,
@@ -9484,7 +9484,7 @@
                                                       },
                                                       {
                                                         "element": 165,
-                                                        "name": "João Pedro",
+                                                        "name": "Jo\u00e3o Pedro",
                                                         "position": "FWD",
                                                         "team": "Chelsea",
                                                         "count": 1,
@@ -9583,7 +9583,7 @@
                                                         },
                                                         {
                                                           "id": 388,
-                                                          "name": "Guéhi",
+                                                          "name": "Gu\u00e9hi",
                                                           "position": "DEF",
                                                           "club": 15,
                                                           "cost": 60,
@@ -9997,7 +9997,7 @@
                                                         "disagreements": [
                                                           {
                                                             "element": 165,
-                                                            "name": "João Pedro",
+                                                            "name": "Jo\u00e3o Pedro",
                                                             "position": "FWD",
                                                             "team": "Chelsea",
                                                             "cost": 7.6,
@@ -10059,7 +10059,7 @@
                                                         "elite_template": [
                                                           {
                                                             "element": 165,
-                                                            "name": "João Pedro",
+                                                            "name": "Jo\u00e3o Pedro",
                                                             "position": "FWD",
                                                             "team": "Chelsea",
                                                             "count": 24,
@@ -10228,7 +10228,7 @@
                                                           },
                                                           {
                                                             "element": 165,
-                                                            "name": "João Pedro",
+                                                            "name": "Jo\u00e3o Pedro",
                                                             "position": "FWD",
                                                             "team": "Chelsea",
                                                             "count": 1,
@@ -10327,7 +10327,7 @@
                                                             },
                                                             {
                                                               "id": 388,
-                                                              "name": "Guéhi",
+                                                              "name": "Gu\u00e9hi",
                                                               "position": "DEF",
                                                               "club": 15,
                                                               "cost": 60,
@@ -10741,7 +10741,7 @@
                                                             "disagreements": [
                                                               {
                                                                 "element": 165,
-                                                                "name": "João Pedro",
+                                                                "name": "Jo\u00e3o Pedro",
                                                                 "position": "FWD",
                                                                 "team": "Chelsea",
                                                                 "cost": 7.6,
@@ -10803,7 +10803,7 @@
                                                             "elite_template": [
                                                               {
                                                                 "element": 165,
-                                                                "name": "João Pedro",
+                                                                "name": "Jo\u00e3o Pedro",
                                                                 "position": "FWD",
                                                                 "team": "Chelsea",
                                                                 "count": 24,
@@ -10972,7 +10972,7 @@
                                                               },
                                                               {
                                                                 "element": 165,
-                                                                "name": "João Pedro",
+                                                                "name": "Jo\u00e3o Pedro",
                                                                 "position": "FWD",
                                                                 "team": "Chelsea",
                                                                 "count": 1,
@@ -11071,7 +11071,7 @@
                                                                 },
                                                                 {
                                                                   "id": 388,
-                                                                  "name": "Guéhi",
+                                                                  "name": "Gu\u00e9hi",
                                                                   "position": "DEF",
                                                                   "club": 15,
                                                                   "cost": 60,
@@ -11485,7 +11485,7 @@
                                                                 "disagreements": [
                                                                   {
                                                                     "element": 165,
-                                                                    "name": "João Pedro",
+                                                                    "name": "Jo\u00e3o Pedro",
                                                                     "position": "FWD",
                                                                     "team": "Chelsea",
                                                                     "cost": 7.6,
@@ -11547,7 +11547,7 @@
                                                                 "elite_template": [
                                                                   {
                                                                     "element": 165,
-                                                                    "name": "João Pedro",
+                                                                    "name": "Jo\u00e3o Pedro",
                                                                     "position": "FWD",
                                                                     "team": "Chelsea",
                                                                     "count": 24,
@@ -11716,7 +11716,7 @@
                                                                   },
                                                                   {
                                                                     "element": 165,
-                                                                    "name": "João Pedro",
+                                                                    "name": "Jo\u00e3o Pedro",
                                                                     "position": "FWD",
                                                                     "team": "Chelsea",
                                                                     "count": 1,
@@ -11815,7 +11815,7 @@
                                                                     },
                                                                     {
                                                                       "id": 388,
-                                                                      "name": "Guéhi",
+                                                                      "name": "Gu\u00e9hi",
                                                                       "position": "DEF",
                                                                       "club": 15,
                                                                       "cost": 60,
@@ -12229,7 +12229,7 @@
                                                                     "disagreements": [
                                                                       {
                                                                         "element": 165,
-                                                                        "name": "João Pedro",
+                                                                        "name": "Jo\u00e3o Pedro",
                                                                         "position": "FWD",
                                                                         "team": "Chelsea",
                                                                         "cost": 7.6,
@@ -12291,7 +12291,7 @@
                                                                     "elite_template": [
                                                                       {
                                                                         "element": 165,
-                                                                        "name": "João Pedro",
+                                                                        "name": "Jo\u00e3o Pedro",
                                                                         "position": "FWD",
                                                                         "team": "Chelsea",
                                                                         "count": 24,
@@ -12460,7 +12460,7 @@
                                                                       },
                                                                       {
                                                                         "element": 165,
-                                                                        "name": "João Pedro",
+                                                                        "name": "Jo\u00e3o Pedro",
                                                                         "position": "FWD",
                                                                         "team": "Chelsea",
                                                                         "count": 1,
@@ -12559,7 +12559,7 @@
                                                                         },
                                                                         {
                                                                           "id": 388,
-                                                                          "name": "Guéhi",
+                                                                          "name": "Gu\u00e9hi",
                                                                           "position": "DEF",
                                                                           "club": 15,
                                                                           "cost": 60,
@@ -12973,7 +12973,7 @@
                                                                         "disagreements": [
                                                                           {
                                                                             "element": 165,
-                                                                            "name": "João Pedro",
+                                                                            "name": "Jo\u00e3o Pedro",
                                                                             "position": "FWD",
                                                                             "team": "Chelsea",
                                                                             "cost": 7.6,
@@ -13035,7 +13035,7 @@
                                                                         "elite_template": [
                                                                           {
                                                                             "element": 165,
-                                                                            "name": "João Pedro",
+                                                                            "name": "Jo\u00e3o Pedro",
                                                                             "position": "FWD",
                                                                             "team": "Chelsea",
                                                                             "count": 24,
@@ -13204,7 +13204,7 @@
                                                                           },
                                                                           {
                                                                             "element": 165,
-                                                                            "name": "João Pedro",
+                                                                            "name": "Jo\u00e3o Pedro",
                                                                             "position": "FWD",
                                                                             "team": "Chelsea",
                                                                             "count": 1,
@@ -13303,7 +13303,7 @@
                                                                             },
                                                                             {
                                                                               "id": 388,
-                                                                              "name": "Guéhi",
+                                                                              "name": "Gu\u00e9hi",
                                                                               "position": "DEF",
                                                                               "club": 15,
                                                                               "cost": 60,
@@ -13717,7 +13717,7 @@
                                                                             "disagreements": [
                                                                               {
                                                                                 "element": 165,
-                                                                                "name": "João Pedro",
+                                                                                "name": "Jo\u00e3o Pedro",
                                                                                 "position": "FWD",
                                                                                 "team": "Chelsea",
                                                                                 "cost": 7.6,
@@ -13779,7 +13779,7 @@
                                                                             "elite_template": [
                                                                               {
                                                                                 "element": 165,
-                                                                                "name": "João Pedro",
+                                                                                "name": "Jo\u00e3o Pedro",
                                                                                 "position": "FWD",
                                                                                 "team": "Chelsea",
                                                                                 "count": 24,
@@ -13948,7 +13948,7 @@
                                                                               },
                                                                               {
                                                                                 "element": 165,
-                                                                                "name": "João Pedro",
+                                                                                "name": "Jo\u00e3o Pedro",
                                                                                 "position": "FWD",
                                                                                 "team": "Chelsea",
                                                                                 "count": 1,
@@ -14047,7 +14047,7 @@
                                                                                 },
                                                                                 {
                                                                                   "id": 388,
-                                                                                  "name": "Guéhi",
+                                                                                  "name": "Gu\u00e9hi",
                                                                                   "position": "DEF",
                                                                                   "club": 15,
                                                                                   "cost": 60,
@@ -14461,7 +14461,7 @@
                                                                                 "disagreements": [
                                                                                   {
                                                                                     "element": 165,
-                                                                                    "name": "João Pedro",
+                                                                                    "name": "Jo\u00e3o Pedro",
                                                                                     "position": "FWD",
                                                                                     "team": "Chelsea",
                                                                                     "cost": 7.6,
@@ -14523,7 +14523,7 @@
                                                                                 "elite_template": [
                                                                                   {
                                                                                     "element": 165,
-                                                                                    "name": "João Pedro",
+                                                                                    "name": "Jo\u00e3o Pedro",
                                                                                     "position": "FWD",
                                                                                     "team": "Chelsea",
                                                                                     "count": 24,
@@ -14692,7 +14692,7 @@
                                                                                   },
                                                                                   {
                                                                                     "element": 165,
-                                                                                    "name": "João Pedro",
+                                                                                    "name": "Jo\u00e3o Pedro",
                                                                                     "position": "FWD",
                                                                                     "team": "Chelsea",
                                                                                     "count": 1,
@@ -14791,7 +14791,7 @@
                                                                                     },
                                                                                     {
                                                                                       "id": 388,
-                                                                                      "name": "Guéhi",
+                                                                                      "name": "Gu\u00e9hi",
                                                                                       "position": "DEF",
                                                                                       "club": 15,
                                                                                       "cost": 60,
@@ -15205,7 +15205,7 @@
                                                                                     "disagreements": [
                                                                                       {
                                                                                         "element": 165,
-                                                                                        "name": "João Pedro",
+                                                                                        "name": "Jo\u00e3o Pedro",
                                                                                         "position": "FWD",
                                                                                         "team": "Chelsea",
                                                                                         "cost": 7.6,
@@ -15267,7 +15267,7 @@
                                                                                     "elite_template": [
                                                                                       {
                                                                                         "element": 165,
-                                                                                        "name": "João Pedro",
+                                                                                        "name": "Jo\u00e3o Pedro",
                                                                                         "position": "FWD",
                                                                                         "team": "Chelsea",
                                                                                         "count": 24,
@@ -15436,7 +15436,7 @@
                                                                                       },
                                                                                       {
                                                                                         "element": 165,
-                                                                                        "name": "João Pedro",
+                                                                                        "name": "Jo\u00e3o Pedro",
                                                                                         "position": "FWD",
                                                                                         "team": "Chelsea",
                                                                                         "count": 1,
@@ -15535,7 +15535,7 @@
                                                                                         },
                                                                                         {
                                                                                           "id": 388,
-                                                                                          "name": "Guéhi",
+                                                                                          "name": "Gu\u00e9hi",
                                                                                           "position": "DEF",
                                                                                           "club": 15,
                                                                                           "cost": 60,
@@ -15774,7 +15774,7 @@
                                                                                         "disagreements": [
                                                                                           {
                                                                                             "element": 165,
-                                                                                            "name": "João Pedro",
+                                                                                            "name": "Jo\u00e3o Pedro",
                                                                                             "position": "FWD",
                                                                                             "team": "Chelsea",
                                                                                             "cost": 7.6,
@@ -15836,7 +15836,7 @@
                                                                                         "elite_template": [
                                                                                           {
                                                                                             "element": 165,
-                                                                                            "name": "João Pedro",
+                                                                                            "name": "Jo\u00e3o Pedro",
                                                                                             "position": "FWD",
                                                                                             "team": "Chelsea",
                                                                                             "count": 24,
@@ -16005,7 +16005,7 @@
                                                                                           },
                                                                                           {
                                                                                             "element": 165,
-                                                                                            "name": "João Pedro",
+                                                                                            "name": "Jo\u00e3o Pedro",
                                                                                             "position": "FWD",
                                                                                             "team": "Chelsea",
                                                                                             "count": 1,
@@ -16100,7 +16100,7 @@
                                                                                             },
                                                                                             {
                                                                                               "id": 388,
-                                                                                              "name": "Guéhi",
+                                                                                              "name": "Gu\u00e9hi",
                                                                                               "position": "DEF",
                                                                                               "club": 15,
                                                                                               "cost": 60,
@@ -16484,7 +16484,7 @@
                                                                                           "missing": [
                                                                                             {
                                                                                               "element": 165,
-                                                                                              "name": "João Pedro",
+                                                                                              "name": "Jo\u00e3o Pedro",
                                                                                               "position": "FWD",
                                                                                               "elite_percentage": 82.8,
                                                                                               "cost": null,
@@ -16597,7 +16597,7 @@
                                                                                             },
                                                                                             {
                                                                                               "id": 388,
-                                                                                              "name": "Guéhi",
+                                                                                              "name": "Gu\u00e9hi",
                                                                                               "position": "DEF"
                                                                                             },
                                                                                             {
@@ -16976,7 +16976,7 @@
                                                                                       "missing": [
                                                                                         {
                                                                                           "element": 165,
-                                                                                          "name": "João Pedro",
+                                                                                          "name": "Jo\u00e3o Pedro",
                                                                                           "position": "FWD",
                                                                                           "elite_percentage": 82.8,
                                                                                           "cost": null,
@@ -17089,7 +17089,7 @@
                                                                                         },
                                                                                         {
                                                                                           "id": 388,
-                                                                                          "name": "Guéhi",
+                                                                                          "name": "Gu\u00e9hi",
                                                                                           "position": "DEF"
                                                                                         },
                                                                                         {
@@ -17468,7 +17468,7 @@
                                                                                   "missing": [
                                                                                     {
                                                                                       "element": 165,
-                                                                                      "name": "João Pedro",
+                                                                                      "name": "Jo\u00e3o Pedro",
                                                                                       "position": "FWD",
                                                                                       "elite_percentage": 82.8,
                                                                                       "cost": null,
@@ -17581,7 +17581,7 @@
                                                                                     },
                                                                                     {
                                                                                       "id": 388,
-                                                                                      "name": "Guéhi",
+                                                                                      "name": "Gu\u00e9hi",
                                                                                       "position": "DEF"
                                                                                     },
                                                                                     {
@@ -17960,7 +17960,7 @@
                                                                               "missing": [
                                                                                 {
                                                                                   "element": 165,
-                                                                                  "name": "João Pedro",
+                                                                                  "name": "Jo\u00e3o Pedro",
                                                                                   "position": "FWD",
                                                                                   "elite_percentage": 82.8,
                                                                                   "cost": null,
@@ -18073,7 +18073,7 @@
                                                                                 },
                                                                                 {
                                                                                   "id": 388,
-                                                                                  "name": "Guéhi",
+                                                                                  "name": "Gu\u00e9hi",
                                                                                   "position": "DEF"
                                                                                 },
                                                                                 {
@@ -18452,7 +18452,7 @@
                                                                           "missing": [
                                                                             {
                                                                               "element": 165,
-                                                                              "name": "João Pedro",
+                                                                              "name": "Jo\u00e3o Pedro",
                                                                               "position": "FWD",
                                                                               "elite_percentage": 82.8,
                                                                               "cost": null,
@@ -18565,7 +18565,7 @@
                                                                             },
                                                                             {
                                                                               "id": 388,
-                                                                              "name": "Guéhi",
+                                                                              "name": "Gu\u00e9hi",
                                                                               "position": "DEF"
                                                                             },
                                                                             {
@@ -18944,7 +18944,7 @@
                                                                       "missing": [
                                                                         {
                                                                           "element": 165,
-                                                                          "name": "João Pedro",
+                                                                          "name": "Jo\u00e3o Pedro",
                                                                           "position": "FWD",
                                                                           "elite_percentage": 82.8,
                                                                           "cost": null,
@@ -19057,7 +19057,7 @@
                                                                         },
                                                                         {
                                                                           "id": 388,
-                                                                          "name": "Guéhi",
+                                                                          "name": "Gu\u00e9hi",
                                                                           "position": "DEF"
                                                                         },
                                                                         {
@@ -19436,7 +19436,7 @@
                                                                   "missing": [
                                                                     {
                                                                       "element": 165,
-                                                                      "name": "João Pedro",
+                                                                      "name": "Jo\u00e3o Pedro",
                                                                       "position": "FWD",
                                                                       "elite_percentage": 82.8,
                                                                       "cost": null,
@@ -19549,7 +19549,7 @@
                                                                     },
                                                                     {
                                                                       "id": 388,
-                                                                      "name": "Guéhi",
+                                                                      "name": "Gu\u00e9hi",
                                                                       "position": "DEF"
                                                                     },
                                                                     {
@@ -19928,7 +19928,7 @@
                                                               "missing": [
                                                                 {
                                                                   "element": 165,
-                                                                  "name": "João Pedro",
+                                                                  "name": "Jo\u00e3o Pedro",
                                                                   "position": "FWD",
                                                                   "elite_percentage": 82.8,
                                                                   "cost": null,
@@ -20041,7 +20041,7 @@
                                                                 },
                                                                 {
                                                                   "id": 388,
-                                                                  "name": "Guéhi",
+                                                                  "name": "Gu\u00e9hi",
                                                                   "position": "DEF"
                                                                 },
                                                                 {
@@ -20420,7 +20420,7 @@
                                                           "missing": [
                                                             {
                                                               "element": 165,
-                                                              "name": "João Pedro",
+                                                              "name": "Jo\u00e3o Pedro",
                                                               "position": "FWD",
                                                               "elite_percentage": 82.8,
                                                               "cost": null,
@@ -20533,7 +20533,7 @@
                                                             },
                                                             {
                                                               "id": 388,
-                                                              "name": "Guéhi",
+                                                              "name": "Gu\u00e9hi",
                                                               "position": "DEF"
                                                             },
                                                             {
@@ -20917,7 +20917,7 @@
                                                       "missing": [
                                                         {
                                                           "element": 165,
-                                                          "name": "João Pedro",
+                                                          "name": "Jo\u00e3o Pedro",
                                                           "position": "FWD",
                                                           "elite_percentage": 82.8,
                                                           "cost": null,
@@ -21030,7 +21030,7 @@
                                                         },
                                                         {
                                                           "id": 388,
-                                                          "name": "Guéhi",
+                                                          "name": "Gu\u00e9hi",
                                                           "position": "DEF"
                                                         },
                                                         {
@@ -21414,7 +21414,7 @@
                                                   "missing": [
                                                     {
                                                       "element": 165,
-                                                      "name": "João Pedro",
+                                                      "name": "Jo\u00e3o Pedro",
                                                       "position": "FWD",
                                                       "elite_percentage": 82.8,
                                                       "cost": null,
@@ -21527,7 +21527,7 @@
                                                     },
                                                     {
                                                       "id": 388,
-                                                      "name": "Guéhi",
+                                                      "name": "Gu\u00e9hi",
                                                       "position": "DEF"
                                                     },
                                                     {
@@ -21911,7 +21911,7 @@
                                               "missing": [
                                                 {
                                                   "element": 165,
-                                                  "name": "João Pedro",
+                                                  "name": "Jo\u00e3o Pedro",
                                                   "position": "FWD",
                                                   "elite_percentage": 82.8,
                                                   "cost": null,
@@ -22024,7 +22024,7 @@
                                                 },
                                                 {
                                                   "id": 388,
-                                                  "name": "Guéhi",
+                                                  "name": "Gu\u00e9hi",
                                                   "position": "DEF"
                                                 },
                                                 {
@@ -22408,7 +22408,7 @@
                                           "missing": [
                                             {
                                               "element": 165,
-                                              "name": "João Pedro",
+                                              "name": "Jo\u00e3o Pedro",
                                               "position": "FWD",
                                               "elite_percentage": 82.8,
                                               "cost": null,
@@ -22521,7 +22521,7 @@
                                             },
                                             {
                                               "id": 388,
-                                              "name": "Guéhi",
+                                              "name": "Gu\u00e9hi",
                                               "position": "DEF"
                                             },
                                             {
@@ -22905,7 +22905,7 @@
                                       "missing": [
                                         {
                                           "element": 165,
-                                          "name": "João Pedro",
+                                          "name": "Jo\u00e3o Pedro",
                                           "position": "FWD",
                                           "elite_percentage": 82.8,
                                           "cost": null,
@@ -23018,7 +23018,7 @@
                                         },
                                         {
                                           "id": 388,
-                                          "name": "Guéhi",
+                                          "name": "Gu\u00e9hi",
                                           "position": "DEF"
                                         },
                                         {
@@ -23402,7 +23402,7 @@
                                   "missing": [
                                     {
                                       "element": 165,
-                                      "name": "João Pedro",
+                                      "name": "Jo\u00e3o Pedro",
                                       "position": "FWD",
                                       "elite_percentage": 82.8,
                                       "cost": null,
@@ -23515,7 +23515,7 @@
                                     },
                                     {
                                       "id": 388,
-                                      "name": "Guéhi",
+                                      "name": "Gu\u00e9hi",
                                       "position": "DEF"
                                     },
                                     {
@@ -23899,7 +23899,7 @@
                               "missing": [
                                 {
                                   "element": 165,
-                                  "name": "João Pedro",
+                                  "name": "Jo\u00e3o Pedro",
                                   "position": "FWD",
                                   "elite_percentage": 82.8,
                                   "cost": null,
@@ -24012,7 +24012,7 @@
                                 },
                                 {
                                   "id": 388,
-                                  "name": "Guéhi",
+                                  "name": "Gu\u00e9hi",
                                   "position": "DEF"
                                 },
                                 {
@@ -24396,7 +24396,7 @@
                           "missing": [
                             {
                               "element": 165,
-                              "name": "João Pedro",
+                              "name": "Jo\u00e3o Pedro",
                               "position": "FWD",
                               "elite_percentage": 82.8,
                               "cost": null,
@@ -24509,7 +24509,7 @@
                             },
                             {
                               "id": 388,
-                              "name": "Guéhi",
+                              "name": "Gu\u00e9hi",
                               "position": "DEF"
                             },
                             {
@@ -24893,7 +24893,7 @@
                       "missing": [
                         {
                           "element": 165,
-                          "name": "João Pedro",
+                          "name": "Jo\u00e3o Pedro",
                           "position": "FWD",
                           "elite_percentage": 82.8,
                           "cost": null,
@@ -25006,7 +25006,7 @@
                         },
                         {
                           "id": 388,
-                          "name": "Guéhi",
+                          "name": "Gu\u00e9hi",
                           "position": "DEF"
                         },
                         {
@@ -25390,7 +25390,7 @@
                   "missing": [
                     {
                       "element": 165,
-                      "name": "João Pedro",
+                      "name": "Jo\u00e3o Pedro",
                       "position": "FWD",
                       "elite_percentage": 82.8,
                       "cost": null,
@@ -25503,7 +25503,7 @@
                     },
                     {
                       "id": 388,
-                      "name": "Guéhi",
+                      "name": "Gu\u00e9hi",
                       "position": "DEF"
                     },
                     {
@@ -25887,7 +25887,7 @@
               "missing": [
                 {
                   "element": 165,
-                  "name": "João Pedro",
+                  "name": "Jo\u00e3o Pedro",
                   "position": "FWD",
                   "elite_percentage": 82.8,
                   "cost": null,
@@ -26000,7 +26000,7 @@
                 },
                 {
                   "id": 388,
-                  "name": "Guéhi",
+                  "name": "Gu\u00e9hi",
                   "position": "DEF"
                 },
                 {
@@ -26384,7 +26384,7 @@
           "missing": [
             {
               "element": 165,
-              "name": "João Pedro",
+              "name": "Jo\u00e3o Pedro",
               "position": "FWD",
               "elite_percentage": 82.8,
               "cost": null,
@@ -26497,7 +26497,7 @@
             },
             {
               "id": 388,
-              "name": "Guéhi",
+              "name": "Gu\u00e9hi",
               "position": "DEF"
             },
             {
@@ -26597,7 +26597,7 @@
       },
       {
         "element": 388,
-        "name": "Guéhi",
+        "name": "Gu\u00e9hi",
         "team": "Man City",
         "position": "DEF",
         "multiplier": 1,
@@ -26742,7 +26742,7 @@
     "competitors": 1218,
     "top_owned": [
       {
-        "name": "João Pedro",
+        "name": "Jo\u00e3o Pedro",
         "pct": 77.1
       },
       {
@@ -26794,7 +26794,7 @@
         "percentage": 23.7
       },
       {
-        "name": "João Pedro",
+        "name": "Jo\u00e3o Pedro",
         "count": 106,
         "percentage": 8.7
       },
@@ -26848,11 +26848,11 @@
           "count": 638
         },
         {
-          "name": "M.Sangaré",
+          "name": "M.Sangar\u00e9",
           "count": 629
         },
         {
-          "name": "João Pedro",
+          "name": "Jo\u00e3o Pedro",
           "count": 612
         },
         {
@@ -26894,7 +26894,7 @@
           "count": 489
         },
         {
-          "name": "E.Le Fée",
+          "name": "E.Le F\u00e9e",
           "count": 483
         },
         {
