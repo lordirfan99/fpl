@@ -34,6 +34,7 @@ class SnapshotRepository:
     """Read-only adapter around the existing collector output."""
 
     REMOTE_REVALIDATE_SECONDS = 30.0
+    LIVE_CACHE_LIMIT = 2
 
     def __init__(self, data_dir: Path, bucket_name: str | None = None):
         self.data_dir = data_dir.resolve()
@@ -47,6 +48,7 @@ class SnapshotRepository:
         self._hash_cache: OrderedDict[str, tuple[dict[str, Any], str]] = OrderedDict()
         self._cache_lock = Lock()
         self._remote_locks: dict[str, Any] = {}
+        self._live_cache: OrderedDict[int, tuple[float, tuple[str, str] | None, dict[str, Any] | None]] = OrderedDict()
 
     def _path(self, filename: str) -> Path:
         path = (self.data_dir / filename).resolve()
@@ -168,12 +170,47 @@ class SnapshotRepository:
         """Read the complete live snapshot named by its validated manifest."""
         if self._bucket is None:
             raise LiveSnapshotNotFoundError("Live snapshot bucket is unavailable")
+        with self._cache_lock:
+            lock = self._remote_locks.setdefault(f"live:{league_id}", Lock())
+        with lock:
+            with self._cache_lock:
+                cached = self._live_cache.get(league_id)
+                if cached:
+                    self._live_cache.move_to_end(league_id)
+            if cached and time.monotonic() - cached[0] < self.REMOTE_REVALIDATE_SECONDS:
+                if cached[2] is None:
+                    raise LiveSnapshotNotFoundError(f"Live snapshot for league {league_id} is unavailable")
+                return cached[2]
+            try:
+                signature, payload = self._load_live_league(league_id, cached)
+            except Exception as error:
+                self._cache_live(league_id, None, None)
+                raise LiveSnapshotNotFoundError(f"Live snapshot for league {league_id} is unavailable") from error
+            self._cache_live(league_id, signature, payload)
+            return payload
+
+    def _cache_live(self, league_id, signature, payload):
+        with self._cache_lock:
+            self._live_cache[league_id] = (time.monotonic(), signature, payload)
+            self._live_cache.move_to_end(league_id)
+            while len(self._live_cache) > self.LIVE_CACHE_LIMIT:
+                self._live_cache.popitem(last=False)
+
+    def _load_live_league(self, league_id: int, cached):
         try:
-            manifest = json.loads(self._bucket.blob(f"live/league{league_id}/current.json").download_as_text(encoding="utf-8"))
+            manifest = json.loads(self._bucket.blob(f"live/league{league_id}/current.json").download_as_text(encoding="utf-8", timeout=15, retry=None))
             object_name = str(manifest.get("snapshot_object") or "")
-            if manifest.get("status") != "complete" or not object_name.startswith(f"live/"):
+            digest = str(manifest.get("snapshot_sha256") or "")
+            if (manifest.get("status") != "complete" or not object_name.startswith("live/")
+                    or f"/league{league_id}/" not in object_name or len(digest) != 64):
                 raise LiveSnapshotNotFoundError(f"Live manifest for league {league_id} is incomplete")
-            payload = json.loads(self._bucket.blob(object_name).download_as_text(encoding="utf-8"))
+            signature = (object_name, digest)
+            if cached and cached[1] == signature and cached[2] is not None:
+                return signature, cached[2]
+            raw = self._bucket.blob(object_name).download_as_text(encoding="utf-8", timeout=20, retry=None)
+            if hashlib.sha256(raw.encode("utf-8")).hexdigest() != digest:
+                raise ArtifactIntegrityError("Live snapshot does not match manifest checksum")
+            payload = json.loads(raw)
         except LiveSnapshotNotFoundError:
             raise
         except Exception as error:
@@ -183,7 +220,7 @@ class SnapshotRepository:
         expected = int(payload.get("expected_count") or 0)
         if expected <= 0 or int(payload.get("hydrated_count") or 0) != expected or len(payload.get("managers") or []) != expected:
             raise LiveSnapshotNotFoundError(f"Live snapshot for league {league_id} is partial")
-        return payload
+        return signature, payload
 
     def league(self, league_id: int, gameweek: int) -> dict[str, Any]:
         filename = f"gw{gameweek}_league{league_id}_data.json"
