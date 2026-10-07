@@ -333,11 +333,27 @@ when league snapshots already exist. Invalid hashes and wrong identities
 still fail closed. Check readiness and both live-status endpoints after
 recovery; an HTTP response alone does not prove data freshness.
 
+Verified recovery at approximately 20:26 MYT on 7 October: readiness was
+healthy with five hash-verified archived gameweeks. Both leagues were ready
+and fresh (1,193 and 2,539 managers). The VM collector exited 0; original
+timers and all six application/guest-manager services were active, no units
+were failed, and there were no OOM kills after reset. The guest manager used
+approximately 50 MiB with no restarts. Temporary IAP SSH access was removed.
+The original GW2 archive is valid UTF-8: an apparent mismatch during local
+diagnosis came from Windows default decoding. Preserve explicit UTF-8 reads.
+
+The journal release is `v2026.10.07-journal-recovery` (`1f7360a`, PR #123).
+[Finalizer 37620790317](https://github.com/lordirfan99/fpl/actions/runs/37620790317)
+and [monitor 37620794336](https://github.com/lordirfan99/fpl/actions/runs/37620794336)
+both passed. The API binary remains at revision `8ccc853`; recovery did not
+redeploy it. FPL writes remain disabled.
+
 ## Last known-good
 
 | Component | Tag / ref | Notes |
 |---|---|---|
 | VM guest-agent memory guard | `v2026.10.07-outage-recovery` (`a477d33`) | Installed on the active plugin manager; 192 MiB RAM / 64 MiB swap caps verified, OOMScoreAdjust=0, no new OOM kills after reset |
+| Scheduled journal finalizer | `v2026.10.07-journal-recovery` (`1f7360a`) | Tagged finalizer and production monitor passed; five archived weeks verified, both live leagues fresh |
 | API | `v2026.09.06-cloud-run-retirement-6` (`7152add`) | VM service behind Caddy; readiness, parity, concurrency smoke and full production monitor passed |
 | dashboard | `v2026.09.06-cloud-run-retirement-7` (`044118a`) | Netlify workflow 34006504682; password/private-route and core page browser checks passed |
 | VM planning client + pre-deadline job | `v2026.09.04-current-planning-inputs` (`7fbc39f`) | Two-file scoped installation; authenticated input-only verification passed, no plan saved or card sent; timer restored |

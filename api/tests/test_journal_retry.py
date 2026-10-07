@@ -15,7 +15,7 @@ SPEC.loader.exec_module(MODULE)
 
 def test_retry_preserves_frozen_record_and_rebuilds_exports(tmp_path, monkeypatch):
     source = ROOT / 'infra/data/journal/2026-27/gw01.json'
-    record = json.loads(source.read_text())
+    record = json.loads(source.read_text(encoding="utf-8"))
     target = tmp_path / 'data/journal/2026-27/gw01.json'
     target.parent.mkdir(parents=True)
     target.write_text(json.dumps(record))
@@ -32,7 +32,7 @@ def test_retry_preserves_frozen_record_and_rebuilds_exports(tmp_path, monkeypatc
 
 @pytest.mark.parametrize('corrupt', [True, False])
 def test_retry_rejects_corrupt_or_wrong_identity(tmp_path, monkeypatch, corrupt):
-    record = json.loads((ROOT / 'infra/data/journal/2026-27/gw01.json').read_text())
+    record = json.loads((ROOT / 'infra/data/journal/2026-27/gw01.json').read_text(encoding="utf-8"))
     record['gameweek'] = 2
     if not corrupt:
         record['record_hash'] = record_hash(record)
@@ -58,4 +58,4 @@ def test_packaged_journals_pass_integrity_verification():
     from app.journal import verify_record_hash
 
     for path in (ROOT / 'infra/data/journal/2026-27').glob('gw*.json'):
-        assert verify_record_hash(json.loads(path.read_text())), path.name
+        assert verify_record_hash(json.loads(path.read_text(encoding="utf-8"))), path.name
