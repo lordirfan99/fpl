@@ -36,12 +36,14 @@ new capture time. It has concurrency, checksum, changed-pointer, recovery,
 cross-league and eviction tests.
 
 Release through a clean `v2026.10.07-live-read-cache` checkout with
-`install-live-refresh.sh`, then `install-vm-api.sh` using a private staged copy
-of the existing environment with only `FPL_GIT_SHA` updated. Keep collection and
+`install-live-read-cache.sh`. It orchestrates the existing release installers,
+privately stages the existing environment with only `FPL_GIT_SHA` updated,
+and backs up the current symlink and environment for failure/rollback. Keep collection and
 auto-runner timers paused during installation and warm verification; restore
 their prior state afterward. Do not alter tokens or enable FPL writes. Retain
 API revision `8ccc8538816b75a4ea9f144aa2395689dff76944` and its environment for
-rollback. The installer backup is keyed by the new release SHA.
+rollback. Add `--rollback` from the same checkout to restore the previous API
+release, unit and environment. The backup is keyed by the new release SHA.
 
 At 08:55 UTC on 4 September the old `fpl-live-league-refresh` scheduler was
 enabled but calling the retired `fpl-scheduled-tasks.../tasks/live-refresh`
