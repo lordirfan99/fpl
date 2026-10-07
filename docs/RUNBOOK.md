@@ -1,5 +1,31 @@
 # Runbook
 
+## This Week simulator release — 7 October 2026
+
+Reviewed [PR #125](https://github.com/lordirfan99/fpl/pull/125) passed both required
+CI jobs before merge. Tag `v2026.10.07-week-simulator` identifies commit
+`b9ec9f9b5efcf87b69beff229d988afb5c41c629`. Tagged Netlify deployment
+[37625136878](https://github.com/lordirfan99/fpl/actions/runs/37625136878) passed.
+Production `/this-week` and the streamed `/api/week?league=58005` return 200;
+the latter is private/no-store and returns a signed-out private section for
+anonymous users. The private dashboard route still returns 401 anonymously.
+
+The scoped exporter installer updated only the allowlisted private projection
+catalog and restored the runner timer. Backup is
+`/var/backups/fpl-dashboard-simulator/b9ec9f9b5efcf87b69beff229d988afb5c41c629`.
+The first dashboard-only refresh safely failed the existing whole-squad budget
+gate; the executable pending plan's SHA-256 was unchanged. A retained appreciated
+player's market price must not be treated as a new purchase. The corrective
+cash-flow release validates actual transfer proceeds/spending and exact remaining
+bank, including zero, against owned selling prices and incoming catalog prices.
+Its scoped installer is `infra/deploy/install-plan-cash-flow-validation.sh`;
+rollback adds `--rollback` from the same clean release checkout.
+
+The preceding known-good web tree is `v2026.10.07-journal-recovery`, identical to
+published `40afcc6d40f551e208082a5a5cb9e4caffb30f04`. Exporter rollback uses
+`infra/deploy/install-dashboard-simulator.sh v2026.10.07-week-simulator --rollback`.
+See [WEEK_SIMULATOR.md](WEEK_SIMULATOR.md) for formulas, limits and refresh steps.
+
 ## Password dashboard activation and billing diagnosis — 6 September 2026
 
 **Release.** Google OAuth was replaced with a single server-only dashboard

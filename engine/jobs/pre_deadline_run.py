@@ -184,6 +184,37 @@ def account_inputs_verified(team):
             and (transfers.get("limit") is not None or transfers.get("status") == "unlimited"))
 
 
+def validate_transfer_cash_flow(squad, final_squad, transfers, bank, bank_after):
+    """Attest only changed players; retained market appreciation is not spending."""
+    def price(value):
+        return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+    try:
+        current = {p["id"]: p for p in squad}
+        final = {p["id"]: p for p in final_squad}
+        outs = [t["element_out"] for t in transfers]
+        ins = [t["element_in"] for t in transfers]
+        if (not price(bank) or not price(bank_after)
+                or len(current) != len(squad) or len(final) != len(final_squad)
+                or len(set(outs)) != len(outs) or len(set(ins)) != len(ins)
+                or set(outs) & set(ins) or not set(outs) <= current.keys()
+                or set(ins) & current.keys()
+                or (current.keys() - set(outs)) | set(ins) != final.keys()):
+            return False
+        proceeds, spend = 0, 0
+        for t in transfers:
+            sold = current[t["element_out"]]["selling_price"]
+            bought = final[t["element_in"]]["cost"]
+            if (not price(sold) or not price(bought) or t.get("selling_price") != sold
+                    or t.get("purchase_price") != bought):
+                return False
+            proceeds += sold
+            spend += bought
+        return bank + proceeds - spend == bank_after
+    except (KeyError, TypeError):
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--notifications-disabled", action="store_true",
@@ -458,7 +489,8 @@ def main():
         # ``limit`` and the number already used via ``made``.  Preserve zero:
         # after using the only free transfer, another move must be treated as
         # paid (or rejected by the hit guard), never silently made free.
-        free_transfers = max(0, (tr.get("limit") or 1) - (tr.get("made") or 0))
+        free_transfers = max(0, (tr.get("limit") if tr.get("limit") is not None else 1)
+                             - (tr.get("made") or 0))
         if tr.get("limit") is None:
             free_transfers = 1
         else:
@@ -604,7 +636,7 @@ def main():
                     "package_gain": None, "hit": False,
                     "optimizer": f"{active_transfer_chip}-full-squad-v1",
                 })
-        new_bank = int(round(rebuild_budget - sum(p["cost"] for p in final_squad)))
+        new_bank = bank + sum(t["selling_price"] - t["purchase_price"] for t in transfers)
         free_transfers = 99
         ft_left = 99
         horizon_plan = {"objective": sum(p["xpts"] for p in final_squad), "weeks": []}
@@ -642,7 +674,7 @@ def main():
                 "hit": index >= max(0, len(first_week.get("transfers") or []) - first_hits),
                 "optimizer": "horizon-milp-v4.1",
             })
-        new_bank = int(first_week.get("bank_after") or bank)
+        new_bank = int(first_week["bank_after"])
         used_free = min(max(0, int(free_transfers)), len(transfers))
         ft_left = max(0, int(free_transfers) - used_free)
         notes = [
@@ -763,8 +795,8 @@ def main():
         "size_ok": len(final_squad) == 15,
         "quota_ok": dict(quota) == SQUAD_QUOTA,
         "club_ok": max(clubs.values()) <= 3,
-        "budget_ok": total_sell + bank >= total_cost,
-        "cash_ok": cash_in - cash_out <= bank,
+        "budget_ok": cash_in - cash_out <= bank,
+        "cash_ok": validate_transfer_cash_flow(squad, final_squad, transfers, bank, new_bank),
         "total_cost": total_cost / 10,
         "total_sell_value": total_sell / 10,
     }
