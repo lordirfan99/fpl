@@ -26,6 +26,41 @@ published `40afcc6d40f551e208082a5a5cb9e4caffb30f04`. Exporter rollback uses
 `infra/deploy/install-dashboard-simulator.sh v2026.10.07-week-simulator --rollback`.
 See [WEEK_SIMULATOR.md](WEEK_SIMULATOR.md) for formulas, limits and refresh steps.
 
+**Completed production verification.** [PR #126](https://github.com/lordirfan99/fpl/pull/126)
+passed both CI jobs and deployed the scoped planner from
+`v2026.10.07-plan-cash-flow` (`cda2ae9501fce0cd20694102cda2dba587424c73`). The
+dashboard-only run exited zero, published a fresh GW6 preview at
+`2026-10-07T13:09:28.823253+00:00`, and preserved the executable pending plan's
+SHA-256. The authenticated account check exited zero. The private API returned
+ready with 562 modeled players (about 94 KB) and writes disabled. Running the
+browser simulator against that actual packet produced no hold/package errors,
+three projected gameweeks and a bank exactly matching the verified plan; the
+temporary local private capture was erased after verification.
+
+The collector overlapped the first monitor and exposed a 60-second live-read
+timeout; pausing background collection restored a roughly two-second health
+response. Quiet monitor [37627069120](https://github.com/lordirfan99/fpl/actions/runs/37627069120)
+passed. [PR #127](https://github.com/lordirfan99/fpl/pull/127), adapted from the
+pending PR #94 cache work, passed CI and deployed the bounded/coalesced live cache
+as `v2026.10.07-live-read-cache` (`4f8f1f0ffda075c5aa1e8b0010f6bbd9577b8a0f`).
+Both API and collector use the new immutable release. Wrapper rollback metadata
+is `/var/backups/fpl-live-read-cache/4f8f1f0ffda075c5aa1e8b0010f6bbd9577b8a0f`;
+it restores the prior API release symlink and environment as well as the API
+installer's unit/config backup. Netlify release workflow
+[37628426413](https://github.com/lordirfan99/fpl/actions/runs/37628426413) succeeded.
+
+Readiness/contracts and an eight-request/two-client live-status smoke passed
+after warming: p95 792 ms, zero errors. With collection resumed, a second bounded
+smoke had zero request errors but p95 18.6 seconds and failed the five-second
+performance target. This is a measured remaining limit of the small VM; the
+cache is not proof of consistently fast cold reads. Production monitor
+[37628802354](https://github.com/lordirfan99/fpl/actions/runs/37628802354) passed
+with collection running. Auto-runner, live-refresh and account-check timers,
+API and Telegram services were active; no kernel OOM event was seen in the final
+15-minute check. No VM resize, account execution or Telegram approval change was
+made. Use `install-live-read-cache.sh v2026.10.07-live-read-cache --rollback`
+from the matching clean tag if the cache release must be reverted.
+
 ## Password dashboard activation and billing diagnosis — 6 September 2026
 
 **Release.** Google OAuth was replaced with a single server-only dashboard
@@ -380,11 +415,13 @@ redeploy it. FPL writes remain disabled.
 |---|---|---|
 | VM guest-agent memory guard | `v2026.10.07-outage-recovery` (`a477d33`) | Installed on the active plugin manager; 192 MiB RAM / 64 MiB swap caps verified, OOMScoreAdjust=0, no new OOM kills after reset |
 | Scheduled journal finalizer | `v2026.10.07-journal-recovery` (`1f7360a`) | Tagged finalizer and production monitor passed; five archived weeks verified, both live leagues fresh |
-| API | `v2026.09.06-snapshot-integrity` (`8ccc853`) | Existing binary recovered in place on 7 October; revision verified, readiness and tagged production monitor passed, FPL writes disabled |
-| dashboard | `v2026.09.06-cloud-run-retirement-7` (`044118a`) | Netlify workflow 34006504682; password/private-route and core page browser checks passed |
-| VM planning client + pre-deadline job | `v2026.09.04-current-planning-inputs` (`7fbc39f`) | Two-file scoped installation; authenticated input-only verification passed, no plan saved or card sent; timer restored |
-| live collector | `v2026.09.06-cloud-run-retirement-6` (`7152add`) | 30-minute VM timer active; both league live-status checks pass; no failed units |
-| remaining engine + bot | recovered machine image `fpl-zone-recovery-20260904` | Services active; except for the two planning files above, exact source commit not independently established |
+| API | `v2026.10.07-live-read-cache` (`4f8f1f0`) | Bounded verified live cache installed; production monitor passed under collection; writes disabled; cold-read five-second p95 target remains unmet |
+| dashboard | `v2026.10.07-live-read-cache` (`4f8f1f0`) | Netlify workflow 37628426413 succeeded; week bundle, owner-only simulator and compact heartbeat; synthetic browser and real-packet calculations verified |
+| Private dashboard exporter | `v2026.10.07-week-simulator` (`b9ec9f9`) | Scoped file install; verified private packet includes 562 model candidates |
+| VM planning client | `v2026.09.04-current-planning-inputs` (`7fbc39f`) | Existing client retained; authenticated current inputs verified on 7 October |
+| Pre-deadline job | `v2026.10.07-plan-cash-flow` (`cda2ae9`) | Scoped cash-flow gate fix; dashboard-only refresh and fingerprint check succeeded; pending plan unchanged |
+| live collector | `v2026.10.07-live-read-cache` (`4f8f1f0`) | Collector code installed with API release; original schedule restored and collection running during successful monitor |
+| remaining engine + bot | recovered machine image `fpl-zone-recovery-20260904` | Services active; except for the scoped files above, exact source commit not independently established |
 | Telegram bot token | rotated 2026-09-02, in VM `config/credentials.env` only | `@Fplnaf_bot`, chat `-1004464574417` |
 
 Update this table on every release.
