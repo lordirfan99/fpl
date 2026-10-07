@@ -161,7 +161,7 @@ def _finalize_one_gameweek(gameweek: int) -> None:
     _run("scripts/fetch_gw_data_fixed.py", "--gw", str(gameweek), "--league", *map(str, LEAGUES), "--max", "3000", "--workers", "16")
     for league in LEAGUES:
         _run("scripts/generate_analysis.py", "--gw", str(gameweek), "--league", str(league))
-    _run("scripts/build_gameweek_journal.py", "--gw", str(gameweek))
+    _run("scripts/build_gameweek_journal.py", "--season", SEASON, "--gw", str(gameweek), "--reuse-existing")
     _run("scripts/audit_model_backtest.py", "--season", SEASON, "--output", "reports/model-validation/2026-27.json")
     _validate_gameweek(gameweek)
 
@@ -248,7 +248,8 @@ def task_finalize_gameweek(gameweek: int | None) -> None:
     else:
         targets = [gw for gw in _final_gameweeks()
                    if not all(bucket.blob(f"snapshots/gw{gw}_league{league}_{kind}.json").exists()
-                              for league in LEAGUES for kind in ("data", "compact"))]
+                              for league in LEAGUES for kind in ("data", "compact"))
+                   or not bucket.blob(f"snapshots/journal/{SEASON}/gw{gw:02d}.json").exists()]
     if not targets:
         # Every finalized GW is already published as a snapshot; the journal
         # records may still lag (e.g. a run died between both uploads), so
