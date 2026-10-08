@@ -415,12 +415,12 @@ redeploy it. FPL writes remain disabled.
 |---|---|---|
 | VM guest-agent memory guard | `v2026.10.07-outage-recovery` (`a477d33`) | Installed on the active plugin manager; 192 MiB RAM / 64 MiB swap caps verified, OOMScoreAdjust=0, no new OOM kills after reset |
 | Scheduled journal finalizer | `v2026.10.07-journal-recovery` (`1f7360a`) | Tagged finalizer and production monitor passed; five archived weeks verified, both live leagues fresh |
-| API | `v2026.10.07-live-read-cache` (`4f8f1f0`) | Bounded verified live cache installed; production monitor passed under collection; writes disabled; cold-read five-second p95 target remains unmet |
-| dashboard | `v2026.10.07-live-read-cache` (`4f8f1f0`) | Netlify workflow 37628426413 succeeded; week bundle, owner-only simulator and compact heartbeat; synthetic browser and real-packet calculations verified |
+| API | `v2026.10.08-dashboard-reads` (`78ff0bb`) | Bounded reads and compact evidence installed; `/livez`, `/health` and `/ready` verified; writes disabled; collector contention remains on e2-micro |
+| dashboard | `v2026.10.08-dashboard-reads` (`78ff0bb`) | Netlify workflow 37796209761 succeeded; public GW5 view and source capture rendered; owner-plan verification not performed |
 | Private dashboard exporter | `v2026.10.07-week-simulator` (`b9ec9f9`) | Scoped file install; verified private packet includes 562 model candidates |
 | VM planning client | `v2026.09.04-current-planning-inputs` (`7fbc39f`) | Existing client retained; authenticated current inputs verified on 7 October |
 | Pre-deadline job | `v2026.10.07-plan-cash-flow` (`cda2ae9`) | Scoped cash-flow gate fix; dashboard-only refresh and fingerprint check succeeded; pending plan unchanged |
-| live collector | `v2026.10.07-live-read-cache` (`4f8f1f0`) | Collector code installed with API release; original schedule restored and collection running during successful monitor |
+| live collector | `v2026.10.08-dashboard-reads` (`78ff0bb`) | Both GW5 league captures published with checksum-bound compact artifacts; timers restored; first attempt timed out at 20 minutes and retry succeeded |
 | remaining engine + bot | recovered machine image `fpl-zone-recovery-20260904` | Services active; except for the scoped files above, exact source commit not independently established |
 | Telegram bot token | rotated 2026-09-02, in VM `config/credentials.env` only | `@Fplnaf_bot`, chat `-1004464574417` |
 
@@ -486,6 +486,61 @@ arrives before trusting the schedule.
 3. Owner reviews, then **acts in the official FPL app** (manual mode — the bot's
    Approve is not wired to auto-submit during the freeze).
 4. After the deadline + `data_checked`, `post_gw_review` calibrates.
+
+## Bounded dashboard reads release — 8 October 2026
+
+Reviewed PR [#129](https://github.com/lordirfan99/fpl/pull/129) was merged after
+both required checks passed and two Codex review threads were addressed and
+resolved. The merged main commit is `78ff0bbb2a4d20976e3d3fd9e7d92725cd230644`.
+Release tag `v2026.10.08-dashboard-reads` points to that commit. Netlify workflow
+[37796209761](https://github.com/lordirfan99/fpl/actions/runs/37796209761)
+completed successfully for the same commit.
+
+The active VM `instance-20260412-121200` in `us-central1-a` was installed from
+the clean tagged checkout using `infra/deploy/install-live-read-cache.sh`. The
+API and collector release symlink resolve to
+`/opt/fpl-live-refresh/releases/78ff0bbb2a4d20976e3d3fd9e7d92725cd230644`.
+API `/livez`, `/health`, `/ready`, and the public HTTPS health route returned
+healthy responses with `writes_enabled=false`; the deployed revision matched
+the tag. The API health request measured 0.67 seconds during verification. No
+FPL writes, planner run, Telegram approval, or bot authorization change was
+performed.
+
+Both league manifests were verified from the snapshot bucket after the normal
+collector completed:
+
+- League `58005`: GW5 captured `2026-10-08T15:39:49.932520+00:00`, `1,193/1,193`
+  hydrated; snapshot and decision checksums matched, and the decision artifact
+  carried the same league and snapshot identity.
+- League `131997`: GW5 captured `2026-10-08T15:48:59.142957+00:00`, `2,539/2,539`
+  hydrated; snapshot and decision checksums matched, and the decision artifact
+  carried the same league and snapshot identity.
+
+The first post-install collector attempt published league 58005 but hit its
+20-minute systemd timeout before publishing league 131997. The timer retried;
+the next run completed both leagues successfully at 15:49 UTC. During the long
+collector run, API liveness was temporarily delayed on the e2-micro; it returned
+normally after collection. This is an operational limitation, not evidence of a
+successful latency SLA. No OOM event was recorded in the verification checks.
+After completion, `fpl-live-refresh.timer` and `fpl-auto-runner.timer` were
+active as before; the collector service was inactive between scheduled runs and
+the API service was active. Final VM state showed approximately 212 MiB
+available memory, 1 GiB swap in use, and the root disk at 89% (1.1 GiB free).
+
+The live Netlify dashboard returned 200 and rendered the recorded public GW5
+view for KK Old Boys, with 1,193/1,193 squad coverage and source capture time.
+The anonymous private plan remained locked as expected. The Players route and
+public dashboard shell rendered; authenticated owner-plan verification was not
+performed because no owner session was requested or exposed during deployment.
+A comparable pre-release complete-response timing was not captured, so no
+before/after latency claim is made.
+
+Rollback readiness: the install created the tagged backup under
+`/var/backups/fpl-live-read-cache/78ff0bbb2a4d20976e3d3fd9e7d92725cd230644` and
+`/var/backups/fpl-scout-api/78ff0bbb2a4d20976e3d3fd9e7d92725cd230644`; use the
+installer's documented rollback path from the same clean tag. The next follow-up
+should address collector/API resource contention on the e2-micro before treating
+this as a latency improvement in production.
 
 ## Incident response
 
