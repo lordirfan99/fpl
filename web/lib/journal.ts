@@ -1,4 +1,5 @@
 import "server-only";
+import { fetchApi } from "./api-fetch";
 import type { BootstrapEvent } from "./types";
 
 const API_BASE = (process.env.FPL_API_BASE_URL ?? "https://sportmania.duckdns.org/fpl-scout-api").replace(/\/$/, "");
@@ -23,7 +24,7 @@ export interface JournalEntry {
 }
 
 async function request<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+  const response = await fetchApi(`${API_BASE}${path}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`Journal API returned ${response.status} for ${path}`);
   return response.json() as Promise<T>;
 }

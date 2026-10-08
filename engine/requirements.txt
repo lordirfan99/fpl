@@ -1,5 +1,6 @@
 requests>=2.31
-pulp>=2.7
+# The current MILP solver uses the PuLP 2/3 variable API (cat="Binary").
+pulp>=2.7,<4
 python-telegram-bot>=21.0
 fastapi>=0.115
 uvicorn[standard]>=0.30

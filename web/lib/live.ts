@@ -1,4 +1,5 @@
 import "server-only";
+import { fetchApi } from "./api-fetch";
 
 const API_BASE = (process.env.FPL_API_BASE_URL ?? "https://sportmania.duckdns.org/fpl-scout-api").replace(/\/$/, "");
 
@@ -22,7 +23,7 @@ export async function getLiveTeam(gameweek?: number, leagueId = 58005): Promise<
   const params = new URLSearchParams({ league_id: String(leagueId) });
   if (gameweek) params.set("gw", String(gameweek));
   try {
-    const response = await fetch(`${API_BASE}/v1/live/team?${params}`, { cache: "no-store" });
+    const response = await fetchApi(`${API_BASE}/v1/live/team?${params}`, { cache: "no-store" });
     if (!response.ok) return null;
     return await response.json() as LiveTeam;
   } catch {

@@ -30,11 +30,16 @@ class LiveSnapshotNotFoundError(FileNotFoundError):
     pass
 
 
+def positive_count(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
 class SnapshotRepository:
     """Read-only adapter around the existing collector output."""
 
     REMOTE_REVALIDATE_SECONDS = 30.0
     LIVE_CACHE_LIMIT = 2
+    REMOTE_TIMEOUT_SECONDS = 3
 
     def __init__(self, data_dir: Path, bucket_name: str | None = None):
         self.data_dir = data_dir.resolve()
@@ -49,6 +54,7 @@ class SnapshotRepository:
         self._cache_lock = Lock()
         self._remote_locks: dict[str, Any] = {}
         self._live_cache: OrderedDict[int, tuple[float, tuple[str, str] | None, dict[str, Any] | None]] = OrderedDict()
+        self._decision_cache: OrderedDict[tuple[int, int], tuple[float, tuple[str, str], dict[str, Any] | None]] = OrderedDict()
 
     def _path(self, filename: str) -> Path:
         path = (self.data_dir / filename).resolve()
@@ -85,7 +91,7 @@ class SnapshotRepository:
             return cached[1] if cached else None
         try:
             blob = self._bucket.blob(f"snapshots/{filename}")
-            blob.reload()
+            blob.reload(timeout=self.REMOTE_TIMEOUT_SECONDS, retry=None)
             generation = int(blob.generation) if blob.generation else None
             if blob.updated is not None:
                 self._remote_updated[filename] = blob.updated.timestamp()
@@ -93,7 +99,7 @@ class SnapshotRepository:
             if cached and cached[0] == generation:
                 self._remote_checked_at[filename] = time.monotonic()
                 return cached[1]
-            payload = json.loads(blob.download_as_text(encoding="utf-8"))
+            payload = json.loads(blob.download_as_text(encoding="utf-8", timeout=self.REMOTE_TIMEOUT_SECONDS, retry=None))
             self._remote_cache[filename] = (generation, payload)
             self._remote_checked_at[filename] = time.monotonic()
             return payload
@@ -187,6 +193,62 @@ class SnapshotRepository:
                 self._cache_live(league_id, None, None)
                 raise LiveSnapshotNotFoundError(f"Live snapshot for league {league_id} is unavailable") from error
             self._cache_live(league_id, signature, payload)
+            return payload
+
+    def live_decision_context(self, league_id: int, owner: int) -> dict[str, Any] | None:
+        """Checksum-bound current evidence; None only for pre-summary manifests."""
+        if self._bucket is None:
+            raise LiveSnapshotNotFoundError("Live snapshot bucket is unavailable")
+        key = (league_id, owner)
+        with self._cache_lock:
+            lock = self._remote_locks.setdefault(f"decision:{league_id}:{owner}", Lock())
+        with lock:
+            with self._cache_lock:
+                cached = self._decision_cache.get(key)
+                if cached:
+                    self._decision_cache.move_to_end(key)
+            if cached and time.monotonic() - cached[0] < self.REMOTE_REVALIDATE_SECONDS:
+                return cached[2]
+            try:
+                manifest = json.loads(self._bucket.blob(f"live/league{league_id}/current.json").download_as_text(
+                    encoding="utf-8", timeout=self.REMOTE_TIMEOUT_SECONDS, retry=None))
+                if (manifest.get("status") != "complete" or manifest.get("league_id") != league_id
+                        or not positive_count(manifest.get("expected_count"))
+                        or manifest.get("hydrated_count") != manifest.get("expected_count")
+                        or not isinstance(manifest.get("snapshot_sha256"), str)
+                        or len(manifest["snapshot_sha256"]) != 64):
+                    raise ValueError("Incomplete decision manifest")
+                name, digest = manifest.get("decision_object"), manifest.get("decision_sha256")
+                if name is None and digest is None:
+                    return None  # Deploy API before collector; legacy full read remains supported.
+                expected_name = str(manifest.get("snapshot_object") or "").removesuffix(".json") + "-decision.json"
+                if (not isinstance(name, str) or not name.startswith("live/") or f"/league{league_id}/" not in name
+                        or name != expected_name or not isinstance(digest, str) or len(digest) != 64):
+                    raise ValueError("Invalid decision artifact pointer")
+                signature = (name, digest)
+                if cached and cached[1] == signature and cached[2] is not None:
+                    payload = cached[2]
+                else:
+                    raw = self._bucket.blob(name).download_as_text(encoding="utf-8", timeout=self.REMOTE_TIMEOUT_SECONDS, retry=None)
+                    if hashlib.sha256(raw.encode("utf-8")).hexdigest() != digest:
+                        raise ArtifactIntegrityError("Decision evidence checksum mismatch")
+                    payload = json.loads(raw)
+                if (payload.get("schema_version") != 1 or payload.get("league_id") != league_id
+                        or payload.get("owner_entry_id") != owner or payload.get("gameweek") != manifest.get("gameweek")
+                        or payload.get("snapshot_at") != manifest.get("captured_at")
+                        or payload.get("snapshot_sha256") != manifest.get("snapshot_sha256")
+                        or not isinstance(payload.get("goal"), dict) or not isinstance(payload.get("ownership"), dict)
+                        or not isinstance(payload["ownership"].get("rows"), list)):
+                    raise ValueError("Decision evidence identity mismatch")
+            except Exception as error:
+                with self._cache_lock:
+                    self._decision_cache.pop(key, None)
+                raise LiveSnapshotNotFoundError("Current decision evidence is unavailable") from error
+            with self._cache_lock:
+                self._decision_cache[key] = (time.monotonic(), signature, payload)
+                self._decision_cache.move_to_end(key)
+                while len(self._decision_cache) > self.LIVE_CACHE_LIMIT:
+                    self._decision_cache.popitem(last=False)
             return payload
 
     def _cache_live(self, league_id, signature, payload):
@@ -300,7 +362,7 @@ class SnapshotRepository:
             pass
         if self._bucket is not None:
             try:
-                return self._bucket.blob(f"snapshots/journal/{season}/exports/{filename}").download_as_bytes()
+                return self._bucket.blob(f"snapshots/journal/{season}/exports/{filename}").download_as_bytes(timeout=self.REMOTE_TIMEOUT_SECONDS, retry=None)
             except Exception as error:  # pragma: no cover - network/permission failures
                 print(json.dumps({
                     "level": "warning", "message": "journal_export_remote_read_failed",

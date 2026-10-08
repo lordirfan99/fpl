@@ -123,6 +123,7 @@ sudo caddy validate --adapter caddyfile --config "$PATCHED" >/dev/null
 sudo systemctl daemon-reload
 sudo systemctl enable fpl-scout-api.service
 sudo systemctl restart fpl-scout-api.service
+wait_for_url http://127.0.0.1:8790/livez
 wait_for_url http://127.0.0.1:8790/health
 wait_for_url http://127.0.0.1:8790/ready
 

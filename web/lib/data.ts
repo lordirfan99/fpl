@@ -1,5 +1,8 @@
 import "server-only";
-import type { Bootstrap, DashboardData, DataStatus, Fixture, FixtureHorizon, LeagueSnapshot, LeagueSummary, Manager, ManagerSummary } from "./types";
+import { cache } from "react";
+import { fetchApi } from "./api-fetch";
+import { snapshotDataStatus } from "./data-status";
+import type { Bootstrap, DashboardData, Fixture, FixtureHorizon, LeagueSnapshot, LeagueSummary, Manager, ManagerSummary } from "./types";
 import { getLiveTeam } from "./live";
 
 const DATA_BASE = process.env.FPL_DATA_BASE_URL ?? "https://fpl-scout-intelligence.netlify.app/data";
@@ -16,15 +19,16 @@ class ApiRequestError extends Error {
   }
 }
 
-async function requestApi<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+const requestApi = cache(async <T>(path: string): Promise<T> => {
+  const response = await fetchApi(`${API_BASE}${path}`, { cache: "no-store" });
   if (!response.ok) throw new ApiRequestError(response.status, path);
   return response.json() as Promise<T>;
-}
+});
 
-export async function getCompactCatalog(): Promise<Bootstrap> {
-  const payload = await requestApi<{ players: Bootstrap["elements"]; teams: Bootstrap["teams"]; events: Bootstrap["events"] }>("/v1/catalog/compact");
-  return { elements: payload.players, teams: payload.teams, events: payload.events };
+type CatalogMeta = { snapshot_at?: string | null; stale?: boolean; quality_status?: string };
+export async function getCompactCatalog(): Promise<Bootstrap & { meta?: CatalogMeta }> {
+  const payload = await requestApi<{ players: Bootstrap["elements"]; teams: Bootstrap["teams"]; events: Bootstrap["events"]; meta?: CatalogMeta }>("/v1/catalog/compact");
+  return { elements: payload.players, teams: payload.teams, events: payload.events, meta: payload.meta };
 }
 
 export async function getLeagueSummary(
@@ -68,18 +72,18 @@ export async function getTransferOptimizer(leagueId: number, gameweek: number) {
 async function readJson<T>(path: string): Promise<T> {
   const cached = memoryCache.get(path);
   if (cached && cached.expiresAt > Date.now()) return cached.value as T;
-  const response = await fetch(`${DATA_BASE}/${path}`, { cache: "no-store" });
+  const response = await fetchApi(`${DATA_BASE}/${path}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`Data source returned ${response.status} for ${path}`);
   const value = await response.json() as T;
   memoryCache.set(path, { expiresAt: Date.now() + 300_000, value });
   return value;
 }
 
-export async function getDashboardData(leagueId = DEFAULT_LEAGUE_ID, gameweek?: number): Promise<DashboardData> {
+export const getDashboardData = cache(async (leagueId = DEFAULT_LEAGUE_ID, gameweek?: number): Promise<DashboardData> => {
   const data = await getLeagueData(leagueId, gameweek);
   if (!data.manager) throw new Error(`Team ${MY_TEAM_ID} is not present in league ${leagueId} for GW${data.gameweek}`);
   return { ...data, manager: data.manager };
-}
+});
 
 export async function getPlannerData(targetGameweek?: number) {
   const dashboard = await getDashboardData();
@@ -115,7 +119,7 @@ export async function getPlannerData(targetGameweek?: number) {
   const toGameweek = Math.min(fromGameweek + 4, 38);
   let fixtureHorizon: FixtureHorizon;
   if (API_BASE) {
-    const response = await fetch(`${API_BASE}/v1/fixtures?from_gw=${fromGameweek}&to_gw=${toGameweek}`, { cache: "no-store" });
+    const response = await fetchApi(`${API_BASE}/v1/fixtures?from_gw=${fromGameweek}&to_gw=${toGameweek}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`Scout API returned ${response.status} for fixture horizon`);
     fixtureHorizon = ((await response.json()) as { gameweeks: FixtureHorizon }).gameweeks;
   } else {
@@ -137,34 +141,27 @@ export async function getLeagueData(leagueId = DEFAULT_LEAGUE_ID, gameweek?: num
 }
 
 async function getLeagueDataFromApi(leagueId: number, gameweek?: number): Promise<LeagueDashboardData> {
-  type IdentityPayload = { current_gameweek: number };
   type TeamPayload = { meta: { generated_at?: string; snapshot_at?: string }; manager: Manager; fixtures: Fixture[] };
   type LeaguePayload = { meta?: { generated_at?: string; snapshot_at?: string }; managers: Manager[] };
   type CatalogPayload = { players: Bootstrap["elements"]; teams: Bootstrap["teams"]; events: Bootstrap["events"] };
   const request = requestApi;
-  const identity = await request<IdentityPayload>("/v1/me");
   // A league-analysis page must work even when the configured team is not a
   // member of the selected league (for example the public prize league).
   // Treat the personal-team lookup as optional; the league snapshot remains
   // the source of truth for elite/cohort pages.
-  const catalog = await request<CatalogPayload>("/v1/catalog");
   // For the current view, ask the live read model first. The catalog is a
   // reference snapshot and can lag the official FPL gameweek transition.
-  let liveIdentity: { gameweek: number } | null = null;
   // Live league reads are complete, validated background snapshots. They are
   // safe for every tracked league and must take precedence over an older
   // finalized snapshot whenever the user has not explicitly selected a GW.
   // This request does not call FPL: it reads the Cloud Run collector's latest
   // immutable snapshot through the API.
   const useLiveReadModel = gameweek === undefined;
-  if (useLiveReadModel) {
-    try {
-      liveIdentity = await request<{ gameweek: number }>(`/v1/live/team?league_id=${leagueId}`);
-    } catch {
-      liveIdentity = null;
-    }
-  }
-  const resolvedGameweek = gameweek ?? liveIdentity?.gameweek ?? catalog.events.find((event) => event.is_current)?.id ?? identity.current_gameweek ?? DEFAULT_GAMEWEEK;
+  const [catalog, liveIdentity] = await Promise.all([
+    request<CatalogPayload>("/v1/catalog"),
+    useLiveReadModel ? request<{ gameweek: number }>(`/v1/live/team?league_id=${leagueId}`).catch(() => null) : Promise.resolve(null),
+  ]);
+  const resolvedGameweek = gameweek ?? liveIdentity?.gameweek ?? catalog.events.find((event) => event.is_current)?.id ?? DEFAULT_GAMEWEEK;
   // League snapshots arrive after the live gameweek advances.  If the
   // selected league has not been collected for the current GW yet, walk back
   // to the newest available snapshot instead of rendering an application
@@ -197,6 +194,9 @@ async function getLeagueDataFromApi(leagueId: number, gameweek?: number): Promis
   }
   if (!league) throw new Error(`No league snapshot available for league ${leagueId}`);
   const team = await request<TeamPayload>(`/v1/me/team?league_id=${leagueId}&gw=${snapshotGameweek}`).catch(() => null);
+  // Live fallback exposes its capture time as generated_at; finalized
+  // snapshots use snapshot_at. Request generation time is not evidence.
+  const asOf = liveProvisional ? league.meta?.generated_at : league.meta?.snapshot_at;
   return {
     manager: league.managers.find((entry) => entry.entry_id === MY_TEAM_ID),
     managers: league.managers,
@@ -204,20 +204,18 @@ async function getLeagueDataFromApi(leagueId: number, gameweek?: number): Promis
     fixture: team?.fixtures ?? [],
     gameweek: snapshotGameweek,
     leagueId,
-    fetchedAt: team?.meta.snapshot_at ?? team?.meta.generated_at ?? league.meta?.snapshot_at ?? league.meta?.generated_at,
+    fetchedAt: asOf,
     requestedGameweek: resolvedGameweek,
     snapshotStatus: snapshotGameweek === resolvedGameweek ? "exact" : snapshotStatus,
     liveProvisional,
-    dataStatus: {
-      source: liveProvisional ? "official-fpl-live" : "finalized-snapshot",
+    dataStatus: snapshotDataStatus({
       gameweek: snapshotGameweek,
-      asOf: team?.meta.snapshot_at ?? team?.meta.generated_at ?? league.meta?.snapshot_at ?? league.meta?.generated_at,
+      requestedGameweek: resolvedGameweek,
+      asOf,
       isLive: liveProvisional,
-      isFinal: !liveProvisional,
-      stale: false,
-      quality: "valid",
-      hydration: { loaded: league.managers.filter((manager) => manager.squad?.length > 0).length, expected: league.managers.length, percent: Math.round(league.managers.filter((manager) => manager.squad?.length > 0).length / Math.max(1, league.managers.length) * 100) },
-    } satisfies DataStatus,
+      loaded: league.managers.filter((manager) => manager.squad?.length === 15).length,
+      expected: league.managers.length,
+    }),
   };
 }
 

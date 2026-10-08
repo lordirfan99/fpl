@@ -10,6 +10,7 @@ from .repository import LiveSnapshotNotFoundError, SnapshotNotFoundError
 
 _cache = {}
 _lock = threading.Lock()
+_build_locks = {}
 
 
 def number(value):
@@ -95,49 +96,76 @@ def ownership(managers, population, owner):
             "cohort_count": len(cohort), "cohort_sample": len(target)}
 
 
-def build_context(repo, league_id, owner):
+def current_context(live, league_id, owner):
+    managers = live.get("managers") or []
+    population = live.get("expected_count")
+    target = goal(managers, population, owner)
+    fresh = snapshot_freshness(live.get("captured_at"))
+    return {"schema_version": 1, "league_id": league_id, "owner_entry_id": owner,
+            "gameweek": int(live.get("gameweek") or 0),
+            "status": "historical" if fresh["stale"] else "ready", "snapshot_at": live.get("captured_at"),
+            "freshness": fresh, "goal": target, "history": [],
+            "ownership": ownership(managers, population, owner) if target["available"] else {"rows": []},
+            "source": "official-fpl-live", "scope": "public_gameweek_research", "writes_enabled": False}
+
+
+def build_context(repo, league_id, owner, include_history=True):
+    # Coalesce cold builds too, not just access to completed cache entries.
+    key = (league_id, owner, include_history)
+    with _lock:
+        build_lock = _build_locks.setdefault(key, threading.Lock())
+    with build_lock:
+        return _build_context(repo, league_id, owner, include_history)
+
+
+def _build_context(repo, league_id, owner, include_history):
+    if not include_history and hasattr(repo, "live_decision_context"):
+        try:
+            compact = repo.live_decision_context(league_id, owner)
+            if compact is not None:
+                fresh = snapshot_freshness(compact.get("snapshot_at"))
+                return {**compact, "freshness": fresh, "status": "historical" if fresh["stale"] else "ready"}
+        except LiveSnapshotNotFoundError:
+            return {"schema_version": 1, "league_id": league_id, "status": "unavailable",
+                    "goal": {"available": False}, "history": [], "ownership": {"rows": []}}
     # Bounded per-league cache keeps full archived squad payloads off the browser
     # and prevents every refresh from downloading historical files again.
-    key = (league_id, owner)
+    key = (league_id, owner, include_history)
     with _lock:
         saved = _cache.get(key)
         if saved and time.monotonic() - saved[0] < 300:
-            return saved[1]
+            fresh = snapshot_freshness(saved[1].get("snapshot_at"))
+            return {**saved[1], "freshness": fresh, "status": "historical" if fresh["stale"] else "ready"}
     try:
         live = repo.live_league(league_id)
     except LiveSnapshotNotFoundError:
         return {"schema_version": 1, "league_id": league_id, "status": "unavailable", "goal": {"available": False}, "history": [], "ownership": {"rows": []}}
-    managers = live.get("managers") or []
-    current_population = live.get("expected_count")
-    target = goal(managers, current_population, owner)
-    fresh = snapshot_freshness(live.get("captured_at"))
+    result = current_context(live, league_id, owner)
+    target = result["goal"]
     current_recorded_at = source_timestamp(live.get("captured_at"))
     current_gw = int(live.get("gameweek") or 0)
     history = []
-    try:
-        completed = {e["id"] for e in repo.bootstrap().get("events", []) if e.get("finished") and e.get("data_checked")}
-    except SnapshotNotFoundError:
-        completed = set()
-    for gw in range(max(1, current_gw - 6), current_gw + 1):
-        row = {"gameweek": gw, "points_gap": None, "snapshot_at": None}
-        if gw == current_gw and target["available"] and current_recorded_at:
-            row.update(points_gap=target["points_gap"], snapshot_at=current_recorded_at)
-        elif gw in completed:
-            try:
-                archive = repo.league(league_id, gw)
-                archive_population = archive.get("population_size") or archive.get("total_entries")
-                historical = goal(archive.get("competitors") or [], archive_population, owner)
-                recorded_at = source_timestamp(archive.get("fetched_at"))
-                if historical["available"] and recorded_at:
-                    row.update(points_gap=historical["points_gap"], snapshot_at=recorded_at)
-            except SnapshotNotFoundError:
-                pass
-        history.append(row)
-    result = {"schema_version": 1, "league_id": league_id, "gameweek": current_gw,
-              "status": "historical" if fresh["stale"] else "ready", "snapshot_at": live.get("captured_at"),
-              "freshness": fresh, "goal": target, "history": history,
-              "ownership": ownership(managers, current_population, owner) if target["available"] else {"rows": []},
-              "source": "official-fpl-live", "scope": "public_gameweek_research", "writes_enabled": False}
+    if include_history:
+        try:
+            completed = {e["id"] for e in repo.bootstrap().get("events", []) if e.get("finished") and e.get("data_checked")}
+        except SnapshotNotFoundError:
+            completed = set()
+        for gw in range(max(1, current_gw - 6), current_gw + 1):
+            row = {"gameweek": gw, "points_gap": None, "snapshot_at": None}
+            if gw == current_gw and target["available"] and current_recorded_at:
+                row.update(points_gap=target["points_gap"], snapshot_at=current_recorded_at)
+            elif gw in completed:
+                try:
+                    archive = repo.league(league_id, gw)
+                    archive_population = archive.get("population_size") or archive.get("total_entries")
+                    historical = goal(archive.get("competitors") or [], archive_population, owner)
+                    recorded_at = source_timestamp(archive.get("fetched_at"))
+                    if historical["available"] and recorded_at:
+                        row.update(points_gap=historical["points_gap"], snapshot_at=recorded_at)
+                except SnapshotNotFoundError:
+                    pass
+            history.append(row)
+    result["history"] = history
     with _lock:
         if len(_cache) >= 8:
             _cache.pop(next(iter(_cache)))
