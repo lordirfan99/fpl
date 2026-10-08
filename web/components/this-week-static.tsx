@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { TransferSimulator } from "./transfer-simulator";
 import { DecisionRoom } from "./decision-room";
 import type { DecisionPacket } from "@/lib/decision-room";
@@ -12,7 +12,7 @@ type Context = {
   gameweek?: number;
   status?: string;
   snapshot_at?: string;
-  freshness?: { freshness_hours?: number; stale?: boolean };
+  freshness?: { freshness_hours?: number | null; stale?: boolean; max_age_hours?: number };
   goal?: {
     available?: boolean;
     owner_rank?: number;
@@ -21,7 +21,7 @@ type Context = {
     points_gap?: number;
     inside_target?: boolean;
   };
-  ownership?: { sample_count?: number; population?: number; rows?: { element: number; name: string; league_pct?: number; target_pct?: number | null; target_captain_pct?: number | null }[] };
+  ownership?: { sample_count?: number; population?: number; cohort_sample?: number; cohort_count?: number; rows?: { element: number; name: string; league_pct?: number; target_pct?: number | null; target_captain_pct?: number | null }[] };
 };
 
 type PrivateResponse = { status?: string; packet?: DecisionPacket | null; account_checked_at?: string };
@@ -53,7 +53,6 @@ export function ThisWeekStatic() {
   const [context, setContext] = useState<Context | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "unavailable">("loading");
   const [retry, setRetry] = useState(0);
-  const autoRetried = useRef(false);
   const [privatePlan, setPrivatePlan] = useState<PrivateResponse | null>(null);
   const [planValid, setPlanValid] = useState(true);
   const [now, setNow] = useState<number | null>(null);
@@ -68,16 +67,18 @@ export function ThisWeekStatic() {
   useEffect(() => {
     const controller = new AbortController();
     let active = true, receivedLeague = false, receivedPrivate = false;
-    const timer = window.setTimeout(() => controller.abort(), 25000);
+    const timer = window.setTimeout(() => controller.abort(), 10000);
     setState("loading");
     setContext(null);
+    setPrivatePlan(null);
+    setPlanValid(true);
     const consume = (line: string) => {
       if (!active || !line.trim()) return;
       const item = JSON.parse(line);
       if (item.section === "league") {
         receivedLeague = true;
         setContext(item.data);
-        setState(item.data ? "ready" : "unavailable");
+        setState(item.data && item.data.status !== "unavailable" ? "ready" : "unavailable");
       } else if (item.section === "private") {
         receivedPrivate = true;
         setPrivatePlan(item.data);
@@ -104,10 +105,6 @@ export function ThisWeekStatic() {
         if (active) {
           if (!receivedPrivate) setPrivatePlan({ status: "unavailable" });
           if (!receivedLeague) setState("unavailable");
-          if (!receivedLeague && !autoRetried.current) {
-            autoRetried.current = true;
-            setRetry(value => value + 1);
-          }
         }
       }
     };
@@ -126,15 +123,18 @@ export function ThisWeekStatic() {
   const complete = goal?.available && Number.isInteger(goal.owner_rank) && Number.isInteger(goal.cutoff_rank);
   const packet = privatePlan?.status === "ready" ? privatePlan.packet : null;
   const player = (id: number) => packet?.players.find(candidate => candidate.id === id);
-  const moves = packet?.transfers.map(transfer => `${transfer.out_name} → ${transfer.in_name}`).join(" · ");
+  const moves = packet?.transfers.map(transfer => `${transfer.out_name} → ${transfer.in_name}`).join(" · ") || packet?.action;
   const countdown = packet ? deadlineCountdown(packet.deadline, now) : null;
-  const stale = context?.freshness?.stale ?? context?.status === "historical";
+  const captureAge = context?.snapshot_at && now ? (now - Date.parse(context.snapshot_at)) / 3_600_000 : null;
+  const stale = context?.status === "historical" || context?.freshness?.stale === true
+    || captureAge === null || !Number.isFinite(captureAge) || captureAge < -5 / 60
+    || captureAge > (context?.freshness?.max_age_hours ?? 12);
 
   return <>
     <nav className="decision-league-switch" aria-label="Decision league">{leagues.map(league => <a key={league.id} href={`/this-week?league=${league.id}`} aria-current={league.id === selected.id ? "page" : undefined}>{league.name}</a>)}</nav>
 
     {state === "loading" ? <section className="surface decision-unavailable" aria-busy="true" role="status"><h2 className="sr-only">Loading {selected.name} evidence</h2><div className="gw-skeleton" aria-hidden="true"><i className="bar title"></i><i className="bar"></i><i className="bar short"></i><i className="bar grid"></i></div><p>Loading recorded league evidence.</p></section> : null}
-    {state === "unavailable" ? <section className="surface decision-unavailable"><h2>League evidence temporarily unavailable</h2><p>The recorded standings could not be loaded. Try again shortly.</p><button type="button" onClick={() => { autoRetried.current = false; setRetry(value => value + 1); }}>Retry</button></section> : null}
+    {state === "unavailable" ? <section className="surface decision-unavailable"><h2>League evidence temporarily unavailable</h2><p>The recorded standings could not be loaded. Try again shortly.</p><button type="button" onClick={() => setRetry(value => value + 1)}>Retry league evidence</button></section> : null}
 
     {state === "ready" && context ? <section className="surface goal-progress">
       <div className="goal-heading">
@@ -143,12 +143,12 @@ export function ThisWeekStatic() {
           <h2>{complete ? `${Math.abs(goal!.points_gap ?? 0)} points ${goal!.points_gap === 0 ? "level with" : goal!.points_gap! > 0 ? "to" : "ahead of"} the top-10% cutoff` : "Target progress unavailable"}</h2>
           <p>{complete ? `Rank ${goal!.owner_rank!.toLocaleString()} / ${goal!.manager_count!.toLocaleString()} · Target rank ${goal!.cutoff_rank} or better` : "Complete standings are required before calculating a cutoff."}</p>
         </div>
-        <span className={`freshness-chip${stale ? " stale" : ""}`}>{stale ? "Historical capture" : (context.snapshot_at && Number.isFinite(Date.parse(context.snapshot_at)) ? `Captured ${formatMYT(context.snapshot_at)}` : "Capture time unavailable")}</span>
+        <span className={`freshness-chip${stale ? " stale" : ""}`}>{context.snapshot_at && Number.isFinite(Date.parse(context.snapshot_at)) ? `Captured ${formatMYT(context.snapshot_at)}${stale ? " · historical" : ""}` : "Capture time unavailable"}</span>
       </div>
-      <p className="decision-caption">GW{context.gameweek ?? "?"} · {context.status === "historical" ? "Older capture: not current standings." : "Live recorded snapshot."} The cutoff moves as your rivals score.</p>
+      <p className="decision-caption">GW{context.gameweek ?? "?"} · {stale ? "Older or unverified capture: not current standings." : "Live recorded snapshot."} The cutoff moves as your rivals score.</p>
     </section> : null}
 
-    {state === "ready" && context?.ownership?.rows?.length ? <section className="surface rival-exposure"><h2>Recorded rival picks</h2><ul>{context.ownership.rows.slice(0, 8).map(player => <li key={player.element}><span>{player.name}</span> · target group {player.target_pct ?? "—"}% · captaincy {player.target_captain_pct ?? "—"}%</li>)}</ul></section> : null}
+    {state === "ready" && context?.ownership?.rows?.length ? <section className="surface rival-exposure"><h2>Recorded rival picks</h2><p>Squad coverage: {context.ownership.sample_count ?? "unknown"} / {context.ownership.population ?? "unknown"} managers. Target group: {context.ownership.cohort_sample ?? "unknown"} / {context.ownership.cohort_count ?? "unknown"} squads. Percentages use the recorded squads.</p><ul>{context.ownership.rows.slice(0, 8).map(player => <li key={player.element}><span>{player.name}</span> · target group {player.target_pct ?? "—"}% · captaincy {player.target_captain_pct ?? "—"}%</li>)}</ul></section> : null}
 
     {packet && planValid ? <section className="surface gw-checklist" aria-label="Gameweek checklist">
       <div className="gw-checklist-head">
@@ -176,7 +176,7 @@ export function ThisWeekStatic() {
       <ChecklistRow label="Starting XI" value="Locked" />
       <ChecklistRow label="Bank" value="Locked" />
     </ol><Link href="/sign-in">Unlock private plan</Link></section> : null}
-    {!packet && privatePlan?.status === "unavailable" ? <section className="surface"><h2>Plan unavailable</h2><p>The verified plan is not available right now. This does not imply a hold recommendation.</p></section> : null}
-    {!packet && !privatePlan ? <section className="surface"><h2>Your private plan</h2><p>The verified squad, bank and transfer plan loads privately after the static page is ready.</p><Link href="/sign-in">Unlock private plan</Link></section> : null}
+    {!packet && privatePlan?.status === "unavailable" ? <section className="surface"><h2>Plan unavailable</h2><p>The verified plan is not available right now. This does not imply a hold recommendation.</p><button type="button" onClick={() => setRetry(value => value + 1)}>Retry private plan</button></section> : null}
+    {!packet && !privatePlan ? <section className="surface" role="status" aria-busy="true"><h2>Checking your private plan</h2><p>Loading the verified squad, bank and transfer plan.</p></section> : null}
   </>;
 }

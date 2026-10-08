@@ -99,3 +99,53 @@ def test_incomplete_scoring_lineup_is_rejected(count):
         pick["multiplier"] = int(index < count)
     with pytest.raises(RuntimeError, match="invalid lineup"):
         collector._validate([{"entry_id": 1, "squad": squad}], 1)
+
+
+@pytest.mark.parametrize("fail_summary", [False, True])
+def test_publish_binds_compact_evidence_to_snapshot_before_manifest(monkeypatch, tmp_path, fail_summary):
+    import hashlib
+    import json
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    from app.repository import SnapshotRepository
+
+    objects, writes = {}, []
+    class Blob:
+        generation = 1
+        def __init__(self, name):
+            self.name = name
+        def upload_from_string(self, value, **kwargs):
+            assert kwargs["if_generation_match"] == 0
+            if fail_summary and self.name.endswith("-decision.json"):
+                raise RuntimeError("summary upload failed")
+            objects[self.name] = value
+            writes.append(self.name)
+        def exists(self):
+            return self.name in objects
+        def download_as_text(self, **kwargs):
+            return objects[self.name].decode()
+    class Bucket:
+        def blob(self, name):
+            return Blob(name)
+    bucket = Bucket()
+    monkeypatch.setattr(collector, "storage", SimpleNamespace(Client=lambda: SimpleNamespace(bucket=lambda _: bucket)))
+    monkeypatch.setenv("FPL_MY_TEAM_ID", "1")
+    payload = {"status": "complete", "league_id": 58005, "gameweek": 5,
+               "captured_at": datetime.now(timezone.utc).isoformat(), "expected_count": 1, "hydrated_count": 1,
+               "managers": [{"entry_id": 1, "league_rank": 1, "total_points": 100, "squad": _squad()}]}
+    if fail_summary:
+        with pytest.raises(RuntimeError, match="summary upload"):
+            collector.publish("test", payload)
+        assert "live/league58005/current.json" not in objects
+        return
+    name, digest = collector.publish("test", payload)
+    manifest = json.loads(objects["live/league58005/current.json"])
+    assert writes == [name, manifest["decision_object"], "live/league58005/current.json"]
+    assert hashlib.sha256(objects[name]).hexdigest() == digest == manifest["snapshot_sha256"]
+    repo = SnapshotRepository(tmp_path)
+    repo._bucket = bucket
+    evidence = repo.live_decision_context(58005, 1)
+    assert evidence["goal"]["points_gap"] == 0
+    assert evidence["ownership"]["sample_count"] == 1
+    assert evidence["snapshot_sha256"] == digest
+    assert "managers" not in evidence

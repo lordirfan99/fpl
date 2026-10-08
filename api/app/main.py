@@ -111,10 +111,18 @@ def me() -> dict[str, int]:
 
 
 @app.get("/v1/leagues/{league_id}/decision-context")
-def league_decision_context(league_id: int):
+def league_decision_context(league_id: int, include_history: bool = Query(default=True)):
     if league_id not in {58005, 131997}:
         raise HTTPException(status_code=404, detail="League not configured for decision context")
-    return build_context(repository, league_id, settings.my_team_id)
+    return build_context(repository, league_id, settings.my_team_id, include_history=include_history)
+
+
+@app.get("/livez")
+async def liveness() -> dict:
+    # Readiness stays on /ready and /health. A liveness probe must not trigger
+    # cloud storage or archive reads while the collector is under load.
+    return {"status": "ok", "service": "fpl-scout-api", "revision": settings.git_revision,
+            "writes_enabled": False}
 
 
 @app.get("/v1/live/team")
@@ -672,7 +680,8 @@ def league_live_status(league_id: int) -> dict:
 @app.get("/v1/catalog/compact")
 def compact_catalog() -> dict:
     bootstrap = repository.bootstrap()
-    player_fields = ("id", "photo", "team", "event_points", "web_name", "element_type", "now_cost")
+    player_fields = ("id", "photo", "team", "event_points", "web_name", "element_type", "now_cost",
+                     "ep_next", "form", "selected_by_percent", "status", "news")
     team_fields = ("id", "name", "short_name", "code")
     event_fields = ("id", "name", "is_current", "is_next", "finished", "data_checked", "deadline_time")
     return {

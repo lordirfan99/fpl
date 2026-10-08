@@ -1,21 +1,21 @@
 import "server-only";
+import { fetchApi } from "./api-fetch";
 export type LeagueDecisionContext = {
   schema_version: number; league_id: number; gameweek?: number; status: string; snapshot_at?: string;
+  freshness?: { freshness_hours: number | null; stale: boolean; max_age_hours: number };
   goal: { available: boolean; manager_count?: number; cutoff_rank?: number; cutoff_points?: number; owner_points?: number; owner_rank?: number; points_gap?: number; tied_cutoff?: boolean; inside_target?: boolean };
   history: { gameweek: number; points_gap: number | null; snapshot_at: string | null }[];
   ownership: { rows: { element: number; name: string; position?: string; team?: string; league_pct: number; target_pct: number | null; target_captain_pct: number | null; owned_at_snapshot: boolean | null }[]; sample_count?: number; population?: number; cohort_rank_threshold?: number; cohort_count?: number; cohort_sample?: number };
 };
-export async function getLeagueDecision(league: number): Promise<LeagueDecisionContext | null> {
+export async function getLeagueDecision(league: number, includeHistory = true): Promise<LeagueDecisionContext | null> {
   try {
     const base = process.env.FPL_API_BASE_URL ?? "https://sportmania.duckdns.org/fpl-scout-api";
     // This is public, snapshot-backed research data. Cache it briefly so a
     // slow/cold API build does not block every page request. The page itself
     // remains private/no-store because it also contains the owner's dashboard.
-    const response = await fetch(`${base}/v1/leagues/${league}/decision-context`, {
+    const suffix = includeHistory ? "" : "?include_history=false";
+    const response = await fetchApi(`${base}/v1/leagues/${league}/decision-context${suffix}`, {
       next: { revalidate: 300, tags: [`league-decision:${league}`] },
-      // A cold upstream build can exceed 8s; allow one slow pass to succeed
-      // rather than serving "unavailable" while the snapshot warms.
-      signal: AbortSignal.timeout(20000),
     } as RequestInit & { next: { revalidate: number; tags: string[] } });
     if (!response.ok) return null;
     const value: unknown = await response.json();

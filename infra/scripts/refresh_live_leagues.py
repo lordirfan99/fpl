@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "api"))
 
 from app import live_fpl  # noqa: E402
+from app.decision_context import current_context  # noqa: E402
 
 try:
     from google.cloud import storage
@@ -128,6 +129,14 @@ def publish(bucket_name: str, payload: dict[str, Any]) -> tuple[str, str]:
     digest = hashlib.sha256(encoded).hexdigest()
     blob.upload_from_string(encoded, content_type="application/json", if_generation_match=0)
 
+    # Publish lightweight evidence from the same validated capture. Website
+    # visits must not download thousands of squads just to show eight picks.
+    context = current_context(payload, payload["league_id"], int(os.getenv("FPL_MY_TEAM_ID", "2797967")))
+    context["snapshot_sha256"] = digest
+    context_encoded = _canonical(context)
+    context_name = object_name.removesuffix(".json") + "-decision.json"
+    bucket.blob(context_name).upload_from_string(context_encoded, content_type="application/json", if_generation_match=0)
+
     manifest_name = f"live/league{payload['league_id']}/current.json"
     manifest_blob = bucket.blob(manifest_name)
     manifest = {
@@ -135,6 +144,8 @@ def publish(bucket_name: str, payload: dict[str, Any]) -> tuple[str, str]:
         "status": "complete",
         "snapshot_object": object_name,
         "snapshot_sha256": digest,
+        "decision_object": context_name,
+        "decision_sha256": hashlib.sha256(context_encoded).hexdigest(),
         "captured_at": payload["captured_at"],
         "league_id": payload["league_id"],
         "gameweek": payload["gameweek"],

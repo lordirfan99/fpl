@@ -102,3 +102,56 @@ def test_sampled_archive_and_missing_timestamp_never_create_history():
         {"gameweek": 1, "points_gap": None, "snapshot_at": None},
         {"gameweek": 2, "points_gap": 7, "snapshot_at": "2026-09-04T15:00:00Z"},
     ]
+
+
+def test_overview_avoids_reference_and_archive_reads():
+    class Repo:
+        def live_league(self, league):
+            return {"gameweek": 5, "expected_count": 21, "managers": managers(), "captured_at": "2026-10-08T12:00:00Z"}
+        def bootstrap(self):
+            raise AssertionError("Overview must not load reference/history")
+        def league(self, *args):
+            raise AssertionError("Overview must not load archives")
+    _cache.clear()
+    result = build_context(Repo(), 58005, 10, include_history=False)
+    assert result["history"] == []
+    assert result["goal"]["points_gap"] == 7
+    assert result["ownership"]["sample_count"] == 21
+
+
+def test_overview_prefers_compact_capture_and_rechecks_freshness():
+    class Repo:
+        def live_decision_context(self, league, owner):
+            return {"schema_version": 1, "league_id": league, "snapshot_at": "2026-01-01T12:00:00Z",
+                    "status": "ready", "freshness": {"stale": False}, "goal": {"available": True}}
+        def live_league(self, league):
+            raise AssertionError("No full snapshot download")
+    result = build_context(Repo(), 58005, 10, include_history=False)
+    assert result["status"] == "historical"
+    assert result["freshness"]["stale"] is True
+
+
+def test_concurrent_cold_overviews_build_once():
+    from concurrent.futures import ThreadPoolExecutor
+    class Repo:
+        calls = 0
+        def live_league(self, league):
+            self.calls += 1
+            return {"gameweek": 5, "expected_count": 21, "managers": managers(), "captured_at": "2026-10-08T12:00:00Z"}
+    repo = Repo()
+    _cache.clear()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda _: build_context(repo, 58005, 10, include_history=False), range(16)))
+    assert repo.calls == 1
+    assert all(result["goal"]["points_gap"] == 7 for result in results)
+
+
+def test_api_overview_option_is_forwarded_without_changing_default():
+    from unittest.mock import patch
+    from fastapi.testclient import TestClient
+    from app.main import app
+    with patch("app.main.build_context", return_value={}) as build:
+        assert TestClient(app).get("/v1/leagues/58005/decision-context?include_history=false").status_code == 200
+        assert build.call_args.kwargs == {"include_history": False}
+        assert TestClient(app).get("/v1/leagues/58005/decision-context").status_code == 200
+        assert build.call_args.kwargs == {"include_history": True}

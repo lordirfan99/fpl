@@ -1,4 +1,5 @@
 import "server-only";
+import { fetchApi } from "./api-fetch";
 import type { Pick } from "./types";
 
 const API_BASE = (process.env.FPL_API_BASE_URL ?? "https://sportmania.duckdns.org/fpl-scout-api").replace(/\/$/, "");
@@ -85,7 +86,7 @@ export async function getCompetitiveRecommendation(leagueId: number, gameweek?: 
   // finalized fallback, honest safe_hold). Passing an explicit gw pins one
   // finalized snapshot and is only for historical lookups.
   const query = gameweek == null ? `league_id=${leagueId}` : `league_id=${leagueId}&gw=${gameweek}`;
-  const response = await fetch(`${API_BASE}/v1/decision/current?${query}`, { cache: "no-store" });
+  const response = await fetchApi(`${API_BASE}/v1/decision/current?${query}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`Scout API returned ${response.status} for V4 competitive recommendation`);
   const raw = await response.json() as Json;
   const competitive = (raw.competitive as Json | undefined) ?? {};

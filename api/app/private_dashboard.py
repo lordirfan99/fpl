@@ -2,13 +2,20 @@
 import hmac
 import json
 import os
+import time
 from datetime import datetime, timezone
+from functools import lru_cache
+from threading import Lock
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 router = APIRouter()
 HEADERS = {"Cache-Control": "private, no-store", "Vary": "Authorization"}
+READ_TIMEOUT_SECONDS = 2
+PAIR_CACHE_SECONDS = 5
+_pair_lock = Lock()
+_pair_cache = {}
 
 
 def recent(value, now, seconds):
@@ -47,17 +54,47 @@ def validate(packet, check, owner, now=None):
     return reasons
 
 
-def read_private(name):
-    bucket_name = os.getenv("FPL_PRIVATE_DASHBOARD_BUCKET")
-    public_bucket = os.getenv("FPL_SNAPSHOT_BUCKET")
+@lru_cache(maxsize=2)
+def private_bucket(bucket_name):
+    from google.cloud import storage
+    return storage.Client().bucket(bucket_name)
+
+
+def read_private(name, bucket):
+    return json.loads(bucket.blob(f"dashboard/{name}.json").download_as_text(
+        encoding="utf-8", timeout=READ_TIMEOUT_SECONDS, retry=None))
+
+
+def read_private_pair():
+    bucket_name, public_bucket = os.getenv("FPL_PRIVATE_DASHBOARD_BUCKET"), os.getenv("FPL_SNAPSHOT_BUCKET")
     if not bucket_name or not public_bucket or bucket_name == public_bucket:
         raise ValueError("Private bucket unavailable")
-    from google.cloud import storage
-    bucket = storage.Client().bucket(bucket_name)
-    bucket.reload(timeout=10)
-    if bucket.iam_configuration.public_access_prevention != "enforced":
-        raise ValueError("Private bucket protection missing")
-    return json.loads(bucket.blob(f"dashboard/{name}.json").download_as_text(timeout=10))
+    # One client, one protection check, and one coalesced read pair. Keep this
+    # short-lived and validate identity, account age and deadline on EVERY hit.
+    if not _pair_lock.acquire(timeout=1):
+        raise TimeoutError("Private dashboard read is busy")
+    try:
+        key = (bucket_name, public_bucket)
+        cached = _pair_cache.get(key)
+        if cached and time.monotonic() - cached[0] < PAIR_CACHE_SECONDS:
+            if cached[1] is None:
+                raise ValueError("Private data unavailable")
+            return cached[1]
+        try:
+            bucket = private_bucket(bucket_name)
+            bucket.reload(timeout=READ_TIMEOUT_SECONDS, retry=None)
+            if bucket.iam_configuration.public_access_prevention != "enforced":
+                raise ValueError("Private bucket protection missing")
+            pair = read_private("plan", bucket), read_private("account-check", bucket)
+        except Exception:
+            _pair_cache.clear()
+            _pair_cache[key] = (time.monotonic(), None)
+            raise
+        _pair_cache.clear()
+        _pair_cache[key] = (time.monotonic(), pair)
+        return pair
+    finally:
+        _pair_lock.release()
 
 
 @router.get("/v1/private/dashboard/current")
@@ -67,7 +104,7 @@ def current(request: Request):
     if len(secret) < 32 or not hmac.compare_digest(supplied.encode(), f"Bearer {secret}".encode()):
         return JSONResponse({"error": "Unauthorized"}, status_code=401, headers=HEADERS)
     try:
-        packet, check = read_private("plan"), read_private("account-check")
+        packet, check = read_private_pair()
         reasons = validate(packet, check, int(os.getenv("FPL_MY_TEAM_ID", "2797967")))
         if not reasons:
             return JSONResponse({"status": "ready", "packet": packet, "account_checked_at": check["checked_at"]}, headers=HEADERS)

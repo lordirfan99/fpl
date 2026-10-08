@@ -1,4 +1,5 @@
 import "server-only";
+import { fetchApi } from "./api-fetch";
 
 const API_BASE = (process.env.FPL_API_BASE_URL ?? "https://sportmania.duckdns.org/fpl-scout-api").replace(/\/$/, "");
 
@@ -15,7 +16,7 @@ export interface V5Payload {
 
 export async function getV5Projections(): Promise<V5Payload> {
   try {
-    const response = await fetch(`${API_BASE}/v1/projections/current`, { cache: "no-store" });
+    const response = await fetchApi(`${API_BASE}/v1/projections/current`, { cache: "no-store" });
     if (!response.ok) throw new Error(`API ${response.status}`);
     const raw = await response.json() as {
       gameweek: number; projection_version: string;

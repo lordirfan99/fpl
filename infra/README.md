@@ -12,3 +12,6 @@ removed after the 6 September 2026 VM cutover so they cannot be reapplied by
 mistake. Git history remains the archive.
 
 Runtime behaviour changes go here in the same PR as the code change (see `AGENTS.md`).
+
+See [DASHBOARD-READS.md](DASHBOARD-READS.md) for the compact collector evidence,
+bounded read behavior, compatibility, verification and tagged rollout procedure.
