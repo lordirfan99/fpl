@@ -194,8 +194,9 @@ async function getLeagueDataFromApi(leagueId: number, gameweek?: number): Promis
   }
   if (!league) throw new Error(`No league snapshot available for league ${leagueId}`);
   const team = await request<TeamPayload>(`/v1/me/team?league_id=${leagueId}&gw=${snapshotGameweek}`).catch(() => null);
-  // Request generation time is not proof of a new league capture.
-  const asOf = league.meta?.snapshot_at;
+  // Live fallback exposes its capture time as generated_at; finalized
+  // snapshots use snapshot_at. Request generation time is not evidence.
+  const asOf = liveProvisional ? league.meta?.generated_at : league.meta?.snapshot_at;
   return {
     manager: league.managers.find((entry) => entry.entry_id === MY_TEAM_ID),
     managers: league.managers,
