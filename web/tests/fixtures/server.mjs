@@ -30,6 +30,41 @@ createServer((req, res) => {
     if (mode === "stale-league") { data.freshness.stale = true; data.status = "historical"; }
     res.end(JSON.stringify(data)); return;
   }
+  // Production serves finalized standings only. A live GW returns 409 until
+  // the journal/snapshot pipeline is complete; simulate the exact boundary.
+  const url = new URL(req.url, "http://127.0.0.1:4185");
+  const leagueSummary = url.pathname.match(/^\/v1\/leagues\/(58005|131997)\/summary$/);
+  const leagueDirectory = url.pathname.match(/^\/v1\/leagues\/(58005|131997)\/directory$/);
+  const managerDetail = url.pathname.match(/^\/v1\/leagues\/(58005|131997)\/managers\/(\d+)$/);
+  const manager = id => ({ entry_id: id, entry_name: `Test FC ${id}`, player_name: `Manager ${id}`,
+    gw_points: id === 2797967 ? 56 : 61, total_points: 340, overall_rank: 12000,
+    league_rank: id === 2797967 ? 2 : 1, squad_cost: 100.5, captain: "Test Player 1", transfers_made: 1,
+    squad: Array.from({ length: 15 }, (_, index) => ({ element: index + 1, name: `Test Player ${index + 1}`,
+      position: index === 0 || index === 11 ? "GKP" : index < 6 ? "DEF" : index < 11 ? "MID" : "FWD",
+      team: "Test Club", cost: 5, multiplier: index < 11 ? 1 : 0,
+      is_captain: index === 0, is_vice_captain: index === 1 })) });
+  if (leagueSummary || leagueDirectory || managerDetail) {
+    if (url.searchParams.get("gw") !== "2") {
+      res.statusCode = 409;
+      res.end(JSON.stringify({ detail: "snapshot_not_finalized" }));
+      return;
+    }
+    const entries = [manager(2797967), manager(101010)];
+    if (leagueSummary) {
+      const managers = entries.map(({ squad, ...row }) => row);
+      res.end(JSON.stringify({ league_id: Number(leagueSummary[1]), gameweek: 2, total: 2, filtered_total: 2,
+        page: 1, page_size: 50, pages: 1, query: url.searchParams.get("q") ?? "",
+        average_gameweek_points: 58.5, leader: managers[1], manager: managers[0],
+        managers, meta: { snapshot_at: new Date().toISOString() } }));
+      return;
+    }
+    if (leagueDirectory) {
+      res.end(JSON.stringify({ gameweek: 2, managers: entries.map(({ squad, ...row }) => row) }));
+      return;
+    }
+    res.end(JSON.stringify(entries.find(row => row.entry_id === Number(managerDetail[2])) ?? entries[0]));
+    return;
+  }
   if (req.url === "/v1/private/dashboard/current" && req.headers.authorization === `Bearer ${"test-read-only-".repeat(4)}`) {
     const value = packet();
     if (mode === "hold") { value.transfers = []; value.action = "HOLD"; value.starters = Array.from({ length: 11 }, (_, i) => i + 1); value.bench = [12,13,14,15]; value.bank_after = 1; }
