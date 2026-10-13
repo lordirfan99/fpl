@@ -97,5 +97,5 @@ test("stalled player catalog exits loading with a useful recovery action", async
   await page.goto("/players", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "This view could not load" })).toBeVisible({ timeout: 12000 });
   await expect(page.getByRole("button", { name: "Retry this view" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "This Week" })).toBeVisible();
+  await expect(page.getByRole("alert").getByRole("link", { name: "This Week", exact: true })).toBeVisible();
 });
