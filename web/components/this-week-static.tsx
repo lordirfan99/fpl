@@ -102,6 +102,39 @@ export function ThisWeekStatic() {
       } catch { /* Keep any section already received. */ }
       finally {
         window.clearTimeout(timer);
+        // Some serverless adapters buffer or reject streaming responses. If
+        // the NDJSON transport missed a section, recover it from independent
+        // same-origin JSON routes instead of declaring the whole page broken.
+        const backups: Promise<void>[] = [];
+        if (active && !receivedLeague) backups.push(
+          fetch(`/api/public/league-decision/${leagueId}`, { cache: "no-store", signal: AbortSignal.timeout(7000) })
+            .then(async response => {
+              if (!response.ok) return;
+              const data = await response.json() as Context;
+              if (active && data && data.status !== "unavailable") {
+                receivedLeague = true;
+                setContext(data);
+                setState("ready");
+              }
+            }).catch(() => {}),
+        );
+        if (active && !receivedPrivate) backups.push(
+          fetch("/api/private/dashboard", { cache: "no-store", signal: AbortSignal.timeout(7000) })
+            .then(async response => {
+              if (!active) return;
+              if (response.status === 401) {
+                receivedPrivate = true;
+                setPrivatePlan({ status: "signed_out" });
+              } else if (response.ok) {
+                const plan = await response.json() as PrivateResponse;
+                if (active) {
+                  receivedPrivate = true;
+                  setPrivatePlan(plan);
+                }
+              }
+            }).catch(() => {}),
+        );
+        await Promise.allSettled(backups);
         if (active) {
           if (!receivedPrivate) setPrivatePlan({ status: "unavailable" });
           if (!receivedLeague) setState("unavailable");
