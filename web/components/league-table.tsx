@@ -13,6 +13,7 @@ type Props = {
   myTeamId: number;
   bootstrap: Bootstrap;
   gameweek: number;
+  requestedGameweek?: number;
   leagueId: number;
   page: number;
   pages: number;
@@ -25,10 +26,11 @@ export function LeagueTable(props: Props) {
   const [query, setQuery] = useState(props.query);
   const destination = useCallback((page: number, manager?: number, search = props.query) => {
     const params = new URLSearchParams({ league: String(props.leagueId), page: String(page) });
+    if (props.requestedGameweek) params.set("gw", String(props.requestedGameweek));
     if (search.trim()) params.set("q", search.trim());
     if (manager) params.set("manager", String(manager));
     return `/league?${params}`;
-  }, [props.leagueId, props.query]);
+  }, [props.leagueId, props.query, props.requestedGameweek]);
   const closeManager = useCallback(() => router.push(destination(props.page)), [destination, props.page, router]);
   useEffect(() => {
     if (!props.selected) return;
