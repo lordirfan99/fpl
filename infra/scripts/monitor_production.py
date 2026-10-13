@@ -19,6 +19,16 @@ def fetch(url: str, limit: int) -> tuple[int, bytes, dict[str, str]]:
         return response.status, body, dict(response.headers)
 
 
+
+def check_page(path: str, expected_text: str, limit: int = 750_000) -> None:
+    # A 200 status alone is not a working App Router page; error boundaries
+    # and redirect shells can also be HTTP 200. Check useful SSR content.
+    status, body, _ = fetch(f"{SITE}{path}", limit)
+    html = body.decode("utf-8", errors="replace")
+    if status != 200 or expected_text not in html or "We could not load this view." in html:
+        raise RuntimeError(f"Dashboard route {path} did not render its expected content")
+
+
 def validate_recommendation(rec: dict) -> None:
     fresh = rec.get("freshness") or {}
     meta = rec.get("meta") or {}
@@ -65,13 +75,15 @@ def main(*, lightweight: bool = False) -> int:
     assert normalized_headers.get("server-timing"), headers
     fetch(f"{API}/v1/catalog/compact", 350_000)
     if lightweight:
-        # Login HTML proves Netlify is serving the application without causing
-        # an SSR fetch of multi-megabyte league data.
-        fetch(f"{SITE}/sign-in", 250_000)
+        # Three cheap navigation destinations catch broken web deployments
+        # without repeatedly hydrating multi-megabyte league snapshots.
+        check_page("/sign-in", "Your private decision room")
+        check_page("/this-week", "This gameweek")
+        check_page("/settings", "Your dashboard preferences")
     else:
-        fetch(f"{SITE}/league", 1_500_000)
-        fetch(f"{SITE}/compare", 1_500_000)
-        fetch(f"{SITE}/journal", 1_500_000)
+        check_page("/league", "League table", 1_500_000)
+        check_page("/compare", "Compare managers", 1_500_000)
+        check_page("/journal", "Decision Journal", 1_500_000)
     print("Production readiness, contracts and payload budgets passed")
     return 0
 
