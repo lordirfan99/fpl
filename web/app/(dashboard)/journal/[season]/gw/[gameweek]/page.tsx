@@ -6,7 +6,23 @@ import { getJournalEntry } from "@/lib/journal";
 import { formatMYT } from "@/lib/format";
 
 export default async function JournalGameweekPage({ params }: { params: Promise<{ season: string; gameweek: string }> }) {
-  const { season, gameweek: value } = await params; const gameweek = Number(value); const entry = await getJournalEntry(season, gameweek);
+  const { season, gameweek: value } = await params;
+  const gameweek = Number(value);
+  // Finalized GW does not guarantee the archive job has captured a journal.
+  // A missing record is a normal, honest empty state rather than a broken page.
+  const entry = await getJournalEntry(season, gameweek).catch((error: unknown) => {
+    if (error instanceof Error && /^Journal API returned 404\b/.test(error.message)) return null;
+    throw error;
+  });
+  if (!entry) return <div className="page-stack journal-detail">
+    <Link href="/journal" className="journal-back"><ArrowLeft size={14} /> Season timeline</Link>
+    <PageHeader eyebrow={`${season} · GAMEWEEK ${gameweek}`} title={`GW${gameweek} Review`} description="This gameweek has no verified journal record yet." />
+    <section className="surface" role="status">
+      <h2>GW{gameweek} has not been archived</h2>
+      <p>The gameweek may have finished, but its research record is not available. We will not show invented outcomes or an empty report as a completed review.</p>
+      <Link href="/journal">Back to season timeline</Link>
+    </section>
+  </div>;
   const starters = entry.outcome.squad.filter((player) => player.multiplier > 0); const bench = entry.outcome.squad.filter((player) => player.multiplier === 0);
   return <div className="page-stack journal-detail">
     <Link href="/journal" className="journal-back"><ArrowLeft size={14} /> Season timeline</Link>
