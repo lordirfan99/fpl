@@ -38,7 +38,7 @@ test("mobile research More drawer can close, reopen, escape and navigate", async
   await page.keyboard.press("Escape");
   await expect(page.locator("#mobile-more-menu")).toHaveCount(0);
   await more.click();
-  await page.locator("#mobile-more-menu").getByRole("link", { name: "Review" }).click();
+  await page.locator("#mobile-more-menu").getByRole("link", { name: "Review", exact: true }).click();
   await expect(page).toHaveURL(/\/journal$/);
   await expect(more).toHaveAttribute("aria-expanded", "false");
 });
