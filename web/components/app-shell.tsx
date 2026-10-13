@@ -63,7 +63,7 @@ export function AppShell({ children, context }: { children: React.ReactNode; con
               <Link key={href} href={href} className={pathname === href ? "nav-link active" : "nav-link"}><Icon size={18} /><span>{label}</span></Link>
             ))}
           </div>
-          <details className="nav-more" defaultOpen={researchActive}>
+          <details className="nav-more" open={researchActive}>
             <summary><span>More</span></summary>
             <div className="nav-section">
               {research.map(({ href, label, icon: Icon }) => (
