@@ -22,6 +22,9 @@ test("historical GW remains selected through league switches and searches", asyn
   await page.getByPlaceholder("Search manager, team or FPL ID").fill("Test FC");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page).toHaveURL(/gw=3/);
+  await page.goto("/compare?league=58005&gw=3");
+  await expect(page.getByRole("heading", { name: "Compare managers" })).toBeVisible();
+  await expect(page.locator(".league-switcher").getByRole("link", { name: /Overall IFE/ })).toHaveAttribute("href", "/compare?league=131997&gw=3");
 });
 
 test("mobile research More drawer can close, reopen, escape and navigate", async ({ page }) => {
