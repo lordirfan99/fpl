@@ -11,6 +11,23 @@ SPEC = importlib.util.spec_from_file_location(
 monitor = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(monitor)
 
+def fake_success(url):
+    expected_pages = {
+        "/sign-in": "Your private decision room",
+        "/this-week": "This gameweek",
+        "/settings": "Your dashboard preferences",
+        "/league": "League table",
+        "/compare": "Compare managers",
+        "/journal": "Decision Journal",
+    }
+    if url.startswith(monitor.SITE):
+        path = url.removeprefix(monitor.SITE)
+        return 200, expected_pages.get(path, "").encode(), {"Server-Timing": "ok"}
+    return 200, json.dumps({"ready": True, "managers": [], "packet_status": "advisory",
+                            "freshness": {"status": "provisional", "stale": False},
+                            "meta": {"stale": False}}).encode(), {"Server-Timing": "ok"}
+
+
 
 @pytest.mark.parametrize("ready", [False, None])
 def test_monitor_rejects_stale_or_unknown_live_snapshot(monkeypatch, ready):
@@ -32,9 +49,7 @@ def test_monitor_checks_both_leagues_before_reporting_success(monkeypatch):
 
     def fetch(url, limit):
         calls.append(url)
-        return 200, json.dumps({"ready": True, "managers": [], "packet_status": "advisory",
-                                "freshness": {"status": "provisional", "stale": False},
-                                "meta": {"stale": False}}).encode(), {"Server-Timing": "ok"}
+        return fake_success(url)
 
     monkeypatch.setattr(monitor, "fetch", fetch)
     assert monitor.main() == 0
@@ -48,13 +63,13 @@ def test_lightweight_monitor_checks_login_without_rendering_heavy_pages(monkeypa
 
     def fetch(url, limit):
         calls.append(url)
-        return 200, json.dumps({"ready": True, "managers": [], "packet_status": "advisory",
-                                "freshness": {"status": "provisional", "stale": False},
-                                "meta": {"stale": False}}).encode(), {"server-timing": "ok"}
+        return fake_success(url)
 
     monkeypatch.setattr(monitor, "fetch", fetch)
     assert monitor.main(lightweight=True) == 0
     assert any(url.endswith("/sign-in") for url in calls)
+    assert any(url.endswith("/this-week") for url in calls)
+    assert any(url.endswith("/settings") for url in calls)
     assert not any(url.endswith(("/league", "/compare", "/journal")) for url in calls)
 
 
@@ -72,3 +87,9 @@ def test_monitor_rejects_missing_contract_and_unverified_personal_action():
         monitor.validate_recommendation({"packet_status": "advisory", "meta": {"stale": False},
                                          "freshness": {"status": "provisional", "stale": False},
                                          "captains": [{"element": 1}]})
+
+
+def test_monitor_rejects_wrong_html_on_an_http_200(monkeypatch):
+    monkeypatch.setattr(monitor, "fetch", lambda url, limit: (200, b"Unrelated login shell", {}))
+    with pytest.raises(RuntimeError, match="did not render"):
+        monitor.check_page("/this-week", "This gameweek")
