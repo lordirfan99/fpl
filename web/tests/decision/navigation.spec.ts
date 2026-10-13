@@ -49,3 +49,11 @@ test("missing journal record shows a useful state instead of crashing", async ({
   await expect(page.getByRole("heading", { name: "GW1 has not been archived" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Back to season timeline" })).toBeVisible();
 });
+
+test("This Week uses JSON fallback if the serverless NDJSON endpoint fails", async ({ page }) => {
+  await page.route("**/api/week?**", route => route.fulfill({ status: 503, body: "stream not available" }));
+  const response = await page.goto("/this-week");
+  expect(response?.status()).toBe(200);
+  await expect(page.getByRole("heading", { name: "6 points to the top-10% cutoff" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your personal plan stays private" })).toBeVisible();
+});
