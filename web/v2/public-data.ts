@@ -90,10 +90,11 @@ export function gwParam(value: unknown): number | null | "invalid" {
   return Number.isInteger(n) && n >= 1 && n <= 38 ? n : "invalid";
 }
 export const getLeagueV2 = cache(async (id: number, requestedGw: number | null | "invalid" = null): Promise<DataResult<LeagueData>> => {
+  let availableWeeks: number[] = [];
   try {
     assert(id in LEAGUES, "Unsupported tracked league.");
     const manifest = await loadManifest();
-    const availableWeeks = manifest.gameweeks[String(id)] || [];
+    availableWeeks = manifest.gameweeks[String(id)] || [];
     assert(Array.isArray(availableWeeks) && availableWeeks.every(w => Number.isInteger(w) && w >= 1 && w <= 38),
       "Invalid published gameweek index.");
     if (requestedGw === "invalid") return { ok: false, code: "invalid", message: "Select a valid gameweek (1–38).", availableWeeks };
@@ -114,6 +115,6 @@ export const getLeagueV2 = cache(async (id: number, requestedGw: number | null |
         managers: decoded.managers },
       capturedAt: raw.meta?.snapshot_at ?? raw.meta?.generated_at ?? null,
       stale: ageOf(raw.meta?.snapshot_at || raw.meta?.generated_at), release: manifest.release, availableWeeks };
-  } catch (error) { return failure(error); }
+  } catch (error) { return failure(error, availableWeeks); }
 });
 export const MY_TEAM = 2797967;
