@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 
 from .league_registry import LeagueRegistry
+from .compact_league import compact_managers
 from .live_freshness import snapshot_freshness
 from . import live_fpl
 from .recommendation_inputs import RecInputs, resolve_recommendation_inputs
@@ -56,6 +57,11 @@ repository = SnapshotRepository(settings.data_dir, settings.snapshot_bucket)
 league_registry = LeagueRegistry(settings.data_dir)
 app.include_router(private_dashboard_router)
 SEASON_PATTERN = re.compile(r"^20\d{2}-\d{2}$")
+
+
+@app.exception_handler(SnapshotNotFoundError)
+async def missing_public_snapshot(_request: Request, _error: SnapshotNotFoundError):
+    return JSONResponse({"detail": "public_snapshot_unavailable"}, status_code=503)
 
 
 @app.middleware("http")
@@ -219,6 +225,22 @@ def league(league_id: int, gw: int | None = Query(default=None, ge=1, le=38)) ->
         hydration_percent=round(len(managers) / max(1, declared_count) * 100, 1),
         managers=managers,
     )
+
+
+@app.get("/v1/leagues/{league_id}/compact")
+def league_compact(league_id: int, gw: int | None = Query(default=None, ge=1, le=38)) -> dict:
+    gw = gw or _current_gameweek()
+    snapshot = _league_or_404(league_id, gw)
+    quality, issues = snapshot_quality(snapshot)
+    if quality != "valid":
+        raise HTTPException(status_code=409, detail={"code": "snapshot_not_finalized", "quality_issues": issues[:10]})
+    try:
+        encoded = compact_managers(sorted(snapshot["competitors"], key=lambda row: row.get("league_rank") or 10**12))
+    except (ValidationError, ValueError, TypeError) as error:
+        raise HTTPException(status_code=409, detail="snapshot_not_finalized") from error
+    return {"meta": _meta(snapshot).model_dump(mode="json"), "league_id": league_id, "gameweek": gw,
+            "count": len(encoded["managers"]), "declared_count": snapshot.get("total_entries") or len(encoded["managers"]),
+            "hydration_percent": 100.0, **encoded}
 
 
 @app.get("/v1/leagues/{league_id}/summary", response_model=LeagueSummaryResponse)
@@ -662,6 +684,20 @@ def league_live(league_id: int) -> dict:
     }
 
 
+@app.get("/v1/leagues/{league_id}/live/compact")
+def league_live_compact(league_id: int) -> dict:
+    try:
+        snapshot = repository.live_league(league_id)
+        encoded = compact_managers(snapshot["managers"])
+    except (LiveSnapshotNotFoundError, ValidationError, ValueError, TypeError) as error:
+        raise HTTPException(status_code=503, detail="live_snapshot_unavailable") from error
+    return {"meta": {"source": "official-fpl-live-snapshot", "snapshot_gameweek": snapshot["gameweek"],
+                     "quality_status": "complete", "generated_at": snapshot["captured_at"],
+                     **snapshot_freshness(snapshot.get("captured_at"))},
+            "league_id": league_id, "gameweek": snapshot["gameweek"], "count": snapshot["expected_count"],
+            "declared_count": snapshot["expected_count"], "hydration_percent": 100.0, "provisional": True, **encoded}
+
+
 @app.get("/v1/leagues/{league_id}/live/status")
 def league_live_status(league_id: int) -> dict:
     """Small monitoring response; never collect from FPL on a web request."""
@@ -852,3 +888,4 @@ def _current_gameweek() -> int:
         except ValidationError:
             continue
     return max(1, candidate)
+

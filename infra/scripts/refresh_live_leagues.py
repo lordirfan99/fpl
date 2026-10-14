@@ -170,14 +170,56 @@ def publish(bucket_name: str, payload: dict[str, Any]) -> tuple[str, str]:
     raise AssertionError("unreachable")
 
 
+def publish_references(bucket_name: str) -> None:
+    """Publish public reference caches even if a later full league fails.
+
+    The VM API has no baked-in data. Its catalog and projections must not rely
+    on a separate planner publishing a sampled competitive cohort.
+    """
+    if storage is None:
+        raise RuntimeError("google-cloud-storage is required to publish references")
+    bootstrap = live_fpl._get("bootstrap-static/", ttl=0)
+    fixtures = live_fpl._get("fixtures/", ttl=0)
+    if not bootstrap.get("elements") or not bootstrap.get("teams") or not bootstrap.get("events"):
+        raise RuntimeError("Incomplete official bootstrap")
+    if not isinstance(fixtures, list) or not fixtures:
+        raise RuntimeError("Incomplete official fixtures")
+    captured = datetime.now(timezone.utc).isoformat()
+    bootstrap = {**bootstrap, "_meta": {"fetched_at": captured, "source": "official-fpl-api",
+                                       "content_sha256": hashlib.sha256(_canonical(bootstrap)).hexdigest()}}
+    teams = {int(row["id"]): row["name"] for row in bootstrap["teams"]}
+    gameweeks: dict[str, list[dict]] = {}
+    for fixture in fixtures:
+        event = fixture.get("event")
+        if event is None:
+            continue
+        gameweeks.setdefault(str(event), []).append({
+            "event": int(event), "team_h": teams[int(fixture["team_h"])], "team_a": teams[int(fixture["team_a"])],
+            "team_h_difficulty": fixture.get("team_h_difficulty"), "team_a_difficulty": fixture.get("team_a_difficulty"),
+            "kickoff_time": fixture.get("kickoff_time"),
+        })
+    if not gameweeks:
+        raise RuntimeError("No scheduled fixture gameweeks")
+    fixture_cache = {"fetched_at": captured, "source": "official-fpl-api", "gameweeks": gameweeks}
+    bucket = storage.Client().bucket(bucket_name)
+    for filename, payload in (("bootstrap_cache.json", bootstrap), ("fixtures_cache.json", fixture_cache)):
+        bucket.blob(f"snapshots/{filename}").upload_from_string(
+            _canonical(payload), content_type="application/json", timeout=15, retry=None)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bucket", default=os.getenv("FPL_SNAPSHOT_BUCKET") or os.getenv("FPL_JOURNAL_BUCKET"))
     parser.add_argument("--league", type=int, nargs="+", default=[58005, 131997])
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--references-only", action="store_true", help="Publish public references without league hydration")
     args = parser.parse_args()
     if not args.dry_run and not args.bucket:
         parser.error("--bucket or FPL_SNAPSHOT_BUCKET is required")
+    if not args.dry_run:
+        publish_references(args.bucket)
+    if args.references_only:
+        return 0
     for league_id in args.league:
         payload = collect(league_id)
         if args.dry_run:
@@ -190,3 +232,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

@@ -2,6 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { fetchApi } from "./api-fetch";
 import { fetchPublicApi } from "./public-api-fetch";
+import { decodeCompactLeague, type CompactLeague } from "./compact-league";
 import { snapshotDataStatus } from "./data-status";
 import type { Bootstrap, DashboardData, Fixture, FixtureHorizon, LeagueSnapshot, LeagueSummary, Manager, ManagerSummary } from "./types";
 import { getLiveTeam } from "./live";
@@ -220,7 +221,7 @@ async function getLeagueDataFromApi(leagueId: number, gameweek?: number): Promis
   let liveProvisional = false;
   for (let candidate = resolvedGameweek; candidate >= 1; candidate -= 1) {
     try {
-      league = await request<LeaguePayload>(`/v1/leagues/${leagueId}?gw=${candidate}`);
+      league = decodeCompactLeague(await request<CompactLeague>(`/v1/leagues/${leagueId}/compact?gw=${candidate}`));
       snapshotGameweek = candidate;
       break;
     } catch (error) {
@@ -229,7 +230,7 @@ async function getLeagueDataFromApi(leagueId: number, gameweek?: number): Promis
       // API revision this is reported as either 404 (not collected) or 409
       // (provisional/not finalized); both must use the official live route.
       if (useLiveReadModel && candidate === resolvedGameweek && [404, 409].includes(error.status)) {
-        const live = await request<LeaguePayload & { gameweek: number; provisional?: boolean }>(`/v1/leagues/${leagueId}/live`).catch(() => null);
+        const live = await request<CompactLeague>(`/v1/leagues/${leagueId}/live/compact`).then(decodeCompactLeague).catch(() => null);
         if (live?.managers?.length) {
           league = live;
           snapshotGameweek = live.gameweek;

@@ -56,7 +56,12 @@ PY
 COMPLETE=0
 trap 'if [ "$COMPLETE" = 0 ]; then restore_previous; fi' EXIT
 bash infra/deploy/install-live-refresh.sh "$TAG"
+# The VM has no packaged references. Seed only the reviewed public caches before
+# readiness gates; never run league hydration, the planner, or the approval bot.
+sudo -u fpl "$CURRENT/.venv/bin/python" "$CURRENT/infra/scripts/refresh_live_leagues.py" \
+  --bucket irfan-374115-fpl-snapshots --references-only
 run_api_installer install "$BACKUP/candidate.env"
 sudo touch "$BACKUP/complete"
 COMPLETE=1
 echo 'API release installed; verify reads, then resume previously active timers.'
+

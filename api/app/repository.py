@@ -4,6 +4,7 @@ import hashlib
 import json
 import time
 from collections import OrderedDict
+from contextlib import contextmanager
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -11,6 +12,7 @@ from threading import Lock
 from typing import Any
 
 from .journal import verify_record_hash
+from .bounded_io import remote_io
 
 try:
     from google.cloud import storage
@@ -40,19 +42,22 @@ class SnapshotRepository:
     REMOTE_REVALIDATE_SECONDS = 30.0
     LIVE_CACHE_LIMIT = 2
     REMOTE_TIMEOUT_SECONDS = 3
+    SNAPSHOT_CACHE_LIMIT = 4
+    HASH_CACHE_LIMIT = 2
+    NEGATIVE_CACHE_LIMIT = 128
 
     def __init__(self, data_dir: Path, bucket_name: str | None = None):
         self.data_dir = data_dir.resolve()
         self.bucket_name = bucket_name
         self._bucket = storage.Client().bucket(bucket_name) if bucket_name and storage else None
-        self._remote_cache: dict[str, tuple[int | None, dict[str, Any]]] = {}
-        self._remote_checked_at: dict[str, float] = {}
+        self._remote_cache: OrderedDict[str, tuple[int | None, dict[str, Any]]] = OrderedDict()
+        self._remote_checked_at: OrderedDict[str, float] = OrderedDict()
         # GCS server-side last-modified per snapshot file. Used as a freshness
         # fallback when a published payload carries no embedded fetched_at.
         self._remote_updated: dict[str, float] = {}
         self._hash_cache: OrderedDict[str, tuple[dict[str, Any], str]] = OrderedDict()
         self._cache_lock = Lock()
-        self._remote_locks: dict[str, Any] = {}
+        self._remote_locks = [Lock() for _ in range(64)]
         self._live_cache: OrderedDict[int, tuple[float, tuple[str, str] | None, dict[str, Any] | None]] = OrderedDict()
         self._decision_cache: OrderedDict[tuple[int, int], tuple[float, tuple[str, str], dict[str, Any] | None]] = OrderedDict()
 
@@ -64,7 +69,7 @@ class SnapshotRepository:
             raise SnapshotNotFoundError(filename)
         return path
 
-    @lru_cache(maxsize=16)
+    @lru_cache(maxsize=4)
     def _read_cached(self, filename: str, modified_ns: int) -> dict[str, Any]:
         del modified_ns
         with self._path(filename).open(encoding="utf-8") as source:
@@ -74,45 +79,76 @@ class SnapshotRepository:
         path = self._path(filename)
         return self._read_cached(filename, path.stat().st_mtime_ns)
 
+    @contextmanager
+    def _artifact_lock(self, key: str):
+        # Fixed stripes prevent arbitrary league IDs from growing a lock map.
+        lock = self._remote_locks[hash(key) % len(self._remote_locks)]
+        if not lock.acquire(timeout=self.REMOTE_TIMEOUT_SECONDS):
+            raise TimeoutError("Snapshot read is already in progress")
+        try:
+            yield
+        finally:
+            lock.release()
+
+    def _mark_checked(self, filename: str):
+        self._remote_checked_at[filename] = time.monotonic()
+        self._remote_checked_at.move_to_end(filename)
+        while len(self._remote_checked_at) > self.NEGATIVE_CACHE_LIMIT:
+            self._remote_checked_at.popitem(last=False)
+
     def _read_remote(self, filename: str) -> dict[str, Any] | None:
         if self._bucket is None:
             return None
-        # Coalesce concurrent cold reads without blocking unrelated artifacts.
-        with self._cache_lock:
-            lock = self._remote_locks.setdefault(filename, Lock())
-        with lock:
-            return self._read_remote_locked(filename)
+        try:
+            with self._artifact_lock(filename):
+                return self._read_remote_locked(filename)
+        except TimeoutError:
+            return None
 
     def _read_remote_locked(self, filename: str) -> dict[str, Any] | None:
-        now = time.monotonic()
-        checked_at = self._remote_checked_at.get(filename)
-        if checked_at is not None and now - checked_at < self.REMOTE_REVALIDATE_SECONDS:
+        with self._cache_lock:
+            checked_at = self._remote_checked_at.get(filename)
             cached = self._remote_cache.get(filename)
-            return cached[1] if cached else None
-        try:
+            if cached:
+                self._remote_cache.move_to_end(filename)
+            if checked_at is not None and time.monotonic() - checked_at < self.REMOTE_REVALIDATE_SECONDS:
+                return cached[1] if cached else None
+
+        def load():
+            # Only the worker touches the SDK/auth stack. Cache changes happen
+            # on the calling thread after a successful, in-budget result.
             blob = self._bucket.blob(f"snapshots/{filename}")
             blob.reload(timeout=self.REMOTE_TIMEOUT_SECONDS, retry=None)
             generation = int(blob.generation) if blob.generation else None
-            if blob.updated is not None:
-                self._remote_updated[filename] = blob.updated.timestamp()
-            cached = self._remote_cache.get(filename)
+            updated = blob.updated.timestamp() if blob.updated is not None else None
             if cached and cached[0] == generation:
-                self._remote_checked_at[filename] = time.monotonic()
-                return cached[1]
-            payload = json.loads(blob.download_as_text(encoding="utf-8", timeout=self.REMOTE_TIMEOUT_SECONDS, retry=None))
-            self._remote_cache[filename] = (generation, payload)
-            self._remote_checked_at[filename] = time.monotonic()
+                return generation, updated, cached[1]
+            raw = blob.download_as_text(encoding="utf-8", timeout=self.REMOTE_TIMEOUT_SECONDS, retry=None)
+            return generation, updated, json.loads(raw)
+
+        try:
+            generation, updated, payload = remote_io.call(load, self.REMOTE_TIMEOUT_SECONDS)
+            with self._cache_lock:
+                self._remote_cache[filename] = (generation, payload)
+                self._remote_cache.move_to_end(filename)
+                if updated is not None:
+                    self._remote_updated[filename] = updated
+                else:
+                    self._remote_updated.pop(filename, None)
+                self._mark_checked(filename)
+                while len(self._remote_cache) > self.SNAPSHOT_CACHE_LIMIT:
+                    evicted, _ = self._remote_cache.popitem(last=False)
+                    self._remote_updated.pop(evicted, None)
+                    self._remote_checked_at.pop(evicted, None)
             return payload
-        except Exception as error:  # pragma: no cover - network/permission failures
-            # A failed verification cannot resurrect an earlier successful read
-            # during the negative-cache window or retain its freshness metadata.
-            self._remote_cache.pop(filename, None)
-            self._remote_updated.pop(filename, None)
-            self._remote_checked_at[filename] = time.monotonic()
+        except Exception as error:
+            with self._cache_lock:
+                self._remote_cache.pop(filename, None)
+                self._remote_updated.pop(filename, None)
+                self._mark_checked(filename)
             print(json.dumps({
                 "level": "warning", "message": "remote_snapshot_read_failed",
                 "filename": filename, "error_type": type(error).__name__,
-                "error": str(error)[:200],
             }), flush=True)
             return None
 
@@ -176,9 +212,13 @@ class SnapshotRepository:
         """Read the complete live snapshot named by its validated manifest."""
         if self._bucket is None:
             raise LiveSnapshotNotFoundError("Live snapshot bucket is unavailable")
-        with self._cache_lock:
-            lock = self._remote_locks.setdefault(f"live:{league_id}", Lock())
-        with lock:
+        try:
+            return self._live_league_locked(league_id)
+        except TimeoutError as error:
+            raise LiveSnapshotNotFoundError("Live snapshot read is occupied") from error
+
+    def _live_league_locked(self, league_id):
+        with self._artifact_lock(f"live:{league_id}"):
             with self._cache_lock:
                 cached = self._live_cache.get(league_id)
                 if cached:
@@ -188,7 +228,7 @@ class SnapshotRepository:
                     raise LiveSnapshotNotFoundError(f"Live snapshot for league {league_id} is unavailable")
                 return cached[2]
             try:
-                signature, payload = self._load_live_league(league_id, cached)
+                signature, payload = remote_io.call(lambda: self._load_live_league(league_id, cached), self.REMOTE_TIMEOUT_SECONDS)
             except Exception as error:
                 self._cache_live(league_id, None, None)
                 raise LiveSnapshotNotFoundError(f"Live snapshot for league {league_id} is unavailable") from error
@@ -200,9 +240,13 @@ class SnapshotRepository:
         if self._bucket is None:
             raise LiveSnapshotNotFoundError("Live snapshot bucket is unavailable")
         key = (league_id, owner)
-        with self._cache_lock:
-            lock = self._remote_locks.setdefault(f"decision:{league_id}:{owner}", Lock())
-        with lock:
+        try:
+            return self._live_decision_locked(league_id, owner, key)
+        except TimeoutError as error:
+            raise LiveSnapshotNotFoundError("Decision snapshot read is occupied") from error
+
+    def _live_decision_locked(self, league_id, owner, key):
+        with self._artifact_lock(f"decision:{league_id}:{owner}"):
             with self._cache_lock:
                 cached = self._decision_cache.get(key)
                 if cached:
@@ -210,8 +254,8 @@ class SnapshotRepository:
             if cached and time.monotonic() - cached[0] < self.REMOTE_REVALIDATE_SECONDS:
                 return cached[2]
             try:
-                manifest = json.loads(self._bucket.blob(f"live/league{league_id}/current.json").download_as_text(
-                    encoding="utf-8", timeout=self.REMOTE_TIMEOUT_SECONDS, retry=None))
+                manifest = json.loads(remote_io.call(lambda: self._bucket.blob(f"live/league{league_id}/current.json").download_as_text(
+                    encoding="utf-8", timeout=self.REMOTE_TIMEOUT_SECONDS, retry=None), self.REMOTE_TIMEOUT_SECONDS))
                 if (manifest.get("status") != "complete" or manifest.get("league_id") != league_id
                         or not positive_count(manifest.get("expected_count"))
                         or manifest.get("hydrated_count") != manifest.get("expected_count")
@@ -229,7 +273,7 @@ class SnapshotRepository:
                 if cached and cached[1] == signature and cached[2] is not None:
                     payload = cached[2]
                 else:
-                    raw = self._bucket.blob(name).download_as_text(encoding="utf-8", timeout=self.REMOTE_TIMEOUT_SECONDS, retry=None)
+                    raw = remote_io.call(lambda: self._bucket.blob(name).download_as_text(encoding="utf-8", timeout=self.REMOTE_TIMEOUT_SECONDS, retry=None), self.REMOTE_TIMEOUT_SECONDS)
                     if hashlib.sha256(raw.encode("utf-8")).hexdigest() != digest:
                         raise ArtifactIntegrityError("Decision evidence checksum mismatch")
                     payload = json.loads(raw)
@@ -260,7 +304,7 @@ class SnapshotRepository:
 
     def _load_live_league(self, league_id: int, cached):
         try:
-            manifest = json.loads(self._bucket.blob(f"live/league{league_id}/current.json").download_as_text(encoding="utf-8", timeout=15, retry=None))
+            manifest = json.loads(self._bucket.blob(f"live/league{league_id}/current.json").download_as_text(encoding="utf-8", timeout=self.REMOTE_TIMEOUT_SECONDS, retry=None))
             object_name = str(manifest.get("snapshot_object") or "")
             digest = str(manifest.get("snapshot_sha256") or "")
             if (manifest.get("status") != "complete" or not object_name.startswith("live/")
@@ -269,7 +313,7 @@ class SnapshotRepository:
             signature = (object_name, digest)
             if cached and cached[1] == signature and cached[2] is not None:
                 return signature, cached[2]
-            raw = self._bucket.blob(object_name).download_as_text(encoding="utf-8", timeout=20, retry=None)
+            raw = self._bucket.blob(object_name).download_as_text(encoding="utf-8", timeout=self.REMOTE_TIMEOUT_SECONDS, retry=None)
             if hashlib.sha256(raw.encode("utf-8")).hexdigest() != digest:
                 raise ArtifactIntegrityError("Live snapshot does not match manifest checksum")
             payload = json.loads(raw)
@@ -298,7 +342,7 @@ class SnapshotRepository:
                 digest = hashlib.sha256(canonical).hexdigest()
                 self._hash_cache[filename] = (payload, digest)
             self._hash_cache.move_to_end(filename)
-            while len(self._hash_cache) > 16:
+            while len(self._hash_cache) > self.HASH_CACHE_LIMIT:
                 self._hash_cache.popitem(last=False)
         enriched = dict(payload)
         enriched["_artifact_sha256"] = digest
@@ -362,10 +406,11 @@ class SnapshotRepository:
             pass
         if self._bucket is not None:
             try:
-                return self._bucket.blob(f"snapshots/journal/{season}/exports/{filename}").download_as_bytes(timeout=self.REMOTE_TIMEOUT_SECONDS, retry=None)
+                return remote_io.call(lambda: self._bucket.blob(f"snapshots/journal/{season}/exports/{filename}").download_as_bytes(timeout=self.REMOTE_TIMEOUT_SECONDS, retry=None), self.REMOTE_TIMEOUT_SECONDS)
             except Exception as error:  # pragma: no cover - network/permission failures
                 print(json.dumps({
                     "level": "warning", "message": "journal_export_remote_read_failed",
                     "filename": filename, "error_type": type(error).__name__,
                 }), flush=True)
         raise SnapshotNotFoundError(filename)
+
