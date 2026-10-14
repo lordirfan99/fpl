@@ -89,12 +89,14 @@ jobs:
               assert hashlib.sha256(body).hexdigest() == digest, f"Hash mismatch: {name}"
               if name in necessary:
                   recorded[name] = body
+          counts = {}
           for league, minimum in ((58005, 1000), (131997, 2000)):
               payload = json.loads(recorded[f"leagues/{league}/live.json"])
               assert payload["league_id"] == league
               assert payload["count"] == payload["declared_count"]
               assert payload["count"] >= minimum and payload["hydration_percent"] == 100.0
               assert len(payload["managers"]) == payload["count"]
+              counts[str(league)] = payload["count"]
           index = json.loads(recorded["journal/2026-27/index.json"])
           advertised = {row["gameweek"] for row in index["gameweeks"]}
           assert set(range(1, 7)) <= advertised, "Frozen journal archive missing"
@@ -104,7 +106,7 @@ jobs:
               assert isinstance(item.get("record_hash"), str) and len(item["record_hash"]) == 64
           print(json.dumps({"status": "verified", "release": release, "revision": reviewed,
                             "artifacts": len(files), "total_bytes": total,
-                            "league_counts": {"58005": 1193, "131997": 2539},
+                            "league_counts": counts,
                             "journal_weeks": sorted(advertised)}))
           PY
       - name: Require reviewed tag and existing Netlify credential
