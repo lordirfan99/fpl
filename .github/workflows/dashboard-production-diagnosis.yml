@@ -17,12 +17,13 @@ jobs:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: e2602e61-b56a-45ff-8f01-debe6037af2e
         run: |
-          npx --yes netlify-cli@latest logs --source functions --since 30m --json > /tmp/dashboard-function-logs.txt 2>&1 || true
+          npx --yes netlify-cli@latest logs --url https://fpl-scout-intelligence.netlify.app --source functions --level error --since 30m --json > /tmp/dashboard-function-logs.txt 2>&1 || true
           python3 - <<'PY'
           import re
           from pathlib import Path
           content = Path("/tmp/dashboard-function-logs.txt").read_text()
-          classes = ["TimeoutError", "TypeError", "AbortError", "ECONNRESET", "ENOTFOUND", "ECONNREFUSED", "DYNAMIC_SERVER_USAGE", "EROFS", "fetch failed", "connection()", "not a function"]
+          print("Retrieved output bytes", len(content))
+          classes = ["Error", "error", "timed out", "No logs", "TimeoutError", "TypeError", "AbortError", "ECONNRESET", "ENOTFOUND", "ECONNREFUSED", "DYNAMIC_SERVER_USAGE", "EROFS", "fetch failed", "connection()", "not a function"]
           for item in classes:
               print(item, content.count(item))
           printed = 0
