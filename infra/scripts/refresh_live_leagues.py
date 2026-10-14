@@ -61,6 +61,7 @@ def _manager(row: dict[str, Any]) -> dict[str, Any]:
         "gw_bank": None if row.get("_live_bank") is None else int(row["_live_bank"]),
         "captain": row.get("_live_captain") or "",
         "active_chip": row.get("_live_active_chip"),
+        "chips_used": [{"name": row["_live_active_chip"]}] if row.get("_live_active_chip") else [],
         "transfers_made": int(row.get("_live_event_transfers") or 0),
         "squad": squad,
     }
