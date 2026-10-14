@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
+from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 
 API = os.getenv("FPL_API_BASE_URL", "https://sportmania.duckdns.org/fpl-scout-api").rstrip("/")
 SITE = os.getenv("FPL_SITE_URL", "https://fpl-scout-intelligence.netlify.app").rstrip("/")
+PUBLIC_DATA = os.getenv("FPL_PUBLIC_DATA_URL", "https://lordirfan99.github.io/fpl").rstrip("/")
 
 
 def fetch(url: str, limit: int) -> tuple[int, bytes, dict[str, str]]:
@@ -25,7 +29,8 @@ def check_page(path: str, expected_text: str, limit: int = 750_000) -> None:
     # and redirect shells can also be HTTP 200. Check useful SSR content.
     status, body, _ = fetch(f"{SITE}{path}", limit)
     html = body.decode("utf-8", errors="replace")
-    if status != 200 or expected_text not in html or "We could not load this view." in html:
+    if (status != 200 or expected_text not in html or
+            any(error in html for error in ("We could not load this view.", "This view could not load", "Application error"))):
         raise RuntimeError(f"Dashboard route {path} did not render its expected content")
 
 
@@ -67,23 +72,46 @@ def main(*, lightweight: bool = False) -> int:
             fresh = rec.get("freshness") or {}
             print(f"{route} L{league_id}: status={fresh.get('status')} packet={rec.get('packet_status')} age_h={fresh.get('data_age_hours')}")
 
-    status, body, headers = fetch(f"{API}/v1/leagues/58005/summary?page=1&page_size=50", 250_000)
-    summary = json.loads(body)
-    assert status == 200 and len(summary["managers"]) <= 50
-    assert all("squad" not in manager for manager in summary["managers"])
-    normalized_headers = {key.casefold(): value for key, value in headers.items()}
-    assert normalized_headers.get("server-timing"), headers
-    fetch(f"{API}/v1/catalog/compact", 350_000)
+    # Public data was migrated from the VM. Probing legacy /summary and
+    # /catalog routes would give false failures and miss a broken new homepage.
+    status, body, _ = fetch(f"{PUBLIC_DATA}/manifest.json", 125_000)
+    manifest = json.loads(body)
+    release = manifest.get("release")
+    files = manifest.get("files") or {}
+    if (status != 200 or manifest.get("schema_version") != 1
+            or manifest.get("writes_enabled") is not False
+            or not isinstance(release, str) or not re.fullmatch(r"[a-f0-9]{64}", release)):
+        raise RuntimeError("Public Pages manifest is unavailable or unverified")
+    required = ("catalog.json", "fixtures.json", "leagues/58005/live.json",
+                "leagues/131997/live.json", "journal/2026-27/index.json")
+    if not all(isinstance(files.get(name), str) and re.fullmatch(r"[a-f0-9]{64}", files[name])
+               for name in required):
+        raise RuntimeError("Required public data artifacts are missing")
+    captured_at = manifest.get("generated_at")
+    if not isinstance(captured_at, str):
+        raise RuntimeError("Public data capture time missing")
+    captured = datetime.fromisoformat(captured_at.replace("Z", "+00:00"))
+    seconds_old = (datetime.now(timezone.utc) - captured).total_seconds()
+    if not -300 <= seconds_old <= 12 * 3600:
+        raise RuntimeError(f"Public Pages data stale or future capture: age={seconds_old / 3600:.1f}h")
+    status, catalog, _ = fetch(f"{PUBLIC_DATA}/releases/{release}/catalog.json", 500_000)
+    if status != 200 or hashlib.sha256(catalog).hexdigest() != files["catalog.json"]:
+        raise RuntimeError("Public player catalog artifact integrity failed")
+
+    # These are the ACTUAL public destinations, not obsolete VM endpoints.
+    check_page("/", "Your next FPL decision", 1_500_000)
+    check_page("/v2/league?league=131997", "Complete standings", 1_500_000)
+    check_page("/v2/elite?league=131997", "The top five percent", 1_500_000)
     if lightweight:
-        # Three cheap navigation destinations catch broken web deployments
-        # without repeatedly hydrating multi-megabyte league snapshots.
         check_page("/sign-in", "Your private decision room")
         check_page("/this-week", "This gameweek")
-        check_page("/settings", "Your dashboard preferences")
     else:
-        check_page("/league", "League table", 1_500_000)
-        check_page("/compare", "Compare managers", 1_500_000)
-        check_page("/journal", "Decision Journal", 1_500_000)
+        check_page("/v2/team", "My FPL team", 1_500_000)
+        check_page("/v2/players", "Official recorded player pool", 1_500_000)
+        check_page("/v2/compare?league=131997", "Compare recorded managers", 1_500_000)
+        check_page("/v2/planner", "Five gameweeks ahead", 1_500_000)
+        check_page("/v2/journal", "Season decision journal", 1_500_000)
+        check_page("/settings", "Your dashboard preferences")
     print("Production readiness, contracts and payload budgets passed")
     return 0
 
