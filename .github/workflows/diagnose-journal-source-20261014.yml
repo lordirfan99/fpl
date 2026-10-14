@@ -1,0 +1,51 @@
+name: diagnose · legacy public journal source
+
+# Diagnostic only. Runs from this PR and never changes deployments or settings.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/diagnose-journal-source-20261014.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe legacy journal index and all advertised GW routes (read-only)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from urllib.error import HTTPError, URLError
+          from urllib.request import Request, urlopen
+          base = "https://sportmania.duckdns.org/fpl-scout-api"
+          def get(path):
+              url = base + path
+              try:
+                  with urlopen(Request(url, headers={"User-Agent": "fpl-release-read-only-diagnostic"}), timeout=15) as response:
+                      body = response.read(500000)
+                      print(json.dumps({"path": path, "status": response.status,
+                                        "bytes_sampled": len(body), "type": response.headers.get("Content-Type"),
+                                        "head": body[:120].decode("utf8", "replace")}))
+                      return body
+              except HTTPError as error:
+                  print(json.dumps({"path": path, "status": error.code,
+                                    "type": error.headers.get("Content-Type"),
+                                    "body": error.read(220).decode("utf8", "replace")}))
+              except URLError as error:
+                  print(json.dumps({"path": path, "error_type": type(error.reason).__name__}))
+              return None
+          body = get("/v1/journal?season=2026-27")
+          advertised = []
+          if body:
+              try:
+                  advertised = [int(x["gameweek"]) for x in json.loads(body).get("gameweeks", [])]
+              except (ValueError, KeyError, TypeError):
+                  pass
+          print("advertised_gameweeks:", sorted(advertised))
+          for gw in sorted(set(advertised) | set(range(1, 7))):
+              get(f"/v1/journal/2026-27/gw/{gw}")
+          PY
