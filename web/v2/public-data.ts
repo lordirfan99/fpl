@@ -118,3 +118,48 @@ export const getLeagueV2 = cache(async (id: number, requestedGw: number | null |
   } catch (error) { return failure(error, availableWeeks); }
 });
 export const MY_TEAM = 2797967;
+
+export type Fixture = {event?:number;team_h:string;team_a:string;team_h_difficulty:number;team_a_difficulty:number;kickoff_time?:string|null};
+export type FixtureFeed = {gameweeks:Record<string,Fixture[]>};
+export type JournalIndex = {
+ season:string;updated_at?:string;gameweeks:Array<{gameweek:number;record_hash:string;summary?:{gw_points?:number;total_points?:number;league_rank?:number};quality?:{status?:string}}>;
+ totals?:{completed?:number;points?:number};
+};
+export type JournalEntry = {
+ season:string;gameweek:number;record_hash:string;generated_at?:string;
+ summary:{gw_points:number;total_points:number;overall_rank:number;league_rank:number;captain?:string};
+ quality?:{status:string;issues:string[]};
+ outcome?:{squad:Array<{element:number;name:string;team:string;position:string;points:number;multiplier:number;is_captain?:boolean}>};
+ decision?:{captured:boolean;model_version?:string;packet_status?:string};
+ learning?:{automated:string[];public_lesson?:string};
+};
+export const getFixturesV2=cache(async ():Promise<DataResult<FixtureFeed>>=>{
+ try{
+  const m=await loadManifest(),data=await loadFile<FixtureFeed>(m,"fixtures.json");
+  assert(!!data.gameweeks&&typeof data.gameweeks==="object","Invalid official fixture horizon.");
+  return {ok:true,data,capturedAt:null,stale:false,release:m.release,availableWeeks:[]};
+ }catch(e){return failure(e)}
+});
+export const getJournalIndexV2=cache(async ():Promise<DataResult<JournalIndex>>=>{
+ try{
+  const m=await loadManifest(),data=await loadFile<JournalIndex>(m,"journal/2026-27/index.json");
+  assert(data.season==="2026-27"&&Array.isArray(data.gameweeks),"Invalid frozen season index.");
+  return {ok:true,data,capturedAt:data.updated_at??null,stale:false,release:m.release,
+    availableWeeks:data.gameweeks.map(row=>row.gameweek)};
+ }catch(e){return failure(e)}
+});
+export const getJournalEntryV2=cache(async (gw:number):Promise<DataResult<JournalEntry>>=>{
+ let weeks:number[]=[];
+ try{
+  assert(Number.isInteger(gw)&&gw>=1&&gw<=38,"Invalid journal gameweek.");
+  const m=await loadManifest();
+  const index=await loadFile<JournalIndex>(m,"journal/2026-27/index.json");
+  assert(index.season==="2026-27"&&Array.isArray(index.gameweeks),"Invalid journal season.");
+  weeks=index.gameweeks.map(row=>row.gameweek);
+  if(!weeks.includes(gw))return {ok:false,code:"missing",message:`GW${gw} has no verified journal record.`,availableWeeks:weeks};
+  const record=await loadFile<JournalEntry>(m,`journal/2026-27/gw/${gw}.json`);
+  assert(record.season==="2026-27"&&record.gameweek===gw&&typeof record.record_hash==="string"&&
+    /^[0-9a-f]{64}$/.test(record.record_hash),"Journal provenance failed validation.");
+  return {ok:true,data:record,capturedAt:record.generated_at??null,stale:false,release:m.release,availableWeeks:weeks};
+ }catch(e){return failure(e,weeks)}
+});
