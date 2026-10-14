@@ -38,12 +38,16 @@ def fake_success(url):
                         "leagues/131997/live.json", "journal/2026-27/index.json")
             files = {name: "a" * 64 for name in required}
             files["catalog.json"] = hashlib.sha256(catalog).hexdigest()
+            for league_id in (58005, 131997):
+                files[f"leagues/{league_id}/live.json"] = hashlib.sha256(b'{"league":"fixture"}').hexdigest()
             return 200, json.dumps({
                 "schema_version": 1, "release": "f" * 64, "files": files,
                 "writes_enabled": False, "generated_at": datetime.now(timezone.utc).isoformat()
             }).encode(), {}
         if url.endswith("/catalog.json"):
             return 200, catalog, {}
+        if url.endswith("/live.json"):
+            return 200, b'{"league":"fixture"}', {}
     return 200, json.dumps({"ready": True, "managers": [], "packet_status": "advisory",
                             "freshness": {"status": "provisional", "stale": False},
                             "meta": {"stale": False}}).encode(), {"Server-Timing": "ok"}
