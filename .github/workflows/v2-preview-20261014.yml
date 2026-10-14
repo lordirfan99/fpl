@@ -1,0 +1,60 @@
+name: stage · V2 real browser preview
+
+# First reviewed merge enables one safe staging deploy. Does NOT update production.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/v2-preview-20261014.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fpl-v2-staging
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: web
+    env:
+      NETLIFY_SITE_ID: e2602e61-b56a-45ff-8f01-debe6037af2e
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      FPL_PUBLIC_DATA_URL: https://lordirfan99.github.io/fpl
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Validate available site credential
+        run: test -n "$NETLIFY_AUTH_TOKEN"
+      - name: Install exact lockfile dependencies
+        run: npm ci
+      - name: Validate Next.js production build
+        run: npm run build
+      - name: Deploy draft Netlify preview ONLY — never --prod
+        id: draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes netlify-cli@17 deploy --build --site "$NETLIFY_SITE_ID" --message "V2 browser verification: $GITHUB_SHA" 2>&1 | tee "$RUNNER_TEMP/v2-deploy.log"
+          PREVIEW_URL="$(sed -n 's/.*Unique deploy URL:[[:space:]]*\(https:[^[:space:]]*\).*/\1/p' "$RUNNER_TEMP/v2-deploy.log" | tail -1)"
+          if [[ -z "$PREVIEW_URL" || "$PREVIEW_URL" != *--fpl-scout-intelligence.netlify.app ]]; then
+            echo "::error::Cannot verify draft preview URL; production remains unchanged"
+            exit 1
+          fi
+          echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+          echo "Staging: $PREVIEW_URL" >> "$GITHUB_STEP_SUMMARY"
+      - name: Install headless Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run real preview browser matrix
+        env:
+          FPL_V2_PREVIEW_URL: ${{ steps.draft.outputs.preview_url }}
+        run: node scripts/v2-preview-smoke.mjs
