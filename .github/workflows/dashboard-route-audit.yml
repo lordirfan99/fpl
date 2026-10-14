@@ -1,0 +1,35 @@
+name: Dashboard route audit
+on:
+  push:
+    branches: [fix/dashboard-page-data-contracts]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect public data contracts
+        shell: python
+        run: |
+          import urllib.request, json, time
+          base = "https://sportmania.duckdns.org/fpl-scout-api"
+          paths = ["/v1/catalog/compact", "/v1/catalog", "/v1/live/team?league_id=58005", "/v1/leagues/58005?gw=6", "/v1/leagues/58005/live", "/v1/projections/current"]
+          for path in paths:
+              started = time.monotonic()
+              try:
+                  with urllib.request.urlopen(base + path, timeout=25) as response:
+                      data = response.read()
+                      value = json.loads(data)
+                      print(path, response.status, len(data), round(time.monotonic()-started, 2), "keys", list(value))
+                      managers = value.get("managers", [])
+                      if managers:
+                          print("manager keys", list(managers[0]))
+                          print("missing squads", sum(not isinstance(m.get("squad"), list) for m in managers))
+                          print("chip types", sorted(set(type(c).__name__ for m in managers for c in (m.get("chips_used") or []))))
+                          print("transfer types", sorted(set(type(c).__name__ for m in managers for c in (m.get("transfer_details") or []))))
+                      players = value.get("players", [])
+                      if players:
+                          print("missing player names", sum(not isinstance(p.get("web_name"), str) for p in players))
+              except Exception as error:
+                  print(path, type(error).__name__, str(error), round(time.monotonic()-started, 2))
