@@ -1,0 +1,38 @@
+name: Read-only dashboard production diagnosis
+on:
+  push:
+    branches: [fix/dashboard-production-diagnosis]
+permissions:
+  contents: read
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Inspect error classes without publishing request data
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: e2602e61-b56a-45ff-8f01-debe6037af2e
+        run: |
+          npx --yes netlify-cli@latest logs --source functions --since 30m --json > /tmp/dashboard-function-logs.txt 2>&1 || true
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          content = Path("/tmp/dashboard-function-logs.txt").read_text()
+          classes = ["TimeoutError", "TypeError", "AbortError", "ECONNRESET", "ENOTFOUND", "ECONNREFUSED", "DYNAMIC_SERVER_USAGE", "EROFS", "fetch failed", "connection()", "not a function"]
+          for item in classes:
+              print(item, content.count(item))
+          printed = 0
+          for line in content.splitlines():
+              if not any(item in line for item in classes): continue
+              if re.search(r"token|password|authorization|cookie|secret|session", line, re.I): continue
+              line = re.sub(r"https?://[^\s\"']+", "[url]", line)
+              line = re.sub(r"[A-Za-z0-9_/-]{32,}", "[identifier]", line)
+              print(line[:220])
+              printed += 1
+              if printed >= 12: break
+          if not printed: print("No printable application errors returned.")
+          PY
