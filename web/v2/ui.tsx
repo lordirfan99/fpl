@@ -45,7 +45,7 @@ export function DataState<T>({ result, path, league }: { result: DataResult<T>; 
     <h2>Recorded evidence is unavailable</h2>
     <p>{result.message} No results have been invented and no transfer recommendation is inferred.</p>
     {result.availableWeeks.length > 0 && <div className="fplv2-week-links"><strong>Verified archived gameweeks</strong><div>{result.availableWeeks.map(gw=><Link key={gw} href={`${path}?league=${league??58005}&gw=${gw}`}>GW{gw}</Link>)}</div></div>}
-    <div className="fplv2-actions"><Link href={path}>Try current capture</Link><Link href="/v2">Back to overview</Link></div>
+    <div className="fplv2-actions"><Link href={league ? `${path}?league=${league}` : path}>Try current capture</Link><Link href="/v2">Back to overview</Link></div>
   </section>;
 }
 export function LeagueNav({ id, path, gw }: { id:number; path:string; gw?: number|null }) {
