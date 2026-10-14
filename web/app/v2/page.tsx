@@ -4,8 +4,12 @@ import { Heading, Stat, Card, Source, DataState } from "@/v2/ui";
 export default async function OverviewV2(){
  const [catalog,league] = await Promise.all([getCatalogV2(),getLeagueV2(58005)]);
  const me = league.ok ? league.data.managers.find(m=>m.entry_id===MY_TEAM) : undefined;
- const next= catalog.ok ? catalog.data.events.find(e=>e.is_next)
-  ?? catalog.data.events.find(e=>e.is_current && !e.finished) : null;
+ // Only an actual future deadline is the "next" deadline. GW38 may be
+ // current after its own deadline, with no remaining season fixture.
+ const next= catalog.ok ? catalog.data.events
+  .filter(e=>e.deadline_time && Number.isFinite(Date.parse(e.deadline_time)) &&
+    Date.parse(e.deadline_time) > Date.now())
+  .sort((a,b)=>Date.parse(a.deadline_time!) - Date.parse(b.deadline_time!))[0] ?? null : null;
  const date=next?.deadline_time && !Number.isNaN(Date.parse(next.deadline_time))
   ? new Date(next.deadline_time).toLocaleString("en-MY",{timeZone:"Asia/Kuala_Lumpur",dateStyle:"medium",timeStyle:"short"}) : "Not announced";
  return <>
