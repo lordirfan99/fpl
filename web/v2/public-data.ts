@@ -38,7 +38,14 @@ async function requestBytes(url: string): Promise<Buffer> {
   }
   if (response.status === 404) throw new GatewayError("missing", "This gameweek has not been published.");
   if (!response.ok) throw new GatewayError("network", "Public data service is temporarily unavailable.");
-  const buffer = Buffer.from(await response.arrayBuffer());
+  let buffer: Buffer;
+  try {
+    // Keep the timeout/network classification attached to body streaming,
+    // not just to the HTTP response headers.
+    buffer = Buffer.from(await response.arrayBuffer());
+  } catch {
+    throw new GatewayError("network", "Public snapshot transfer was interrupted; retry shortly.");
+  }
   assert(buffer.byteLength <= 20 * 1024 * 1024, "Public snapshot exceeds the verified size limit.");
   return buffer;
 }
