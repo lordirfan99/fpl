@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   publish:
-    if: github.event_name == 'workflow_dispatch' || vars.FPL_STATIC_RELEASE_TAG != ''
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
@@ -36,7 +36,7 @@ jobs:
       - name: Guard free public repository and reviewed immutable tag
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release_tag || vars.FPL_STATIC_RELEASE_TAG }}
+          RELEASE_TAG: ${{ inputs.release_tag || vars.FPL_STATIC_RELEASE_TAG || 'v2026.10.14-free-static-data' }}
         run: |
           test "$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)" = false
           [[ "$RELEASE_TAG" =~ ^v[0-9A-Za-z._-]+$ ]]
