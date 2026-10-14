@@ -21,6 +21,7 @@ test('V2 archived league rejects missing weeks truthfully, keeps navigation clic
  await page.goto('/v2/league?league=131997&gw=6');
  await expect(page.getByText(/GW6 is not archived/)).toBeVisible();
  await expect(page.getByRole('link',{name:'GW3'})).toBeVisible();
+ await expect(page.getByRole('link',{name:'Try current capture'})).toHaveAttribute('href','/v2/league?league=131997');
  await page.getByRole('link',{name:'GW3'}).click();
  await expect(page.getByText(/Recorded Gameweek/)).toBeVisible();
  await expect(page.getByText('This view could not load',{exact:true})).toHaveCount(0);
