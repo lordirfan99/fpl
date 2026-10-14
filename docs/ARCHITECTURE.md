@@ -1,3 +1,12 @@
+## Proposed free public-data migration — October 2026
+
+The owner selected scheduled static data to move public browsing off the shared
+VM. See [STATIC-DATA.md](../infra/STATIC-DATA.md) for the contract, publication,
+cutover and rollback. The branch implements GitHub Actions → validated,
+content-addressed GitHub Pages data → Netlify. Private account/plan/approval
+flows remain isolated on their existing backend. This section is a migration
+plan; the runtime description below remains the baseline until cutover is verified.
+
 # Architecture
 
 ```

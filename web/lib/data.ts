@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { fetchApi } from "./api-fetch";
-import { fetchPublicApi } from "./public-api-fetch";
+import { fetchPublicApi, staticDataset } from "./public-api-fetch";
 import { decodeCompactLeague, type CompactLeague } from "./compact-league";
 import { snapshotDataStatus } from "./data-status";
 import type { Bootstrap, DashboardData, Fixture, FixtureHorizon, LeagueSnapshot, LeagueSummary, Manager, ManagerSummary } from "./types";
@@ -23,6 +23,11 @@ class ApiRequestError extends Error {
 }
 
 const requestApi = cache(async <T>(path: string): Promise<T> => {
+  if (staticDataset) {
+    const response = await fetchPublicApi(`${API_BASE}${path}`);
+    if (!response.ok) throw new ApiRequestError(response.status, path);
+    return response.json() as Promise<T>;
+  }
   const key = `api:${path}`;
   const cached = memoryCache.get(key);
   if (cached && cached.expiresAt > Date.now()) {
@@ -102,7 +107,7 @@ export async function getLeagueSummary(
 }
 
 export async function getLeagueDirectory(leagueId = DEFAULT_LEAGUE_ID, gameweek?: number) {
-  return readAvailableSnapshot<{ gameweek: number; managers: ManagerSummary[] }>(
+  return readAvailableSnapshot<{ gameweek: number; managers: ManagerSummary[]; provisional?: boolean }>(
     candidate => `/v1/leagues/${leagueId}/directory${candidate === undefined ? "" : `?gw=${candidate}`}`,
     gameweek,
   );

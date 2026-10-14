@@ -1,9 +1,11 @@
 import "server-only";
-import { fetchPublicApi } from "./public-api-fetch";
+import { fetchPublicApi, staticDataset } from "./public-api-fetch";
 import type { BootstrapEvent } from "./types";
 
 const API_BASE = (process.env.FPL_API_BASE_URL ?? "https://sportmania.duckdns.org/fpl-scout-api").replace(/\/$/, "");
-export const JOURNAL_EXPORT_URL = `${API_BASE}/v1/journal/2026-27/export?filename=gameweeks.csv`;
+export async function getJournalExportUrl() {
+  return staticDataset ? staticDataset.exportUrl() : `${API_BASE}/v1/journal/2026-27/export?filename=gameweeks.csv`;
+}
 
 export interface JournalSummary {
   gw_points: number; total_points: number; overall_rank: number; league_rank: number;

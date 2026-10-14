@@ -60,6 +60,8 @@ def _manager(row: dict[str, Any]) -> dict[str, Any]:
         # payload had no `entry_history`.
         "gw_bank": None if row.get("_live_bank") is None else int(row["_live_bank"]),
         "captain": row.get("_live_captain") or "",
+        "active_chip": row.get("_live_active_chip"),
+        "chips_used": [{"name": row["_live_active_chip"]}] if row.get("_live_active_chip") else [],
         "transfers_made": int(row.get("_live_event_transfers") or 0),
         "squad": squad,
     }
@@ -78,9 +80,11 @@ def _validate(managers: list[dict[str, Any]], expected_count: int) -> None:
         starters = sum(1 for pick in squad if int(pick.get("multiplier") or 0) > 0)
         captains = sum(1 for pick in squad if pick.get("is_captain"))
         vices = sum(1 for pick in squad if pick.get("is_vice_captain"))
-        # Bench Boost has 15 scoring picks. A legitimate chip must not prevent
-        # publication of the entire league.
-        if starters not in (11, 15) or captains != 1 or vices != 1:
+        # Bench Boost can have zero-multiplier bench slots in official captures.
+        # Preserve them rather than dropping a complete league.
+        bench_boost = str(manager.get("active_chip") or "").lower() in {"bboost", "bench_boost", "benchboost", "bench boost"}
+        scoring_valid = 11 <= starters <= 15 if bench_boost else starters == 11
+        if not scoring_valid or captains != 1 or vices != 1:
             raise RuntimeError(
                 f"entry {manager['entry_id']} invalid lineup: starters={starters}, captains={captains}, vices={vices}"
             )

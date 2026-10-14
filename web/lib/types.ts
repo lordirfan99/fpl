@@ -32,6 +32,7 @@ export interface Manager {
 export type ManagerSummary = Omit<Manager, "squad" | "transfer_details" | "chips_used">;
 
 export interface LeagueSummary {
+  provisional?: boolean;
   league_id: number;
   gameweek: number;
   total: number;

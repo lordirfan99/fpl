@@ -1,0 +1,70 @@
+name: publish · free public dataset
+
+on:
+  schedule:
+    # Hourly daytime UTC; cron is best-effort and may be delayed by GitHub.
+    - cron: '17 7-23 * * *'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Reviewed release tag to collect and publish
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: public-static-dataset
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || vars.FPL_STATIC_RELEASE_TAG != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Guard free public repository and reviewed immutable tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag || vars.FPL_STATIC_RELEASE_TAG }}
+        run: |
+          test "$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)" = false
+          [[ "$RELEASE_TAG" =~ ^v[0-9A-Za-z._-]+$ ]]
+          sha=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
+          git merge-base --is-ancestor "$sha" origin/main
+          gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-runs?per_page=100" > "$RUNNER_TEMP/release-checks.json"
+          python infra/scripts/check_release_ci.py "$RUNNER_TEMP/release-checks.json"
+          git checkout --detach "$sha"
+          echo "DATA_REVISION=$sha" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install public collector only
+        run: pip install -r api/requirements.txt
+      - uses: actions/configure-pages@v5
+        id: pages
+      - name: Build complete public dataset
+        env:
+          PUBLIC_BASE: ${{ steps.pages.outputs.base_url }}
+        run: |
+          python infra/scripts/publish_static_dataset.py \
+            --output "$RUNNER_TEMP/public-dataset" \
+            --previous-url "$PUBLIC_BASE" \
+            --revision "$DATA_REVISION" \
+            --seed-api https://sportmania.duckdns.org/fpl-scout-api
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/public-dataset
+          retention-days: 1
+      - uses: actions/deploy-pages@v4
+        id: deploy
