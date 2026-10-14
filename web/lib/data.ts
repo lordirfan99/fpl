@@ -9,6 +9,7 @@ import { getLiveTeam } from "./live";
 const DATA_BASE = process.env.FPL_DATA_BASE_URL ?? "https://fpl-scout-intelligence.netlify.app/data";
 const API_BASE = (process.env.FPL_API_BASE_URL ?? "https://sportmania.duckdns.org/fpl-scout-api").replace(/\/$/, "");
 const memoryCache = new Map<string, { expiresAt: number; value: unknown }>();
+const publicRequests = new Map<string, Promise<unknown>>();
 export const MY_TEAM_ID = 2797967;
 export const DEFAULT_LEAGUE_ID = 58005;
 export const DEFAULT_GAMEWEEK = 1;
@@ -21,9 +22,33 @@ class ApiRequestError extends Error {
 }
 
 const requestApi = cache(async <T>(path: string): Promise<T> => {
-  const response = await fetchPublicApi(`${API_BASE}${path}`);
-  if (!response.ok) throw new ApiRequestError(response.status, path);
-  return response.json() as Promise<T>;
+  const key = `api:${path}`;
+  const cached = memoryCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    memoryCache.delete(key);
+    memoryCache.set(key, cached);
+    return cached.value as T;
+  }
+  const pending = publicRequests.get(path);
+  if (pending) return pending as Promise<T>;
+  // Full public league payloads can exceed the framework's fetch-cache size
+  // budget. Keep a small warm-instance cache and coalesce concurrent reads as
+  // well; never cache failed/provisional responses or private account packets.
+  const request = (async () => {
+    try {
+      const response = await fetchPublicApi(`${API_BASE}${path}`);
+      if (!response.ok) throw new ApiRequestError(response.status, path);
+      const value = await response.json() as T;
+      memoryCache.delete(key);
+      memoryCache.set(key, { expiresAt: Date.now() + 60_000, value });
+      while (memoryCache.size > 8) memoryCache.delete(memoryCache.keys().next().value!);
+      return value;
+    } finally {
+      publicRequests.delete(path);
+    }
+  })();
+  publicRequests.set(path, request);
+  return request;
 });
 
 type CatalogMeta = { snapshot_at?: string | null; stale?: boolean; quality_status?: string };
