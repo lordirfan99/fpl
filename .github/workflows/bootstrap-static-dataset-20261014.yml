@@ -1,0 +1,55 @@
+name: release · bootstrap static dataset (one-time)
+
+# A one-time reviewed PR adds this file to main. Unlike a user-created tag,
+# GITHUB_TOKEN-created tags do not trigger the separate tag-based Netlify deploy.
+# This workflow ONLY publishes the public dataset; it never changes Netlify.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/bootstrap-static-dataset-20261014.yml
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: bootstrap-static-dataset-20261014
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require green CI and create immutable tag at reviewed code
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v2026.10.14-free-static-data
+          RELEASE_SHA: b4a26c94c73eaa44eff8e1e3e2f45a7a18d938fd
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          git fetch --tags origin
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+          gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_SHA/check-runs?per_page=100" > "$RUNNER_TEMP/static-release-checks.json"
+          python infra/scripts/check_release_ci.py "$RUNNER_TEMP/static-release-checks.json"
+          if git rev-parse -q --verify "refs/tags/$RELEASE_TAG^{commit}" >/dev/null; then
+            actual=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
+            test "$actual" = "$RELEASE_SHA" || { echo "::error::Release tag points to unexpected commit"; exit 1; }
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$RELEASE_TAG" "$RELEASE_SHA" -m "Reviewed free static public dataset release"
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
+      - name: Dispatch Pages publication without touching Netlify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run publish-static-data.yml \
+            --ref main -f release_tag=v2026.10.14-free-static-data
