@@ -23,6 +23,7 @@ function EliteData({result,id,gw}:{result:Valid;id:number;gw:number|null}){
  const you=population.find(m=>m.entry_id===MY_TEAM);
  return <>
   <WeekNav weeks={result.availableWeeks} id={id} path="/v2/elite" selected={gw}/>
+  <p role="status">Verified {gw!==null?"finalized archive":"scheduled league capture"}: GW{result.data.gameweek}. Requested {gw!==null?"GW"+gw:"latest capture"}.</p>
   <Source capturedAt={result.capturedAt} stale={result.stale} archived={gw!==null}/>
   <div className="fplv2-grid"><Stat label="Elite managers" value={elite.length} note={"Top 5% of "+population.length.toLocaleString()}/>
    <Stat label="Average elite GW" value={avg.toFixed(1)}/><Stat label="Top captain" value={captains[0]?.name||"—"} note={captains[0]?`${Math.round(captains[0].captained/elite.length*100)}% captained`:undefined}/>
