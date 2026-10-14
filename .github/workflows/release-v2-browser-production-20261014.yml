@@ -1,0 +1,96 @@
+name: release · V2 browser-verified production retry (one-time)
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/release-v2-browser-production-20261014.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+env:
+  REVIEWED_SHA: 57f7aac54610559f5e2d9b5d0fa8a8ec51379dce
+  REVIEWED_TAG: v2026.10.14-v2-public-verified
+  ROLLBACK_TAG: v2026.10.14-free-static-data
+  NETLIFY_SITE_ID: e2602e61-b56a-45ff-8f01-debe6037af2e
+  FPL_PUBLIC_DATA_URL: https://lordirfan99.github.io/fpl
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Guard immutable tagged release, token and Pages freshness
+        working-directory: .
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$NETLIFY_AUTH_TOKEN"
+          git fetch --tags origin
+          test "$(git rev-parse "refs/tags/$REVIEWED_TAG^{commit}")" = "$REVIEWED_SHA"
+          git merge-base --is-ancestor "$REVIEWED_SHA" origin/main
+          test "$(git rev-parse "refs/tags/$ROLLBACK_TAG^{commit}")" = "b4a26c94c73eaa44eff8e1e3e2f45a7a18d938fd"
+          python3 - <<'PY'
+          import json,datetime,urllib.request
+          with urllib.request.urlopen("https://lordirfan99.github.io/fpl/manifest.json",timeout=20) as r:
+              m=json.load(r)
+          assert m["schema_version"]==1 and m["writes_enabled"] is False
+          assert all(k in m["files"] for k in ["catalog.json","leagues/58005/live.json","leagues/131997/live.json"])
+          age=(datetime.datetime.now(datetime.timezone.utc)-datetime.datetime.fromisoformat(m["generated_at"].replace("Z","+00:00"))).total_seconds()
+          assert -300<=age<43200,"Public dataset stale"
+          print("Pages ready, release:",m["release"])
+          PY
+      - name: Checkout reviewed production tag
+        working-directory: .
+        run: |
+          git checkout --detach "$REVIEWED_TAG"
+          test "$(git rev-parse HEAD)" = "$REVIEWED_SHA"
+      - name: Install tagged dependencies
+        run: npm ci
+      - name: Deploy V2 reviewed tag to production
+        id: deploy
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        run: >-
+          npx --yes netlify-cli@17 deploy --build --prod
+          --site "$NETLIFY_SITE_ID"
+          --message "V2 production browser-verified release $REVIEWED_SHA"
+      - name: Prepare read-only Chromium production test
+        working-directory: .
+        shell: bash
+        run: |
+          git show "$GITHUB_SHA:web/scripts/v2-production-smoke.mjs" > web/scripts/v2-production-smoke.mjs
+      - name: Install Chromium and test rendered production routes plus interactions
+        id: smoke
+        run: |
+          npx playwright install --with-deps chromium
+          node scripts/v2-production-smoke.mjs
+      - name: Roll back to last proven tag on failed production browser audit
+        if: failure() && steps.deploy.conclusion == 'success'
+        working-directory: .
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout --detach "$ROLLBACK_TAG"
+          cd web
+          npm ci
+          npx --yes netlify-cli@17 deploy --build --prod --site "$NETLIFY_SITE_ID" --message "Rollback to $ROLLBACK_TAG after V2 browser failure"
