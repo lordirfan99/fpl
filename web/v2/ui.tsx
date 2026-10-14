@@ -9,6 +9,9 @@ const sections = [
   { href: "/v2/league", label: "League" },
   { href: "/v2/elite", label: "Elite" },
   { href: "/v2/players", label: "Players" },
+  { href: "/v2/compare", label: "Compare" },
+  { href: "/v2/planner", label: "Planner" },
+  { href: "/v2/journal", label: "Journal" },
 ];
 export function Shell({ children }: { children: ReactNode }) {
   return <div className="fplv2-app">
