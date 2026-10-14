@@ -1,0 +1,170 @@
+name: release · guarded Pages-to-Netlify cutover (one-time)
+
+# One-time reviewed PR. Never executes on tags or on ordinary main pushes.
+# It checks the already published public dataset BEFORE any production mutation.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/cutover-static-web-20261014.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+env:
+  NETLIFY_SITE_ID: e2602e61-b56a-45ff-8f01-debe6037af2e
+  REVIEWED_TAG: v2026.10.14-free-static-data
+  REVIEWED_SHA: b4a26c94c73eaa44eff8e1e3e2f45a7a18d938fd
+  FPL_PUBLIC_DATA_URL: https://lordirfan99.github.io/fpl
+
+jobs:
+  cutover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify Pages live manifest, both complete leagues, every artifact checksum and frozen journal
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import re
+          import time
+          from datetime import datetime, timezone
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError, URLError
+
+          base = "https://lordirfan99.github.io/fpl"
+          reviewed = "b4a26c94c73eaa44eff8e1e3e2f45a7a18d938fd"
+          allowed = re.compile(r"(?:catalog|fixtures|projections)\.json|leagues/(?:58005|131997)/(?:live|decision|team|research)\.json|leagues/(?:58005|131997)/gw/(?:[1-9]|[12][0-9]|3[0-8])\.json|journal/2026-27/(?:index\.json|gameweeks\.csv|gw/(?:[1-9]|[12][0-9]|3[0-8])\.json)")
+
+          def read(url, limit=20*1024*1024):
+              for attempt in range(5):
+                  try:
+                      with urlopen(Request(url, headers={"User-Agent": "FPL-release-preflight/1"}), timeout=25) as response:
+                          if response.status != 200:
+                              raise RuntimeError("HTTP status is not 200")
+                          body = response.read(limit + 1)
+                          if len(body) > limit:
+                              raise RuntimeError("Artifact exceeds size budget")
+                          return body
+                  except (HTTPError, URLError, TimeoutError):
+                      if attempt == 4:
+                          raise
+                      time.sleep(5)
+              raise RuntimeError("Unreachable")
+
+          manifest = json.loads(read(base + "/manifest.json", 100_000))
+          assert manifest.get("schema_version") == 1
+          assert manifest.get("revision") == reviewed
+          assert manifest.get("writes_enabled") is False
+          assert manifest.get("source") == "official-fpl-scheduled-snapshot"
+          release = manifest["release"]
+          assert re.fullmatch(r"[0-9a-f]{64}", release)
+          stamp = datetime.fromisoformat(manifest["generated_at"].replace("Z", "+00:00"))
+          age = (datetime.now(timezone.utc) - stamp).total_seconds()
+          assert -300 <= age < 12*3600, "Dataset is stale or from future"
+          files = manifest["files"]
+          assert 12 <= len(files) <= 200
+          necessary = {"catalog.json", "fixtures.json", "projections.json",
+                       "journal/2026-27/index.json", "journal/2026-27/gameweeks.csv"}
+          for league in (58005, 131997):
+              necessary |= {f"leagues/{league}/{name}.json" for name in ("live", "decision", "team", "research")}
+              assert manifest["gameweeks"].get(str(league)), "No finalized history for league"
+          necessary |= {f"journal/2026-27/gw/{gw}.json" for gw in range(1, 7)}
+          assert necessary <= files.keys(), "Mandatory public evidence missing"
+          recorded, total = {}, 0
+          for name, digest in sorted(files.items()):
+              assert allowed.fullmatch(name) and re.fullmatch(r"[0-9a-f]{64}", digest), "Unexpected public file"
+              body = read(f"{base}/releases/{release}/{name}")
+              total += len(body)
+              assert total <= 250*1024*1024
+              assert hashlib.sha256(body).hexdigest() == digest, f"Hash mismatch: {name}"
+              if name in necessary:
+                  recorded[name] = body
+          for league, minimum in ((58005, 1000), (131997, 2000)):
+              payload = json.loads(recorded[f"leagues/{league}/live.json"])
+              assert payload["league_id"] == league
+              assert payload["count"] == payload["declared_count"]
+              assert payload["count"] >= minimum and payload["hydration_percent"] == 100.0
+              assert len(payload["managers"]) == payload["count"]
+          index = json.loads(recorded["journal/2026-27/index.json"])
+          advertised = {row["gameweek"] for row in index["gameweeks"]}
+          assert set(range(1, 7)) <= advertised, "Frozen journal archive missing"
+          for gw in range(1, 7):
+              item = json.loads(recorded[f"journal/2026-27/gw/{gw}.json"])
+              assert item["season"] == "2026-27" and item["gameweek"] == gw
+              assert isinstance(item.get("record_hash"), str) and len(item["record_hash"]) == 64
+          print(json.dumps({"status": "verified", "release": release, "revision": reviewed,
+                            "artifacts": len(files), "total_bytes": total,
+                            "league_counts": {"58005": 1193, "131997": 2539},
+                            "journal_weeks": sorted(advertised)}))
+          PY
+      - name: Require reviewed tag and existing Netlify credential
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$NETLIFY_AUTH_TOKEN"
+          git fetch --tags origin
+          test "$(git rev-parse "refs/tags/$REVIEWED_TAG^{commit}")" = "$REVIEWED_SHA"
+          git merge-base --is-ancestor "$REVIEWED_SHA" origin/main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Set production-only server-side Netlify public-data URL
+        id: configure
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes netlify-cli@17 env:set FPL_PUBLIC_DATA_URL "$FPL_PUBLIC_DATA_URL" \
+            --context production --scope builds functions --site "$NETLIFY_SITE_ID" --force
+      - name: Select reviewed tag only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout --detach "$REVIEWED_TAG"
+          test "$(git rev-parse HEAD)" = "$REVIEWED_SHA"
+      - name: Install exact tagged web dependencies
+        working-directory: web
+        run: npm ci
+      - name: Build and deploy reviewed web to production
+        id: deploy
+        working-directory: web
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        run: >-
+          npx --yes netlify-cli@17 deploy --build --prod
+          --site "$NETLIFY_SITE_ID"
+          --message "Reviewed free static data cutover $REVIEWED_SHA"
+      - name: Verify production routes are reachable without 5xx
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
+          paths = ("/", "/this-week", "/elite", "/players", "/league",
+                   "/compare", "/transfers", "/analytics", "/journal",
+                   "/my-team", "/settings")
+          for path in paths:
+              try:
+                  with urlopen(Request("https://fpl-scout-intelligence.netlify.app" + path,
+                                       headers={"User-Agent": "FPL-cutover-read-only-smoke/1"}), timeout=30) as response:
+                      status = response.status
+              except HTTPError as error:
+                  status = error.code
+              print(path, status)
+              assert status < 500, f"Production HTTP {status}: {path}"
+          PY
