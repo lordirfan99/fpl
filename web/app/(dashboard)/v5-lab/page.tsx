@@ -28,8 +28,9 @@ export default async function ModelsPage() {
     {v5.available ? <>
       <div className="metric-grid"><MetricCard label="Target gameweek" value={`GW${v5.gameweek}`} detail="Next deadline-safe projection" /><MetricCard label="Player universe" value={String(v5.players.length)} detail="Not restricted by ownership" tone="positive" /><MetricCard label="Quality-ready" value={`${ready}/${v5.players.length}`} detail="Complete current inputs" /><MetricCard label="Top projection" value={top ? `${top.xpts_mean.toFixed(1)} xPts` : "—"} detail={top?.name ?? "No player rows"} /></div>
       <V5PlayerExplorer players={v5.players} />
-    </> : <section className="surface v5-unavailable"><BrainCircuit /><div><span>DEPLOYMENT REQUIRED</span><h2>V5 API is not live yet</h2><p>The dashboard is ready, but the public API has not deployed <code>/v1/projections/current</code>. Production remains safe and unchanged.</p><small>{v5.reason}</small></div></section>}
+    </> : <section className="surface v5-unavailable"><BrainCircuit /><div><span>MODEL DATA UNAVAILABLE</span><h2>Model projections could not load</h2><p>The data service did not return usable projections. Try this page again shortly; no model recommendation is shown until its recorded data is available.</p><small>{v5.reason}</small></div></section>}
     {data ? <LiveVsV5 live={live} v5={v5} bootstrap={data.bootstrap} nextDeadlineGw={season?.nextDeadlineGw ?? v5.gameweek} /> : null}
     <section className="shadow-safety"><div><CheckCircle2 /><div><strong>Ownership-independent</strong><small>Raw xPts never reads elite ownership or league rank.</small></div></div><div><LockKeyhole /><div><strong>Read-only by design</strong><small>No browser or API endpoint can mutate your FPL team.</small></div></div><div><ShieldCheck /><div><strong>Research only</strong><small>V5 stays a research lane; it is never an instruction to act.</small></div></div></section>
   </div>;
 }
+
