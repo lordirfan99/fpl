@@ -1,0 +1,84 @@
+name: release · dashboard stream recovery (one-time)
+
+# Release bridge for PR #134. The existing deploy-web workflow intentionally
+# only runs on pushed release tags. This one-time bridge tags the verified main
+# commit, then runs the same Netlify CLI deployment in this job, because
+# GITHUB_TOKEN-created tag pushes do not trigger a second Actions workflow.
+# This file runs only on the one merge that adds it; no permanent push-to-main
+# production auto-deploy is introduced.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/release-dashboard-stream-recovery-20261014.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+env:
+  NETLIFY_SITE_ID: e2602e61-b56a-45ff-8f01-debe6037af2e
+  RELEASE_TAG: v2026.10.14-dashboard-stream-recovery
+
+jobs:
+  deploy:
+    name: Release verified dashboard fix to Netlify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Guard — verified fix is included
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'd672bb3796466b50642a473ce1fd69d1599bb71222ae381ab54fa15d7ef29e39  web/lib/data.ts' | sha256sum --check --status
+          echo 'efbd52599ddc2ae54e7d86d450313e726e944ee6f560ac9f4e3abf1af12755e6  web/lib/public-api-fetch.ts' | sha256sum --check --status
+          echo 'f76558762f755efa8d9b7c68bef61dd2825b7bb3e22fe568b6987d4173b6d6bb  web/components/app-shell.tsx' | sha256sum --check --status
+      - name: Guard — deployment credential exists
+        shell: bash
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$NETLIFY_AUTH_TOKEN" ]; then
+            echo "::error::Repository secret NETLIFY_AUTH_TOKEN is missing"
+            exit 1
+          fi
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+      - name: Create reviewed release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            existing_sha="$(git rev-list -n 1 "$RELEASE_TAG" 2>/dev/null || true)"
+            if [ -z "$existing_sha" ] || [ "$existing_sha" != "$(git rev-parse HEAD)" ]; then
+              echo "::error::Tag $RELEASE_TAG already exists at another commit"
+              exit 1
+            fi
+            echo "Release tag already points at this commit"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$RELEASE_TAG" -m "Release reviewed FPL dashboard stream recovery"
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
+      - name: Build and deploy verified release to Netlify production
+        working-directory: web
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        run: >-
+          npx --yes netlify-cli@17 deploy --build --prod
+          --site "$NETLIFY_SITE_ID"
+          --message "Release $RELEASE_TAG @ ${{ github.sha }}"

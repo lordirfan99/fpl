@@ -37,15 +37,16 @@ rollout.
   including response bodies, and remain no-store. The weekly client retains its
   ten-second overall deadline and independent section recovery.
 - Public captured research (catalog, league snapshots, journal and model
-  projections) uses a 25-second body-inclusive cold-read timeout and 60-second
-  fetch revalidation. Large league responses additionally use an eight-entry
+  projections) uses an eight-second body-inclusive cold-read timeout. API research
+  responses use an eight-entry
   warm-instance LRU cache with coalesced concurrent reads; failed responses are
   not cached. Capture timestamps are never renewed by a cache hit. Only a live
   status with ready=true may override the catalog gameweek.
 - Navigation, league switches, journal links and the season rail disable automatic
   prefetch. Navigation/Players/Journal use the compact catalog; live identity
-  comes from compact live-status, not a full personal-team request. connection()
-  keeps request-time rendering while permitting public fetch caching. These
+  comes from compact live-status, not a full personal-team request. The dashboard
+  remains request-time rendered with force-dynamic; the framework fetch cache
+  may be bypassed, so the bounded warm-instance cache provides reuse. These
   caches contain public records only; private account packets remain isolated.
 - PuLP is constrained below major version 4 because the engine uses the existing
   `LpVariable(..., cat=...)` and CBC APIs. New installs otherwise break lineup and
