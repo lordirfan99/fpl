@@ -26,6 +26,7 @@ function LeagueContent({result,p,id,selectedGw}:{result:ValidResult;p:Params;id:
  };
  return <>
    <WeekNav weeks={result.availableWeeks} id={id} path="/v2/league" selected={selectedGw}/>
+   <p role="status">Verified {selectedGw!==null?"finalized archive":"scheduled league capture"}: GW{data.gameweek}. Requested {selectedGw!==null?"GW"+selectedGw:"latest capture"}.</p>
    <Source capturedAt={result.capturedAt} stale={result.stale} archived={selectedGw!==null}/>
    <div className="fplv2-grid"><Stat label="League managers" value={data.managers.length.toLocaleString()}/><Stat label="Your league rank" value={owner?"#"+owner.league_rank:"—"}/><Stat label="Your GW points" value={owner?.gw_points??"—"}/><Stat label="Recorded Gameweek" value={"GW"+data.gameweek} note={data.provisional?"Scheduled capture":"Frozen archive"}/></div>
    <section className="fplv2-card"><h2>Manager directory</h2>
