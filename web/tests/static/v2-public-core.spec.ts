@@ -6,6 +6,9 @@ const screens: Array<[string,string]> = [
  ['/v2/league','Complete standings'],
  ['/v2/elite','The top five percent'],
  ['/v2/players','Official recorded player pool'],
+ ['/v2/compare','Compare recorded managers'],
+ ['/v2/planner','Five gameweeks ahead'],
+ ['/v2/journal','Season decision journal'],
 ];
 for(const [route,heading] of screens){
  test(`V2 public route ${route} renders with unreachable VM`,async({page})=>{
@@ -43,4 +46,18 @@ test('V2 public routes never ask unreachable private VM for public page content'
  await page.goto('/v2/players');
  await expect(page.getByRole('heading',{name:'Official recorded player pool'})).toBeVisible();
  expect(remote).toEqual([]);
+});
+
+test('V2 manager comparison never loads squads from a different GW',async({page})=>{
+ await page.goto('/v2/compare?league=131997&gw=3&left=2797967&right=101010');
+ await expect(page.getByRole('heading',{name:'Compare recorded managers'})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Test FC 2797967'})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Test FC 101010'})).toBeVisible();
+ await page.goto('/v2/compare?league=131997&gw=6');
+ await expect(page.getByText(/GW6 is not archived/)).toBeVisible();
+});
+test('V2 journal missing weeks yield an explicit status not a route crash',async({page})=>{
+ await page.goto('/v2/journal?gw=7');
+ await expect(page.getByRole('heading',{name:'Recorded evidence is unavailable'})).toBeVisible();
+ await expect(page.getByText(/GW7 has no verified journal record/)).toBeVisible();
 });
