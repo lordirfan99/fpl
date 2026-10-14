@@ -74,9 +74,11 @@ than presented as a model backtest. Frozen records keep original capture times.
    both league populations, SHA-256 for all files, capture times, archived index,
    and no private files. Check CSV, all journal pages and model inputs. Record
    missing legacy imports; do not claim those histories were migrated.
-5. Set repository variable `FPL_STATIC_RELEASE_TAG` to this tag to enable the
-   schedule. An unset variable means scheduled publication is skipped. Pinning
-   the tag keeps later unrelated main changes out of production collection.
+5. The scheduled publisher defaults to the reviewed immutable tag
+   `v2026.10.14-free-static-data` without manual repository configuration.
+   `FPL_STATIC_RELEASE_TAG` is an optional explicit override for a later reviewed
+   release. Observe a successful ordinary scheduled run before retiring any
+   redundant collector. Pinning the tag keeps unrelated main changes out.
 6. Set Netlify production **server-only** `FPL_PUBLIC_DATA_URL` to
    `https://lordirfan99.github.io/fpl` (build and Functions scopes). Keep
    `FPL_API_BASE_URL` pointing to the existing private backend. Deploy the
