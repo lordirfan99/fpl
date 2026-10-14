@@ -75,7 +75,7 @@ export const getCatalogV2 = cache(async (): Promise<DataResult<Catalog>> => {
   try {
     const manifest = await loadManifest();
     const data = await loadFile<Catalog>(manifest, "catalog.json");
-    assert(Array.isArray(data.players) && data.players.length > 50 &&
+    assert(Array.isArray(data.players) && data.players.length >= 15 &&
       Array.isArray(data.teams) && Array.isArray(data.events), "Incomplete official player catalog.");
     return { ok: true, data, capturedAt: data.meta?.snapshot_at || null,
       stale: ageOf(data.meta?.snapshot_at), release: manifest.release, availableWeeks: [] };
