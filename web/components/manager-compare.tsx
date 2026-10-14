@@ -6,12 +6,13 @@ import { useEffect, useMemo, useState } from "react";
 import { ManagerLineup } from "@/components/manager-lineup";
 import type { Bootstrap, Manager, ManagerSummary, Pick } from "@/lib/types";
 
-export function ManagerCompare({ directory, left, right, bootstrap, gameweek, leagueId }: { directory: ManagerSummary[]; left: Manager; right: Manager; bootstrap: Bootstrap; gameweek: number; leagueId: number }) {
+export function ManagerCompare({ directory, left, right, bootstrap, gameweek, leagueId, requestedGameweek }: { directory: ManagerSummary[]; left: Manager; right: Manager; bootstrap: Bootstrap; gameweek: number; leagueId: number; requestedGameweek?: number }) {
   const router = useRouter();
   const [open, setOpen] = useState<Manager | null>(null);
   useEffect(() => { if (!open) return; const close = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(null); }; document.addEventListener("keydown", close); document.body.classList.add("modal-open"); return () => { document.removeEventListener("keydown", close); document.body.classList.remove("modal-open"); }; }, [open]);
   const select = (side: "left" | "right", id: number) => {
     const params = new URLSearchParams({ league: String(leagueId), left: String(side === "left" ? id : left.entry_id), right: String(side === "right" ? id : right.entry_id) });
+    if (requestedGameweek) params.set("gw", String(requestedGameweek));
     router.push(`/compare?${params}`);
   };
   const leftMap = new Map(left.squad.map((pick) => [pick.element, pick])), rightMap = new Map(right.squad.map((pick) => [pick.element, pick]));

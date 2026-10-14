@@ -31,30 +31,54 @@ export async function getCompactCatalog(): Promise<Bootstrap & { meta?: CatalogM
   return { elements: payload.players, teams: payload.teams, events: payload.events, meta: payload.meta };
 }
 
+// The API intentionally rejects a current GW before the snapshot passes its
+// integrity/finalization checks (404/409). All snapshot-only views must use the
+// last real finalized record, never turn that expected transition into a 500.
+function isPendingSnapshot(error: unknown): error is ApiRequestError {
+  return error instanceof ApiRequestError && (error.status === 404 || error.status === 409);
+}
+
+async function readAvailableSnapshot<T>(path: (gameweek?: number) => string, requestedGameweek?: number): Promise<T> {
+  let candidate = requestedGameweek;
+  if (candidate === undefined) {
+    try {
+      return await requestApi<T>(path());
+    } catch (error) {
+      if (!isPendingSnapshot(error)) throw error;
+      const { events } = await getCompactCatalog();
+      candidate = events.find(event => event.is_current)?.id
+        ?? events.find(event => event.is_next)?.id
+        ?? events.filter(event => event.finished).at(-1)?.id
+        ?? 1;
+    }
+  }
+  for (let gameweek = Math.min(Math.max(candidate, 1), 38); gameweek >= 1; gameweek -= 1) {
+    try {
+      return await requestApi<T>(path(gameweek));
+    } catch (error) {
+      if (!isPendingSnapshot(error)) throw error;
+    }
+  }
+  throw new Error("No finalized league snapshot is available yet");
+}
+
 export async function getLeagueSummary(
   leagueId = DEFAULT_LEAGUE_ID,
   options: { gameweek?: number; page?: number; query?: string } = {},
 ): Promise<LeagueSummary> {
   const params = new URLSearchParams({ page: String(options.page ?? 1), page_size: "50" });
   if (options.query) params.set("q", options.query);
-  if (options.gameweek === undefined) {
-    return requestApi<LeagueSummary>(`/v1/leagues/${leagueId}/summary?${params}`);
-  }
-  const resolved = options.gameweek;
-  for (let candidate = resolved; candidate >= 1; candidate -= 1) {
-    try {
-      return await requestApi<LeagueSummary>(`/v1/leagues/${leagueId}/summary?gw=${candidate}&${params}`);
-    } catch (error) {
-      if (!(error instanceof ApiRequestError) || ![404, 409].includes(error.status)) throw error;
-    }
-  }
-  throw new Error(`No league summary available for league ${leagueId}`);
+  return readAvailableSnapshot<LeagueSummary>(
+    gameweek => `/v1/leagues/${leagueId}/summary?${gameweek === undefined ? "" : `gw=${gameweek}&`}${params}`,
+    options.gameweek,
+  );
 }
 
 export async function getLeagueDirectory(leagueId = DEFAULT_LEAGUE_ID, gameweek?: number) {
-  const suffix = gameweek === undefined ? "" : `?gw=${gameweek}`;
-  const payload = await requestApi<{ gameweek: number; managers: ManagerSummary[] }>(`/v1/leagues/${leagueId}/directory${suffix}`);
-  return payload;
+  return readAvailableSnapshot<{ gameweek: number; managers: ManagerSummary[] }>(
+    candidate => `/v1/leagues/${leagueId}/directory${candidate === undefined ? "" : `?gw=${candidate}`}`,
+    gameweek,
+  );
 }
 
 export async function getLeagueManager(leagueId: number, gameweek: number, entryId: number): Promise<Manager> {

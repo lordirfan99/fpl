@@ -95,7 +95,7 @@ test("player market loads without requesting the league or personal team", async
 test("stalled player catalog exits loading with a useful recovery action", async ({ page, request }) => {
   await request.get("http://127.0.0.1:4185/__test/mode/stalled-catalog");
   await page.goto("/players", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "We could not load this view." })).toBeVisible({ timeout: 12000 });
-  await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open This Week" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "This view could not load" })).toBeVisible({ timeout: 12000 });
+  await expect(page.getByRole("button", { name: "Retry this view" })).toBeVisible();
+  await expect(page.getByRole("alert").getByRole("link", { name: "This Week", exact: true })).toBeVisible();
 });
