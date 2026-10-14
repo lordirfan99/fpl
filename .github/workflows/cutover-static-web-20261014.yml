@@ -126,13 +126,17 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Set production-only server-side Netlify public-data URL
         id: configure
+        working-directory: web
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
+          # Netlify CLI 17 env:set does not support --site. Link the existing
+          # public site ID locally (no remote changes) before updating env.
+          npx --yes netlify-cli@17 link --id "$NETLIFY_SITE_ID"
           npx --yes netlify-cli@17 env:set FPL_PUBLIC_DATA_URL "$FPL_PUBLIC_DATA_URL" \
-            --context production --scope builds functions --site "$NETLIFY_SITE_ID" --force
+            --context production --scope builds functions --force
       - name: Select reviewed tag only
         shell: bash
         run: |
