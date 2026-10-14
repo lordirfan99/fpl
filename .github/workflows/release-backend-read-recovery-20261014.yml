@@ -23,8 +23,10 @@ jobs:
           echo '83cbe0bc234451e4cccdb648a88d5da1664dad6cf83b33640bb8a30cc6ccdbb2  api/app/bounded_io.py' | sha256sum --check --status
           echo '8d311041a0c5b5ffc9475020b89e618a003728a32f5c4d1d89182b8182776c98  api/app/repository.py' | sha256sum --check --status
           echo '92072b42c543a610253995bed6790fda0da702b4f9bbc10a2151560a5d110331  api/app/compact_league.py' | sha256sum --check --status
-          echo '13a3b53b362330e1f5803b01164d963d669779a7df7b050de473f81786909ac7  infra/scripts/refresh_live_leagues.py' | sha256sum --check --status
-          echo 'c37cacdb2e09b421bcfdc429e28c1720f7d8516c1813d81b5f4bc3d54114368e  infra/deploy/install-live-read-cache.sh' | sha256sum --check --status
+          echo 'd059afa1a301c4f212e3f36ec631659fd81b5aefb71de63f677bb0f74bb26189  infra/scripts/refresh_live_leagues.py' | sha256sum --check --status
+          echo 'b4e68c61ef6f8224a407e39359a7e94d84e45360cb5005c7245fceea939e51c8  infra/deploy/install-live-read-cache.sh' | sha256sum --check --status
+          echo '13205edf9c59c7107b764215c8a373c3c3c3531a045803bd4e0b15ee09d905f1  api/app/reference_snapshots.py' | sha256sum --check --status
+          echo '7a015c4dddd0ad8ff1afc31e78dfb53f55fad1c61e26756d07937cc40dfaf853  infra/deploy/install-live-refresh.sh' | sha256sum --check --status
       - name: Create deployment tag without starting website rollout
         shell: bash
         env:

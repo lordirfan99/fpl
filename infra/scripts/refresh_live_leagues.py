@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "api"))
 
 from app import live_fpl  # noqa: E402
 from app.decision_context import current_context  # noqa: E402
+from app.reference_snapshots import reference_payloads  # noqa: E402
 
 try:
     from google.cloud import storage
@@ -180,27 +181,8 @@ def publish_references(bucket_name: str) -> None:
         raise RuntimeError("google-cloud-storage is required to publish references")
     bootstrap = live_fpl._get("bootstrap-static/", ttl=0)
     fixtures = live_fpl._get("fixtures/", ttl=0)
-    if not bootstrap.get("elements") or not bootstrap.get("teams") or not bootstrap.get("events"):
-        raise RuntimeError("Incomplete official bootstrap")
-    if not isinstance(fixtures, list) or not fixtures:
-        raise RuntimeError("Incomplete official fixtures")
     captured = datetime.now(timezone.utc).isoformat()
-    bootstrap = {**bootstrap, "_meta": {"fetched_at": captured, "source": "official-fpl-api",
-                                       "content_sha256": hashlib.sha256(_canonical(bootstrap)).hexdigest()}}
-    teams = {int(row["id"]): row["name"] for row in bootstrap["teams"]}
-    gameweeks: dict[str, list[dict]] = {}
-    for fixture in fixtures:
-        event = fixture.get("event")
-        if event is None:
-            continue
-        gameweeks.setdefault(str(event), []).append({
-            "event": int(event), "team_h": teams[int(fixture["team_h"])], "team_a": teams[int(fixture["team_a"])],
-            "team_h_difficulty": fixture.get("team_h_difficulty"), "team_a_difficulty": fixture.get("team_a_difficulty"),
-            "kickoff_time": fixture.get("kickoff_time"),
-        })
-    if not gameweeks:
-        raise RuntimeError("No scheduled fixture gameweeks")
-    fixture_cache = {"fetched_at": captured, "source": "official-fpl-api", "gameweeks": gameweeks}
+    bootstrap, fixture_cache = reference_payloads(bootstrap, fixtures, captured)
     bucket = storage.Client().bucket(bucket_name)
     for filename, payload in (("bootstrap_cache.json", bootstrap), ("fixtures_cache.json", fixture_cache)):
         bucket.blob(f"snapshots/{filename}").upload_from_string(

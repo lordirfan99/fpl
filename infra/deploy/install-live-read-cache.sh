@@ -54,12 +54,22 @@ with os.fdopen(fd, "w") as stream:
     stream.write("\n".join(lines) + "\n")
 PY
 COMPLETE=0
-trap 'if [ "$COMPLETE" = 0 ]; then restore_previous; fi' EXIT
-bash infra/deploy/install-live-refresh.sh "$TAG"
-# The VM has no packaged references. Seed only the reviewed public caches before
-# readiness gates; never run league hydration, the planner, or the approval bot.
-sudo -u fpl "$CURRENT/.venv/bin/python" "$CURRENT/infra/scripts/refresh_live_leagues.py" \
-  --bucket irfan-374115-fpl-snapshots --references-only
+API_ATTEMPTED=0
+cleanup_failed() {
+  if [ "$COMPLETE" = 0 ]; then
+    restore_previous || return 1
+    # Dependency/reference failures are cleaned by the staged release installer.
+    # Remove only this invocation's incomplete wrapper backup after restoration;
+    # preserve API-installer state if API installation was actually attempted.
+    if [ "$API_ATTEMPTED" = 0 ] && ! sudo test -e "/opt/fpl-live-refresh/releases/$SHA"; then
+      [ "$BACKUP" = "/var/backups/fpl-live-read-cache/$SHA" ] || return 1
+      sudo rm -rf -- "$BACKUP"
+    fi
+  fi
+}
+trap cleanup_failed EXIT
+bash infra/deploy/install-live-refresh.sh "$TAG" --seed-references
+API_ATTEMPTED=1
 run_api_installer install "$BACKUP/candidate.env"
 sudo touch "$BACKUP/complete"
 COMPLETE=1

@@ -156,8 +156,12 @@ def test_reference_publication_supplies_api_paths_and_provenance(monkeypatch):
     import hashlib
     import json
     from types import SimpleNamespace
-    bootstrap = {"elements": [{"id": 1}], "teams": [{"id": 1, "name": "Club"}], "events": [{"id": 6, "is_current": True}]}
-    fixtures = [{"event": 7, "team_h": 1, "team_a": 1, "team_h_difficulty": 2, "team_a_difficulty": 3}]
+    bootstrap = {"elements": [{"id": i, "web_name": f"Player {i}"} for i in range(1, 401)],
+                 "teams": [{"id": i, "name": f"Club {i}"} for i in range(1, 21)],
+                 "events": [{"id": i, "is_current": i == 6} for i in range(1, 39)],
+                 "element_types": [{"id": i} for i in range(1, 5)]}
+    fixtures = [{"id": i, "event": 7, "team_h": 1, "team_a": 2, "team_h_difficulty": 2, "team_a_difficulty": 3}
+                for i in range(1, 381)]
     uploads = {}
     class Blob:
         def __init__(self, name):
@@ -174,8 +178,14 @@ def test_reference_publication_supplies_api_paths_and_provenance(monkeypatch):
     assert published["_meta"]["content_sha256"] == hashlib.sha256(collector._canonical(bootstrap)).hexdigest()
     assert published["_meta"]["fetched_at"] == uploads["snapshots/fixtures_cache.json"]["fetched_at"]
     assert published["events"] == bootstrap["events"]
-    assert uploads["snapshots/fixtures_cache.json"]["gameweeks"]["7"][0]["team_h"] == "Club"
+    assert uploads["snapshots/fixtures_cache.json"]["gameweeks"]["7"][0]["team_h"] == "Club 1"
     assert "_meta" not in bootstrap
+    horizon = uploads["snapshots/fixtures_cache.json"]
+    assert horizon["schema_version"] == 2 and horizon["fixture_count"] == 380
+    assert horizon["source_url"].endswith("/api/fixtures/")
+    assert horizon["content_sha256"] == hashlib.sha256(json.dumps(fixtures, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    assert len(horizon["gameweeks"]) == 38
+    assert published["_meta"]["source"] == "official-fpl-api/bootstrap-static"
 
 
 def test_references_only_never_collects_leagues(monkeypatch):
@@ -191,5 +201,5 @@ def test_invalid_reference_does_not_publish(monkeypatch):
     from types import SimpleNamespace
     monkeypatch.setattr(collector, "storage", SimpleNamespace(Client=lambda: pytest.fail("Invalid references must not publish")))
     monkeypatch.setattr(collector.live_fpl, "_get", lambda path, **_: {} if path == "bootstrap-static/" else [])
-    with pytest.raises(RuntimeError, match="Incomplete official bootstrap"):
+    with pytest.raises(RuntimeError):
         collector.publish_references("test")

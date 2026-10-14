@@ -41,7 +41,9 @@ rollout.
 - The live collector publishes public bootstrap and fixture references before
   collecting leagues, so a failed long league run does not prevent reference
   publication. Bootstrap capture metadata/hash and fixture source time are
-  included. This does not publish sampled planner cohorts as complete leagues
+  included using the existing reference schema/source/hash contract. Partial
+  official catalogues and malformed fixtures fail validation before publication.
+  This does not publish sampled planner cohorts as complete leagues
   or generate missing historical snapshots. Missing public artifacts return 503.
 - Private dashboard reads reuse the storage client, check private-bucket
   protection once per pair, coalesce concurrent reads, and cache the pair for at
@@ -85,7 +87,10 @@ rollout.
    `infra/deploy/install-live-read-cache.sh`; confirm no collector/planner job is
    running. Use that immutable installer with the new tag. It installs the same
    collector and API release and preserves the existing environment values.
-   Follow its rollback procedure if readiness fails. Do not run the planner or
+   Public reference seeding happens while the new release is still staged;
+   dependency/seed failures remove only newly staged state and restore the prior
+   release, so the same reviewed tag can be retried. API-installation failures
+   retain their installer rollback records. Follow rollback if readiness fails. Do not run the planner or
    approval bot as part of a dashboard release.
 3. Verify BOTH new compact routes before publishing that tag to Netlify. The
    website requires the new API protocol; do not publish the website first.
