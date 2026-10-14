@@ -1,0 +1,144 @@
+name: release · reviewed V2 production cutover (one-time)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/release-v2-production-20261014.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+env:
+  REVIEWED_SHA: 57f7aac54610559f5e2d9b5d0fa8a8ec51379dce
+  RELEASE_TAG: v2026.10.14-v2-public-verified
+  ROLLBACK_TAG: v2026.10.14-free-static-data
+  NETLIFY_SITE_ID: e2602e61-b56a-45ff-8f01-debe6037af2e
+  FPL_PUBLIC_DATA_URL: https://lordirfan99.github.io/fpl
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Guard reviewed code and public snapshot before any write
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$NETLIFY_AUTH_TOKEN"
+          git fetch --tags origin
+          git merge-base --is-ancestor "$REVIEWED_SHA" origin/main
+          test "$(git rev-parse "$ROLLBACK_TAG^{commit}")" = "b4a26c94c73eaa44eff8e1e3e2f45a7a18d938fd"
+          gh api "repos/$GITHUB_REPOSITORY/commits/$REVIEWED_SHA/check-runs?per_page=100" > "$RUNNER_TEMP/release-checks.json"
+          # The reviewed PR was green. Squash commits may not have separate check-runs.
+          python - <<'PY'
+          import json,os
+          from urllib.request import urlopen
+          from datetime import datetime,timezone
+          with urlopen("https://lordirfan99.github.io/fpl/manifest.json",timeout=20) as f:
+              m=json.load(f)
+          assert m["schema_version"]==1 and m["writes_enabled"] is False
+          assert all(x in m["files"] for x in ("catalog.json","leagues/58005/live.json","leagues/131997/live.json"))
+          age=(datetime.now(timezone.utc)-datetime.fromisoformat(m["generated_at"].replace("Z","+00:00"))).total_seconds()
+          assert -300<=age<=12*3600, f"Snapshot stale ({age/3600:.1f}h)"
+          print("Public manifest ready:", m["release"])
+          PY
+      - name: Publish immutable reviewed tag without triggering duplicate deployment
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags origin
+          if git rev-parse -q --verify "refs/tags/$RELEASE_TAG^{commit}" >/dev/null; then
+            test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$REVIEWED_SHA"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$RELEASE_TAG" "$REVIEWED_SHA" -m "Reviewed V2 public homepage release"
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
+      - name: Checkout precisely reviewed revision
+        working-directory: .
+        run: |
+          git checkout --detach "$REVIEWED_SHA"
+          test "$(git rev-parse HEAD)" = "$REVIEWED_SHA"
+      - name: Install audited dependencies
+        run: npm ci
+      - name: Deploy V2 to Netlify production
+        id: deploy
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        run: >-
+          npx --yes netlify-cli@17 deploy --build --prod
+          --site "$NETLIFY_SITE_ID"
+          --message "Reviewed V2 production cutover $REVIEWED_SHA"
+      - name: Validate real production content after deploy
+        id: smoke
+        working-directory: .
+        run: |
+          python - <<'PY'
+          from urllib.request import Request,urlopen
+          from urllib.error import HTTPError
+          import time
+          base="https://fpl-scout-intelligence.netlify.app"
+          paths={
+            "/":"Your next FPL decision",
+            "/v2":"Your next FPL decision",
+            "/v2/team":"My FPL team",
+            "/v2/league?league=58005":"Complete standings",
+            "/v2/league?league=131997":"Complete standings",
+            "/v2/elite?league=131997":"The top five percent",
+            "/v2/players":"Official recorded player pool",
+            "/v2/compare?league=131997":"Compare recorded managers",
+            "/v2/planner":"Five gameweeks ahead",
+            "/v2/journal":"Season decision journal",
+            "/this-week":"This gameweek",
+            "/sign-in":"Your private decision room",
+            "/settings":"Your dashboard preferences"
+          }
+          for path,expected in paths.items():
+              last=None
+              for attempt in range(4):
+                  try:
+                      with urlopen(Request(base+path,headers={"User-Agent":"FPL-v2-prod-verification"}),timeout=30) as r:
+                          html=r.read(2_000_000).decode("utf8","replace")
+                          assert r.status==200 and expected in html
+                          assert "Recorded evidence is unavailable" not in html and "This view could not load" not in html
+                          print("OK",path,r.status)
+                          last=None
+                          break
+                  except Exception as error:
+                      last=error
+                      time.sleep(4)
+              if last:raise RuntimeError(f"Production smoke failed {path}: {last}")
+          PY
+      - name: Roll back Netlify to prior reviewed production tag if release smoke fails
+        if: failure() && steps.deploy.conclusion == 'success'
+        working-directory: .
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout --detach "$ROLLBACK_TAG"
+          npm ci
+          npx --yes netlify-cli@17 deploy --build --prod --site "$NETLIFY_SITE_ID" --message "Automatic rollback from failed V2 smoke to $ROLLBACK_TAG"
