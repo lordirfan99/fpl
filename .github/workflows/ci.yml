@@ -63,6 +63,7 @@ jobs:
             cd web && npm ci && npx playwright test --config playwright.unit.config.ts && npm run typecheck && npm run build
             npx playwright install --with-deps chromium
             npx playwright test --config playwright.decision.config.ts
+            npx playwright test --config playwright.static.config.ts
           else
             echo "no web/ yet (skeleton) — passing"
           fi

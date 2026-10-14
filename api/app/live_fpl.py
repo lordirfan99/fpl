@@ -214,6 +214,7 @@ def hydrate_manager_squads(rows: list[dict[str, Any]], gameweek: int, limit: int
 
             extras = {
                 "bank": _as_int(history.get("bank")),
+                "active_chip": payload.get("active_chip"),
                 "overall_rank": _as_int(history.get("overall_rank")) or None,
                 "event_transfers": _as_int(history.get("event_transfers")),
             }
@@ -237,6 +238,7 @@ def hydrate_manager_squads(rows: list[dict[str, Any]], gameweek: int, limit: int
             row["_live_squad"] = picks
             row["_live_captain"] = captain
             row["_live_bank"] = extras.get("bank")
+            row["_live_active_chip"] = extras.get("active_chip")
             row["_live_overall_rank"] = extras.get("overall_rank")
             row["_live_event_transfers"] = extras.get("event_transfers")
             hydrated += 1

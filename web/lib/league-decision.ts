@@ -1,5 +1,5 @@
 import "server-only";
-import { fetchApi } from "./api-fetch";
+import { fetchPublicApi } from "./public-api-fetch";
 export type LeagueDecisionContext = {
   schema_version: number; league_id: number; gameweek?: number; status: string; snapshot_at?: string;
   freshness?: { freshness_hours: number | null; stale: boolean; max_age_hours: number };
@@ -14,9 +14,7 @@ export async function getLeagueDecision(league: number, includeHistory = true): 
     // slow/cold API build does not block every page request. The page itself
     // remains private/no-store because it also contains the owner's dashboard.
     const suffix = includeHistory ? "" : "?include_history=false";
-    const response = await fetchApi(`${base}/v1/leagues/${league}/decision-context${suffix}`, {
-      next: { revalidate: 300, tags: [`league-decision:${league}`] },
-    } as RequestInit & { next: { revalidate: number; tags: string[] } });
+    const response = await fetchPublicApi(`${base}/v1/leagues/${league}/decision-context${suffix}`);
     if (!response.ok) return null;
     const value: unknown = await response.json();
     if (!value || typeof value !== "object") return null;

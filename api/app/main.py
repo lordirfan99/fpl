@@ -22,7 +22,7 @@ from .recommendations import MODEL_VERSION, build_recommendations, cohort_summar
 from .projection_types import PROJECTION_VERSION
 from .projections import build_projections
 from .multiweek_optimizer import MultiWeekContext, OPTIMIZER_VERSION, optimize_multiweek_transfers
-from .repository import ArtifactIntegrityError, LiveSnapshotNotFoundError, SnapshotNotFoundError, SnapshotRepository
+from .repository import ArtifactIntegrityError, LiveSnapshotNotFoundError, SnapshotNotFoundError, SnapshotUnavailableError, SnapshotRepository
 from .schemas import (
     ApiMeta,
     CatalogResponse,
@@ -57,6 +57,12 @@ repository = SnapshotRepository(settings.data_dir, settings.snapshot_bucket)
 league_registry = LeagueRegistry(settings.data_dir)
 app.include_router(private_dashboard_router)
 SEASON_PATTERN = re.compile(r"^20\d{2}-\d{2}$")
+
+
+@app.exception_handler(SnapshotUnavailableError)
+async def unavailable_public_storage(_request: Request, _error: SnapshotUnavailableError):
+    return JSONResponse({"detail": "snapshot_storage_unavailable"}, status_code=503,
+                        headers={"Retry-After": "2", "Cache-Control": "no-store"})
 
 
 @app.exception_handler(SnapshotNotFoundError)

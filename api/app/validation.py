@@ -61,8 +61,11 @@ def validate_manager_squad(manager: dict[str, Any] | None) -> list[str]:
     ).strip().lower()
     bench_boost = active_chip in BENCH_BOOST_NAMES
     scoring_count = sum(1 for pick in squad if _pick_multiplier(pick) > 0)
-    expected_scoring = 15 if bench_boost else 11
-    if scoring_count != expected_scoring:
+    # Official captured Bench Boost picks can retain zero multipliers for
+    # non-scoring bench slots. Preserve those facts; chip activation does not
+    # prove that every substitute has a positive multiplier.
+    expected_scoring = "11..15" if bench_boost else "11"
+    if not (11 <= scoring_count <= 15 if bench_boost else scoring_count == 11):
         issues.append(f"scoring_players:{scoring_count};expected:{expected_scoring};chip:{active_chip or 'none'}")
 
     # The FPL picks payload is ordered XI first, then bench. Validate the legal XI

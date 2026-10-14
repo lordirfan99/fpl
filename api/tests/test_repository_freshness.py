@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from app.repository import LiveSnapshotNotFoundError, SnapshotRepository
+from app.repository import LiveSnapshotNotFoundError, SnapshotRepository, SnapshotUnavailableError
 
 
 class FakeBlob:
@@ -106,8 +106,10 @@ def test_failed_refresh_does_not_resurrect_old_payload(tmp_path, monkeypatch):
     clock[0] += 31
     blob.generation = 3
     blob._text = "invalid json"
-    assert repo._read_remote("bootstrap_cache.json") is None
-    assert repo._read_remote("bootstrap_cache.json") is None
+    with pytest.raises(SnapshotUnavailableError):
+        repo._read_remote("bootstrap_cache.json")
+    with pytest.raises(SnapshotUnavailableError):
+        repo._read_remote("bootstrap_cache.json")
     assert "bootstrap_cache.json" not in repo._remote_updated
     assert blob.reload_calls == 2
     clock[0] += 31
@@ -295,3 +297,24 @@ def test_liveness_never_reads_cloud_storage(monkeypatch):
     assert result.status_code == 200
     assert result.json()["writes_enabled"] is False
 
+
+
+def test_transient_storage_failure_recovers_without_thirty_second_false_missing_cache(tmp_path, monkeypatch):
+    blob = FakeBlob('{"events": [6]}', 1, datetime.now(timezone.utc))
+    repo = _repo(tmp_path, {}, blob)
+    original_reload = blob.reload
+    attempts = [0]
+    def fail_once(**kwargs):
+        attempts[0] += 1
+        if attempts[0] == 1:
+            raise TimeoutError('temporary storage stall')
+        return original_reload(**kwargs)
+    blob.reload = fail_once
+    clock = [100.0]
+    monkeypatch.setattr('app.repository.time.monotonic', lambda: clock[0])
+    with pytest.raises(SnapshotUnavailableError):
+        repo._read_remote('bootstrap_cache.json')
+    assert 'bootstrap_cache.json' not in repo._remote_checked_at
+    clock[0] += repo.FAILURE_RETRY_SECONDS + .1
+    assert repo._read_remote('bootstrap_cache.json') == {'events': [6]}
+    assert attempts[0] == 2

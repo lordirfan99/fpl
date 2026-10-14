@@ -6,7 +6,7 @@ from threading import Event
 import pytest
 
 from app.bounded_io import BoundedIO
-from app.repository import SnapshotRepository
+from app.repository import SnapshotRepository, SnapshotUnavailableError
 
 
 def test_hung_sdk_has_deadline_and_no_unbounded_queue():
@@ -49,10 +49,12 @@ def test_late_download_cannot_repopulate_negative_cache(tmp_path, monkeypatch):
     repo.REMOTE_TIMEOUT_SECONDS = 0.03
     monkeypatch.setattr("app.repository.remote_io", BoundedIO(1))
     try:
-        assert repo._read_remote("bootstrap_cache.json") is None
+        with pytest.raises(SnapshotUnavailableError):
+            repo._read_remote("bootstrap_cache.json")
         release.set()
         assert finished.wait(1)
-        assert repo._read_remote("bootstrap_cache.json") is None
+        with pytest.raises(SnapshotUnavailableError):
+            repo._read_remote("bootstrap_cache.json")
         assert not repo._remote_cache
         assert not repo._remote_updated
     finally:
@@ -87,7 +89,8 @@ def test_coalescing_wait_is_bounded(tmp_path):
     lock.acquire()
     try:
         start = time.monotonic()
-        assert repo._read_remote("bootstrap_cache.json") is None
+        with pytest.raises(SnapshotUnavailableError):
+            repo._read_remote("bootstrap_cache.json")
         assert time.monotonic() - start < 0.2
     finally:
         lock.release()

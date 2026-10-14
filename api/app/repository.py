@@ -13,6 +13,7 @@ from typing import Any
 
 from .journal import verify_record_hash
 from .bounded_io import remote_io
+from google.api_core.exceptions import NotFound
 
 try:
     from google.cloud import storage
@@ -22,6 +23,10 @@ except ImportError:  # pragma: no cover - local development without GCS extras
 
 class SnapshotNotFoundError(FileNotFoundError):
     pass
+
+
+class SnapshotUnavailableError(RuntimeError):
+    """Storage failed; this is not evidence that an artifact does not exist."""
 
 
 class ArtifactIntegrityError(RuntimeError):
@@ -45,6 +50,7 @@ class SnapshotRepository:
     SNAPSHOT_CACHE_LIMIT = 4
     HASH_CACHE_LIMIT = 2
     NEGATIVE_CACHE_LIMIT = 128
+    FAILURE_RETRY_SECONDS = 2.0
 
     def __init__(self, data_dir: Path, bucket_name: str | None = None):
         self.data_dir = data_dir.resolve()
@@ -52,6 +58,7 @@ class SnapshotRepository:
         self._bucket = storage.Client().bucket(bucket_name) if bucket_name and storage else None
         self._remote_cache: OrderedDict[str, tuple[int | None, dict[str, Any]]] = OrderedDict()
         self._remote_checked_at: OrderedDict[str, float] = OrderedDict()
+        self._remote_failures: OrderedDict[str, float] = OrderedDict()
         # GCS server-side last-modified per snapshot file. Used as a freshness
         # fallback when a published payload carries no embedded fetched_at.
         self._remote_updated: dict[str, float] = {}
@@ -102,11 +109,16 @@ class SnapshotRepository:
         try:
             with self._artifact_lock(filename):
                 return self._read_remote_locked(filename)
-        except TimeoutError:
-            return None
+        except TimeoutError as error:
+            raise SnapshotUnavailableError("Snapshot read is occupied") from error
 
     def _read_remote_locked(self, filename: str) -> dict[str, Any] | None:
         with self._cache_lock:
+            failed_at = self._remote_failures.get(filename)
+            if failed_at is not None:
+                if time.monotonic() - failed_at < self.FAILURE_RETRY_SECONDS:
+                    raise SnapshotUnavailableError("Snapshot storage is temporarily unavailable")
+                self._remote_failures.pop(filename, None)
             checked_at = self._remote_checked_at.get(filename)
             cached = self._remote_cache.get(filename)
             if cached:
@@ -129,6 +141,7 @@ class SnapshotRepository:
         try:
             generation, updated, payload = remote_io.call(load, self.REMOTE_TIMEOUT_SECONDS)
             with self._cache_lock:
+                self._remote_failures.pop(filename, None)
                 self._remote_cache[filename] = (generation, payload)
                 self._remote_cache.move_to_end(filename)
                 if updated is not None:
@@ -145,12 +158,21 @@ class SnapshotRepository:
             with self._cache_lock:
                 self._remote_cache.pop(filename, None)
                 self._remote_updated.pop(filename, None)
-                self._mark_checked(filename)
+                self._remote_checked_at.pop(filename, None)
+                if isinstance(error, (NotFound, FileNotFoundError)):
+                    self._mark_checked(filename)
+                else:
+                    self._remote_failures[filename] = time.monotonic()
+                    self._remote_failures.move_to_end(filename)
+                    while len(self._remote_failures) > self.NEGATIVE_CACHE_LIMIT:
+                        self._remote_failures.popitem(last=False)
             print(json.dumps({
                 "level": "warning", "message": "remote_snapshot_read_failed",
                 "filename": filename, "error_type": type(error).__name__,
             }), flush=True)
-            return None
+            if isinstance(error, (NotFound, FileNotFoundError)):
+                return None
+            raise SnapshotUnavailableError("Snapshot storage read failed") from error
 
     @staticmethod
     def _capture_timestamp(payload: dict[str, Any]) -> float | None:

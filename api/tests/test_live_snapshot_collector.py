@@ -89,7 +89,7 @@ def test_bench_boost_does_not_block_publication():
     squad = _squad()
     for pick in squad:
         pick["multiplier"] = 1
-    collector._validate([{"entry_id": 1, "squad": squad}], 1)
+    collector._validate([{"entry_id": 1, "squad": squad, "active_chip": "bboost"}], 1)
 
 
 @pytest.mark.parametrize("count", [0, 10, 12, 14])

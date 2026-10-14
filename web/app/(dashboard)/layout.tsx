@@ -11,6 +11,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const season = catalog ? deriveSeasonContext(catalog.events, { finalizedGw }) : null;
   return <AppShell context={{
     latestSnapshotGw: finalizedGw,
+    dataSource: process.env.FPL_PUBLIC_DATA_URL ? "Scheduled public snapshots; not live scores" : undefined,
     planningGw: season?.nextDeadlineGw,
   }}>{children}</AppShell>;
 }
