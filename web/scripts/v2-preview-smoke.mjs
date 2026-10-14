@@ -29,7 +29,13 @@ try{
    const body=await page.locator("body").innerText().catch(()=>"");
    if(response?.status()!==200)exceptions.push("HTTP status "+(response?.status()||"none"));
    if(body.includes("This view could not load")||body.includes("Application error"))exceptions.push("Visible application error");
-   if(route.includes("gw=6")&&route.includes("league=131997")&&!body.includes("GW6 is not archived"))exceptions.push("Missing GW not disclosed");
+   if(route.includes("gw=6")&&route.includes("league=131997")){
+     // GW6 can transition from unavailable to a real frozen archive during
+     // hourly publication. Accept EITHER truthful state, never wrong-week fallback.
+     const missing=body.includes("GW6 is not archived");
+     const exact=body.includes("Verified finalized archive: GW6. Requested GW6.");
+     if(!missing&&!exact)exceptions.push("GW6 neither verified nor explicitly unavailable");
+   }
    if(route==="/v2/league"&&!body.includes("Manager directory"))exceptions.push("League has no directory");
    if(route==="/v2/players"&&!body.includes("Player finder"))exceptions.push("Player finder missing");
    if(route==="/v2/compare?league=131997"&&!body.includes("Select two managers"))exceptions.push("Comparison selector missing");
