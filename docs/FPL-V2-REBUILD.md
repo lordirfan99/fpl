@@ -58,7 +58,7 @@ not the earlier HTTP smoke alone, for actual screen-level defects.
 **No per-page direct VM fallback** for public data and no mixing finalized/current
 snapshots without an explicit user-selectable source label. Private endpoints
 may use the existing VM only via authenticated, no-store server paths; never
-include tokens, prices, private plans, account fingerprints or session data in
+include tokens, private account-specific selling prices, private plans, account fingerprints or session data in
 GitHub Pages. Public `writes_enabled` stays false. FPL website never auto-writes.
 
 ### Public contract: explicit states, never ambiguous success
