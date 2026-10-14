@@ -30,7 +30,7 @@ def check_page(path: str, expected_text: str, limit: int = 750_000) -> None:
     status, body, _ = fetch(f"{SITE}{path}", limit)
     html = body.decode("utf-8", errors="replace")
     if (status != 200 or expected_text not in html or
-            any(error in html for error in ("We could not load this view.", "This view could not load", "Application error"))):
+            any(error in html for error in ("We could not load this view.", "This view could not load", "Application error", "Recorded evidence is unavailable"))):
         raise RuntimeError(f"Dashboard route {path} did not render its expected content")
 
 
@@ -98,6 +98,15 @@ def main(*, lightweight: bool = False) -> int:
     if status != 200 or hashlib.sha256(catalog).hexdigest() != files["catalog.json"]:
         raise RuntimeError("Public player catalog artifact integrity failed")
 
+    # Independently verify both league artifacts: HTTP 200 error states
+    # are not acceptable as evidence of a healthy data release.
+    for league_id in (58005, 131997):
+        filename = f"leagues/{league_id}/live.json"
+        league_status, league_body, _ = fetch(
+            f"{PUBLIC_DATA}/releases/{release}/{filename}", 20_000_000)
+        if league_status != 200 or hashlib.sha256(league_body).hexdigest() != files[filename]:
+            raise RuntimeError(f"League {league_id} integrity failed")
+
     # These are the ACTUAL public destinations, not obsolete VM endpoints.
     check_page("/", "Your next FPL decision", 1_500_000)
     check_page("/v2/league?league=131997", "Complete standings", 1_500_000)
@@ -105,6 +114,7 @@ def main(*, lightweight: bool = False) -> int:
     if lightweight:
         check_page("/sign-in", "Your private decision room")
         check_page("/this-week", "This gameweek")
+        check_page("/settings", "Your dashboard preferences")
     else:
         check_page("/v2/team", "My FPL team", 1_500_000)
         check_page("/v2/players", "Official recorded player pool", 1_500_000)
