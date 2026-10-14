@@ -28,7 +28,7 @@ function CompareData({result,id,gw,p}:{result:Valid;id:number;gw:number|null;p:P
  <label>Second team <select name="right" defaultValue={String(right.entry_id)} aria-label="Second manager">{managers.filter(m=>m.entry_id!==left.entry_id).map(m=><option key={m.entry_id} value={m.entry_id}>{m.entry_name} (#{m.league_rank})</option>)}</select></label>
  <button type="submit">Compare</button></form>
  </section>
- <div className="fplv2-grid"><Stat label={left.entry_name+" points"} value={left.gw_points}/><Stat label={right.entry_name+" points"} value={right.gw_points}/><Stat label="Common picks" value={15-onlyLeft.length} note="Out of 15"/><Stat label="GW"+result.data.gameweek+" rank gap" value={Math.abs(left.league_rank-right.league_rank)}/></div>
+ <div className="fplv2-grid"><Stat label={left.entry_name+" points"} value={left.gw_points}/><Stat label={right.entry_name+" points"} value={right.gw_points}/><Stat label="Common picks" value={15-onlyLeft.length} note="Out of 15"/><Stat label={"GW"+result.data.gameweek+" rank gap"} value={Math.abs(left.league_rank-right.league_rank)}/></div>
  <div className="fplv2-columns">
  {[{manager:left,other:onlyLeft},{manager:right,other:onlyRight}].map(({manager,other})=>
  <section className="fplv2-card" key={manager.entry_id}><h2>{manager.entry_name}</h2><p>Rank #{manager.league_rank} · Captain {manager.captain} · {other.length} different picks</p>
