@@ -45,7 +45,7 @@ jobs:
         run: |
           set -euo pipefail
           npx --yes netlify-cli@17 deploy --build --site "$NETLIFY_SITE_ID" --message "V2 browser verification: $GITHUB_SHA" 2>&1 | tee "$RUNNER_TEMP/v2-deploy.log"
-          PREVIEW_URL="$(sed -n 's/.*Unique deploy URL:[[:space:]]*\(https:[^[:space:]]*\).*/\1/p' "$RUNNER_TEMP/v2-deploy.log" | tail -1)"
+          PREVIEW_URL="$(sed -n 's/.*Website draft URL:[[:space:]]*\(https:[^[:space:]]*\).*/\1/p' "$RUNNER_TEMP/v2-deploy.log" | tail -1)"
           if [[ -z "$PREVIEW_URL" || "$PREVIEW_URL" != *--fpl-scout-intelligence.netlify.app ]]; then
             echo "::error::Cannot verify draft preview URL; production remains unchanged"
             exit 1
