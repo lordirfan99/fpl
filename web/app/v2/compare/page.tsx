@@ -24,8 +24,9 @@ function CompareData({result,id,gw,p}:{result:Valid;id:number;gw:number|null;p:P
  <section className="fplv2-card"><h2>Select two managers</h2>
  <form action="/v2/compare" method="get" className="fplv2-toolbar">
  <input type="hidden" name="league" value={id}/>{gw&&<input type="hidden" name="gw" value={gw}/>}
- <label>First team <select name="left" defaultValue={String(left.entry_id)} aria-label="First manager">{managers.map(m=><option key={m.entry_id} value={m.entry_id}>{m.entry_name} (#{m.league_rank})</option>)}</select></label>
- <label>Second team <select name="right" defaultValue={String(right.entry_id)} aria-label="Second manager">{managers.filter(m=>m.entry_id!==left.entry_id).map(m=><option key={m.entry_id} value={m.entry_id}>{m.entry_name} (#{m.league_rank})</option>)}</select></label>
+ <p>Enter official FPL manager IDs found in the League directory. Unknown or duplicate IDs are safely ignored.</p>
+ <label>First FPL ID <input type="number" min="1" name="left" aria-label="First manager" defaultValue={left.entry_id}/></label>
+ <label>Second FPL ID <input type="number" min="1" name="right" aria-label="Second manager" defaultValue={right.entry_id}/></label>
  <button type="submit">Compare</button></form>
  </section>
  <div className="fplv2-grid"><Stat label={left.entry_name+" points"} value={left.gw_points}/><Stat label={right.entry_name+" points"} value={right.gw_points}/><Stat label="Common picks" value={15-onlyLeft.length} note="Out of 15"/><Stat label={"GW"+result.data.gameweek+" rank gap"} value={Math.abs(left.league_rank-right.league_rank)}/></div>
