@@ -27,7 +27,7 @@ test('V2 archived league rejects missing weeks truthfully, keeps navigation clic
 });
 test('V2 league search is server rendered with predictable URL state',async({page})=>{
  await page.goto('/v2/league?league=58005');
- await page.getByRole('textbox',{name:'Search manager'}).fill('2797967');
+ await page.getByRole('searchbox',{name:'Search manager'}).fill('2797967');
  await page.getByRole('button',{name:'Search'}).click();
  await expect(page).toHaveURL(/q=2797967/);
  await expect(page.locator('tbody tr')).toHaveCount(1);
