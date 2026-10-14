@@ -1,8 +1,24 @@
 # Free scheduled public backend
 
-Status: implementation and verification on a branch. Production cutover must
-follow green CI, review, a release tag, a successful Pages dataset and a Netlify
-release. A successful local test is not evidence that production has migrated.
+Status (14 October 2026): **production cutover completed and HTTP smoke passed**.
+The reviewed release tag is `v2026.10.14-free-static-data`, pinned to commit
+`b4a26c94c73eaa44eff8e1e3e2f45a7a18d938fd`. Pages publication is
+[GitHub Actions run 38558107001](https://github.com/lordirfan99/fpl/actions/runs/38558107001)
+(attempt 2, success). Netlify production release is
+[GitHub Actions run 38560579059](https://github.com/lordirfan99/fpl/actions/runs/38560579059),
+deploy `6acf6f3507e7461b92e580fe`. Its live HTTP smoke returned 200 for
+all 11 checked routes. Browser interaction and authenticated private flows
+are not established by HTTP-only smoke; verify them separately.
+
+The published dataset contained 1,193 + 2,539 complete manager entries, 28
+checksum-verified files and all six frozen public journal records. Legacy
+League 131997 archived snapshots for GW2, GW3, GW5 and GW6 were unavailable
+during import and were omitted rather than inferred. Do not misrepresent its
+older historical records as the latest GW. Both leagues' captured live
+standings remain present. Private VM/API/bot services were not retired.
+
+The reviewed default hourly schedule was enabled in PR #141; as of this
+record, an ordinary scheduled execution has not yet been observed.
 
 The owner selected strictly free scheduled data on 14 October 2026. This replaces
 public dashboard API hosting with standard GitHub Actions runners and GitHub
