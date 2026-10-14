@@ -22,7 +22,6 @@ concurrency:
 env:
   NETLIFY_SITE_ID: e2602e61-b56a-45ff-8f01-debe6037af2e
   RELEASE_TAG: v2026.10.14-dashboard-data-load
-  VERIFIED_FIX_COMMIT: cafa3b588ba96cf5d6ca681e8ecbc278c9f2d650
 
 jobs:
   deploy:
@@ -42,7 +41,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git merge-base --is-ancestor "$VERIFIED_FIX_COMMIT" HEAD
+          echo '28ea519a2cc656b7f56c2a7eb14ad80bc5f840c01f82d035f189251822519b4c  web/lib/data.ts' | sha256sum --check --status
+          echo 'afc3b4583d7b5a81ca7e08e7507b266694f22ce087bd8ee998972d2056f96a81  web/lib/public-api-fetch.ts' | sha256sum --check --status
+          echo 'f76558762f755efa8d9b7c68bef61dd2825b7bb3e22fe568b6987d4173b6d6bb  web/components/app-shell.tsx' | sha256sum --check --status
       - name: Guard — deployment credential exists
         shell: bash
         env:
