@@ -48,7 +48,7 @@ try{
      }
      if(route==="/v2") {
        await page.locator('.fplv2-header nav a[href="/v2/league"]').click({timeout:10000});
-       await page.waitForURL(/\\/v2\\/league/, {timeout:12000});
+       await page.waitForURL(/\/v2\/league/, {timeout:12000});
        if(!page.url().includes("/v2/league"))exceptions.push("Primary navigation did not open League");
      }
      if(route==="/v2/league") {
@@ -69,7 +69,7 @@ try{
      }
      if(route==="/v2/compare?league=131997") {
        await page.getByRole("button",{name:"Compare",exact:true}).click({timeout:10000});
-       await page.waitForURL(/left=\\d+.*right=\\d+|right=\\d+.*left=\\d+/, {timeout:12000});
+       await page.waitForURL(/left=\d+.*right=\d+|right=\d+.*left=\d+/, {timeout:12000});
      }
    }catch(e){exceptions.push("interaction: "+String(e.message).slice(0,220));}
    if(exceptions.length)errors.push({viewport:viewport.width,route,exceptions});
