@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { connection } from "next/server";
 import "@/app/decision-room.css";
 import { PageHeader } from "@/components/page-header";
 import { DecisionRoom } from "@/components/decision-room";
@@ -7,9 +8,8 @@ import { getPrivateDashboard } from "@/lib/private-dashboard";
 import { TransferDraft } from "@/components/transfer-draft";
 import type { Fixture, Pick } from "@/lib/types";
 
-export const dynamic = "force-dynamic";
-
 export default async function PlannerPage({ searchParams }: { searchParams: Promise<{ gw?: string }> }) {
+  await connection();
   const query = await searchParams;
   const requested = Number(query.gw);
   const targetGameweek = Number.isInteger(requested) && requested >= 1 && requested <= 38 ? requested : undefined;
@@ -58,3 +58,4 @@ function shortTeam(team: string) {
   const aliases: Record<string, string> = { "Manchester City": "MCI", "Manchester United": "MUN", "Nott'm Forest": "NFO", "Crystal Palace": "CRY", "Newcastle United": "NEW", "Ipswich Town": "IPS", "Coventry City": "COV", "Hull City": "HUL", "Aston Villa": "AVL", "Wolverhampton Wanderers": "WOL" };
   return aliases[team] ?? team.slice(0, 3).toUpperCase();
 }
+

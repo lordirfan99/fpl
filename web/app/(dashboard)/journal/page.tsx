@@ -3,12 +3,12 @@ import { JournalTimeline } from "@/components/journal-timeline";
 import { MetricCard } from "@/components/metric-card";
 import { PageHeader } from "@/components/page-header";
 import { buildSeasonTimeline, getJournalIndex, JOURNAL_EXPORT_URL } from "@/lib/journal";
-import { getDashboardData } from "@/lib/data";
+import { getCompactCatalog } from "@/lib/data";
 import { formatMYT } from "@/lib/format";
 
 export default async function JournalPage() {
-  const [journal, dashboard] = await Promise.all([getJournalIndex(), getDashboardData().catch(() => null)]);
-  const timeline = buildSeasonTimeline(journal, dashboard?.bootstrap.events ?? []);
+  const [journal, catalog] = await Promise.all([getJournalIndex(), getCompactCatalog().catch(() => null)]);
+  const timeline = buildSeasonTimeline(journal, catalog?.events ?? []);
   const recorded = timeline.filter((row) => row.record_hash); const latest = recorded.at(-1); const valid = recorded.filter((row) => row.quality.status === "valid").length;
   return <div className="page-stack journal-page">
     <PageHeader eyebrow="SEASON MEMORY · 2026/27" title="Decision Journal" description="A permanent timeline of what we knew, what we chose, what happened and what the models learned." updated={formatMYT(journal.updated_at)} />
@@ -18,3 +18,4 @@ export default async function JournalPage() {
     <section className="journal-principles"><article><Archive /><div><strong>Immutable evidence</strong><small>Deadline inputs are checksummed before outcomes exist.</small></div></article><article><BrainCircuit /><div><strong>Model accountability</strong><small>FPL, V4, V4.2 and V5 are compared with actual returns.</small></div></article><article><ShieldCheck /><div><strong>Private reflection</strong><small>Private notes stay private unless you add a public lesson.</small></div></article><article><Sparkles /><div><strong>Reusable research</strong><small>CSV, JSON and manifests survive beyond this dashboard.</small></div></article></section>
   </div>;
 }
+

@@ -43,6 +43,16 @@ createServer((req, res) => {
       position: index === 0 || index === 11 ? "GKP" : index < 6 ? "DEF" : index < 11 ? "MID" : "FWD",
       team: "Test Club", cost: 5, multiplier: index < 11 ? 1 : 0,
       is_captain: index === 0, is_vice_captain: index === 1 })) });
+  const fullLeague = url.pathname.match(/^\/v1\/leagues\/(58005|131997)$/);
+  if (url.pathname.endsWith("/live/status")) { res.end(JSON.stringify({ gameweek: 3, ready: true })); return; }
+  if (fullLeague) {
+    if (url.searchParams.get("gw") !== "2") { res.statusCode = 409; res.end('{"detail":"snapshot_not_finalized"}'); return; }
+    res.end(JSON.stringify({ meta: { snapshot_at: new Date().toISOString() }, managers: [manager(2797967), manager(101010)] })); return;
+  }
+  if (url.pathname === "/v1/fixtures") { res.end(JSON.stringify({ gameweeks: {} })); return; }
+  if (url.pathname === "/v1/journal") {
+    res.end(JSON.stringify({ schema_version: 1, season: "2026-27", gameweeks: [], totals: { completed: 0, points: 0 } })); return;
+  }
   if (leagueSummary || leagueDirectory || managerDetail) {
     if (url.searchParams.get("gw") !== "2") {
       res.statusCode = 409;
@@ -75,3 +85,4 @@ createServer((req, res) => {
     else res.end(response);
   } else { res.statusCode = 404; res.end("{}"); }
 }).listen(4185, "127.0.0.1");
+

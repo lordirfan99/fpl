@@ -12,5 +12,6 @@ export function resolveLeague(value?: string) {
 }
 
 export function LeagueSwitcher({ selected, pathname, gameweek }: { selected: number; pathname: string; gameweek?: number }) {
-  return <><div className="league-switcher" aria-label="Select league">{leagues.map((league) => <Link key={league.id} href={`${pathname}?league=${league.id}${gameweek ? `&gw=${gameweek}` : ""}`} className={selected === league.id ? "active" : ""}><span>{league.short}</span><small>{league.id.toLocaleString()}</small></Link>)}</div><AddLeague /></>;
+  return <><div className="league-switcher" aria-label="Select league">{leagues.map((league) => <Link prefetch={false} key={league.id} href={`${pathname}?league=${league.id}${gameweek ? `&gw=${gameweek}` : ""}`} className={selected === league.id ? "active" : ""}><span>{league.short}</span><small>{league.id.toLocaleString()}</small></Link>)}</div><AddLeague /></>;
 }
+

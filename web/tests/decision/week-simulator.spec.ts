@@ -89,13 +89,16 @@ test("player market loads without requesting the league or personal team", async
   await page.getByRole("textbox", { name: "Search players or teams" }).fill("Test Player 16");
   await expect(page.getByRole("cell", { name: "Test Player 16", exact: true })).toBeVisible();
   const calls: string[] = await (await request.get("http://127.0.0.1:4185/__test/calls")).json();
-  expect(calls.filter(url => url.startsWith("/v1/"))).toEqual(["/v1/catalog/compact"]);
+  expect(calls.filter(url => url.startsWith("/v1/")).every(url => url === "/v1/catalog/compact")).toBe(true);
 });
 
-test("stalled player catalog exits loading with a useful recovery action", async ({ page, request }) => {
+test("a warm public catalog stays usable during an upstream stall", async ({ page, request }) => {
+  await page.goto("/players");
+  await expect(page.getByRole("heading", { name: "Player market" })).toBeVisible();
   await request.get("http://127.0.0.1:4185/__test/mode/stalled-catalog");
-  await page.goto("/players", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "This view could not load" })).toBeVisible({ timeout: 12000 });
-  await expect(page.getByRole("button", { name: "Retry this view" })).toBeVisible();
-  await expect(page.getByRole("alert").getByRole("link", { name: "This Week", exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Player market" })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Test Player 1", exact: true })).toBeVisible();
+  const calls: string[] = await (await request.get("http://127.0.0.1:4185/__test/calls")).json();
+  expect(calls).not.toContain("/v1/catalog/compact");
 });

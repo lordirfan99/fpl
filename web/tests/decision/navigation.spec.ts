@@ -60,3 +60,38 @@ test("This Week uses JSON fallback if the serverless NDJSON endpoint fails", asy
   await expect(page.getByRole("heading", { name: "6 points to the top-10% cutoff" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Your personal plan stays private" })).toBeVisible();
 });
+
+
+const destinations = [
+  ["/this-week", "This gameweek"], ["/planner", "Explore the next five gameweeks"],
+  ["/league", "KK Old Boys"], ["/players", "Player market"],
+  ["/journal", "Decision Journal"], ["/my-team", "Test FC 2797967"],
+  ["/assistant", "Your next deadline, made clear"], ["/transfers", "Transfers & chips"],
+  ["/elite", "KK Old Boys · Top 5%"], ["/analytics", "KK Old Boys data lab"],
+  ["/compare", "Compare managers"], ["/settings", "Your dashboard preferences"], ["/v5-lab", "Models"],
+];
+for (const [path, heading] of destinations) {
+  test(`navigation destination ${path} renders useful content`, async ({ page, request }) => {
+    const response = await page.goto(path);
+    expect(response?.status()).toBe(200);
+    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+    await expect(page.getByText("This view could not load", { exact: true })).toHaveCount(0);
+    const calls: string[] = await (await request.get("http://127.0.0.1:4185/__test/calls")).json();
+    expect(calls).not.toContain("/v1/catalog");
+    expect(calls.some(url => url.startsWith("/v1/me/team"))).toBe(false);
+  });
+}
+
+test("opening mobile menus and season rail does not prefetch research pages", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const prefetches: string[] = [];
+  page.on("request", req => { if (req.headers()["next-router-prefetch"]) prefetches.push(req.url()); });
+  await page.goto("/settings");
+  await page.getByRole("navigation", { name: "Mobile navigation" }).getByRole("button", { name: "More" }).click();
+  await expect(page.locator("#mobile-more-menu")).toBeVisible();
+  await page.getByRole("button", { name: "Close more navigation" }).click();
+  await page.getByText("Season weeks", { exact: true }).click();
+  await expect(page.getByRole("link", { name: "GW38", exact: true })).toBeVisible();
+  await page.waitForTimeout(1000);
+  expect(prefetches).toEqual([]);
+});

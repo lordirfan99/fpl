@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { fetchApi } from "./api-fetch";
+import { fetchPublicApi } from "./public-api-fetch";
 import { snapshotDataStatus } from "./data-status";
 import type { Bootstrap, DashboardData, Fixture, FixtureHorizon, LeagueSnapshot, LeagueSummary, Manager, ManagerSummary } from "./types";
 import { getLiveTeam } from "./live";
@@ -20,7 +21,7 @@ class ApiRequestError extends Error {
 }
 
 const requestApi = cache(async <T>(path: string): Promise<T> => {
-  const response = await fetchApi(`${API_BASE}${path}`, { cache: "no-store" });
+  const response = await fetchPublicApi(`${API_BASE}${path}`);
   if (!response.ok) throw new ApiRequestError(response.status, path);
   return response.json() as Promise<T>;
 });
@@ -143,7 +144,7 @@ export async function getPlannerData(targetGameweek?: number) {
   const toGameweek = Math.min(fromGameweek + 4, 38);
   let fixtureHorizon: FixtureHorizon;
   if (API_BASE) {
-    const response = await fetchApi(`${API_BASE}/v1/fixtures?from_gw=${fromGameweek}&to_gw=${toGameweek}`, { cache: "no-store" });
+    const response = await fetchPublicApi(`${API_BASE}/v1/fixtures?from_gw=${fromGameweek}&to_gw=${toGameweek}`);
     if (!response.ok) throw new Error(`Scout API returned ${response.status} for fixture horizon`);
     fixtureHorizon = ((await response.json()) as { gameweeks: FixtureHorizon }).gameweeks;
   } else {
@@ -165,9 +166,7 @@ export async function getLeagueData(leagueId = DEFAULT_LEAGUE_ID, gameweek?: num
 }
 
 async function getLeagueDataFromApi(leagueId: number, gameweek?: number): Promise<LeagueDashboardData> {
-  type TeamPayload = { meta: { generated_at?: string; snapshot_at?: string }; manager: Manager; fixtures: Fixture[] };
   type LeaguePayload = { meta?: { generated_at?: string; snapshot_at?: string }; managers: Manager[] };
-  type CatalogPayload = { players: Bootstrap["elements"]; teams: Bootstrap["teams"]; events: Bootstrap["events"] };
   const request = requestApi;
   // A league-analysis page must work even when the configured team is not a
   // member of the selected league (for example the public prize league).
@@ -182,8 +181,8 @@ async function getLeagueDataFromApi(leagueId: number, gameweek?: number): Promis
   // immutable snapshot through the API.
   const useLiveReadModel = gameweek === undefined;
   const [catalog, liveIdentity] = await Promise.all([
-    request<CatalogPayload>("/v1/catalog"),
-    useLiveReadModel ? request<{ gameweek: number }>(`/v1/live/team?league_id=${leagueId}`).catch(() => null) : Promise.resolve(null),
+    getCompactCatalog().then(bootstrap => ({ players: bootstrap.elements, teams: bootstrap.teams, events: bootstrap.events })),
+    useLiveReadModel ? request<{ gameweek: number }>(`/v1/leagues/${leagueId}/live/status`).catch(() => null) : Promise.resolve(null),
   ]);
   const resolvedGameweek = gameweek ?? liveIdentity?.gameweek ?? catalog.events.find((event) => event.is_current)?.id ?? DEFAULT_GAMEWEEK;
   // League snapshots arrive after the live gameweek advances.  If the
@@ -217,7 +216,6 @@ async function getLeagueDataFromApi(leagueId: number, gameweek?: number): Promis
     }
   }
   if (!league) throw new Error(`No league snapshot available for league ${leagueId}`);
-  const team = await request<TeamPayload>(`/v1/me/team?league_id=${leagueId}&gw=${snapshotGameweek}`).catch(() => null);
   // Live fallback exposes its capture time as generated_at; finalized
   // snapshots use snapshot_at. Request generation time is not evidence.
   const asOf = liveProvisional ? league.meta?.generated_at : league.meta?.snapshot_at;
@@ -225,7 +223,7 @@ async function getLeagueDataFromApi(leagueId: number, gameweek?: number): Promis
     manager: league.managers.find((entry) => entry.entry_id === MY_TEAM_ID),
     managers: league.managers,
     bootstrap: { elements: catalog.players, teams: catalog.teams, events: catalog.events },
-    fixture: team?.fixtures ?? [],
+    fixture: [],
     gameweek: snapshotGameweek,
     leagueId,
     fetchedAt: asOf,
@@ -247,3 +245,4 @@ export function getElite(managers: Manager[]) {
   const count = Math.max(1, Math.ceil(managers.length * 0.05));
   return [...managers].sort((a, b) => (a.overall_rank || Number.MAX_SAFE_INTEGER) - (b.overall_rank || Number.MAX_SAFE_INTEGER)).slice(0, count);
 }
+
