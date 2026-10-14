@@ -95,3 +95,9 @@ test("opening mobile menus and season rail does not prefetch research pages", as
   await page.waitForTimeout(1000);
   expect(prefetches).toEqual([]);
 });
+
+test("a stale live-status gameweek cannot hide the current catalog week", async ({ page }) => {
+  await page.goto("/elite?league=131997");
+  await expect(page.getByRole("heading", { name: "Overall IFE · Top 5%", exact: true })).toBeVisible();
+  await expect(page.getByText("GW3 is live but not finalized", { exact: false })).toBeVisible();
+});

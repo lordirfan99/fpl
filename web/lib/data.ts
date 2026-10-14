@@ -207,9 +207,9 @@ async function getLeagueDataFromApi(leagueId: number, gameweek?: number): Promis
   const useLiveReadModel = gameweek === undefined;
   const [catalog, liveIdentity] = await Promise.all([
     getCompactCatalog().then(bootstrap => ({ players: bootstrap.elements, teams: bootstrap.teams, events: bootstrap.events })),
-    useLiveReadModel ? request<{ gameweek: number }>(`/v1/leagues/${leagueId}/live/status`).catch(() => null) : Promise.resolve(null),
+    useLiveReadModel ? request<{ gameweek: number; ready: boolean }>(`/v1/leagues/${leagueId}/live/status`).catch(() => null) : Promise.resolve(null),
   ]);
-  const resolvedGameweek = gameweek ?? liveIdentity?.gameweek ?? catalog.events.find((event) => event.is_current)?.id ?? DEFAULT_GAMEWEEK;
+  const resolvedGameweek = gameweek ?? (liveIdentity?.ready === true ? liveIdentity.gameweek : undefined) ?? catalog.events.find((event) => event.is_current)?.id ?? DEFAULT_GAMEWEEK;
   // League snapshots arrive after the live gameweek advances.  If the
   // selected league has not been collected for the current GW yet, walk back
   // to the newest available snapshot instead of rendering an application

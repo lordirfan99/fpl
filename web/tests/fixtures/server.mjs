@@ -44,7 +44,7 @@ createServer((req, res) => {
       team: "Test Club", cost: 5, multiplier: index < 11 ? 1 : 0,
       is_captain: index === 0, is_vice_captain: index === 1 })) });
   const fullLeague = url.pathname.match(/^\/v1\/leagues\/(58005|131997)$/);
-  if (url.pathname.endsWith("/live/status")) { res.end(JSON.stringify({ gameweek: 3, ready: true })); return; }
+  if (url.pathname.endsWith("/live/status")) { res.end(JSON.stringify(url.pathname.includes("131997") ? { gameweek: 2, ready: false } : { gameweek: 3, ready: true })); return; }
   if (fullLeague) {
     if (url.searchParams.get("gw") !== "2") { res.statusCode = 409; res.end('{"detail":"snapshot_not_finalized"}'); return; }
     res.end(JSON.stringify({ meta: { snapshot_at: new Date().toISOString() }, managers: [manager(2797967), manager(101010)] })); return;
