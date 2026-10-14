@@ -1,14 +1,20 @@
 # Free scheduled public backend
 
-Status (14 October 2026): **production cutover completed and HTTP smoke passed**.
-The reviewed release tag is `v2026.10.14-free-static-data`, pinned to commit
-`b4a26c94c73eaa44eff8e1e3e2f45a7a18d938fd`. Pages publication is
-[GitHub Actions run 38558107001](https://github.com/lordirfan99/fpl/actions/runs/38558107001)
-(attempt 2, success). Netlify production release is
-[GitHub Actions run 38560579059](https://github.com/lordirfan99/fpl/actions/runs/38560579059),
-deploy `6acf6f3507e7461b92e580fe`. Its live HTTP smoke returned 200 for
-all 11 checked routes. Browser interaction and authenticated private flows
-are not established by HTTP-only smoke; verify them separately.
+Status (14 October 2026): **V2 public web is live in Netlify production**.
+Current web release: `v2026.10.14-v2-public-verified` (commit `57f7aac`),
+deployed by [GitHub Actions 38600393553](https://github.com/lordirfan99/fpl/actions/runs/38600393553).
+The canonical homepage redirects to V2. **28/28 live Chromium desktop/mobile
+production checks passed** with no route or interaction errors, including
+League, Elite, Players, Compare, Planner and Journal. This verifies the tested
+public browsing paths; authenticated private FPL actions were not exercised.
+
+The separate **scheduled data collector** remains pinned to the reviewed
+`v2026.10.14-free-static-data` code (commit
+`b4a26c94c73eaa44eff8e1e3e2f45a7a18d938fd`). Pages publication baseline is
+[run 38558107001](https://github.com/lordirfan99/fpl/actions/runs/38558107001).
+The preceding web release, [run 38560579059](https://github.com/lordirfan99/fpl/actions/runs/38560579059),
+is retained as the tested **rollback baseline**, not the current production
+website. Do not conflate the dataset publisher tag with the current web tag.
 
 The published dataset contained 1,193 + 2,539 complete manager entries, 28
 checksum-verified files and all six frozen public journal records. Legacy
