@@ -7,7 +7,8 @@ import pytest
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Linux release installer; exercised in CI")
-def test_failed_dependency_install_is_retryable(tmp_path):
+@pytest.mark.parametrize("failure", ["dependencies", "references"])
+def test_failed_staging_is_retryable(tmp_path, failure):
     repo = tmp_path / "repo"
     repo.mkdir()
     fakebin = tmp_path / "bin"
@@ -18,12 +19,12 @@ def test_failed_dependency_install_is_retryable(tmp_path):
         path.write_text("#!/bin/bash\n" + body)
         path.chmod(0o755)
 
-    executable("sudo", 'exec "$@"\n')
+    executable("sudo", 'if [ "$1" = "-u" ]; then shift 2; fi\nexec "$@"\n')
     executable("id", "exit 0\n")
     executable("systemctl", '[ "$1" != is-active ]\n')
     executable("python3", '''mkdir -p "$3/bin"
 printf '#!/bin/bash\\nexit "${FAIL_PIP:-0}"\\n' > "$3/bin/pip"
-printf '#!/bin/bash\\nexit 0\\n' > "$3/bin/python"
+printf '#!/bin/bash\\nif [[ "$*" == *--references-only* ]]; then exit "${FAIL_SEED:-0}"; fi\\nexit 0\\n' > "$3/bin/python"
 chmod +x "$3/bin/"*
 ''')
     for name in ("api/app/__init__.py", "api/requirements.txt", "infra/scripts/refresh_live_leagues.py",
@@ -47,12 +48,14 @@ chmod +x "$3/bin/"*
     script = tmp_path / "install.sh"
     script.write_text(source.read_text().replace("/opt/fpl-live-refresh", str(runtime))
                       .replace("/etc/systemd/system/", str(units) + "/"))
-    env = {**os.environ, "PATH": str(fakebin) + os.pathsep + os.environ["PATH"], "FAIL_PIP": "9"}
-    command = ["bash", str(script), "v-test"]
+    env = {**os.environ, "PATH": str(fakebin) + os.pathsep + os.environ["PATH"], "FAIL_PIP": "9" if failure == "dependencies" else "0", "FAIL_SEED": "9" if failure == "references" else "0"}
+    command = ["bash", str(script), "v-test", "--seed-references"]
     assert subprocess.run(command, cwd=repo, env=env).returncode != 0
     assert not (runtime / "releases" / sha).exists()
     env["FAIL_PIP"] = "0"
+    env["FAIL_SEED"] = "0"
     assert subprocess.run(command, cwd=repo, env=env).returncode == 0
     assert (runtime / "current").resolve() == runtime / "releases" / sha
     assert subprocess.run(command, cwd=repo, env=env).returncode != 0
     assert (runtime / "releases" / sha).is_dir()
+

@@ -3,6 +3,8 @@
 # Installs code and units only. Does not run the collector or enable its timer.
 set -euo pipefail
 TAG="${1:?usage: install-live-refresh.sh <release-tag>}"
+MODE="${2:-install}"
+[[ "$MODE" = install || "$MODE" = --seed-references ]] || exit 1
 ROOT=$(git rev-parse --show-toplevel)
 cd "$ROOT"
 SHA=$(git rev-parse --verify "refs/tags/$TAG^{commit}")
@@ -36,9 +38,16 @@ git archive "$SHA" api/app api/requirements.txt infra/scripts/refresh_live_leagu
 sudo python3 -m venv "$DEST/.venv"
 sudo "$DEST/.venv/bin/pip" install --no-cache-dir -r "$DEST/api/requirements.txt"
 sudo "$DEST/.venv/bin/python" "$DEST/infra/scripts/refresh_live_leagues.py" --help >/dev/null
+if [ "$MODE" = --seed-references ]; then
+  # Keep the new release incomplete until public reference seeding succeeds, so
+  # a transient network failure removes only this invocation's staged directory.
+  sudo -u fpl "$DEST/.venv/bin/python" "$DEST/infra/scripts/refresh_live_leagues.py" \
+    --bucket irfan-374115-fpl-snapshots --references-only
+fi
 COMPLETE=1
 sudo install -d /opt/fpl-live-refresh
 sudo ln -sfn "$DEST" /opt/fpl-live-refresh/current
 sudo install -m 0644 infra/deploy/gcp/systemd/fpl-live-refresh.{service,timer} /etc/systemd/system/
 sudo systemctl daemon-reload
 echo "Installed $SHA. Timer is not enabled by this script. Follow infra/LIVE-REFRESH-VM.md."
+

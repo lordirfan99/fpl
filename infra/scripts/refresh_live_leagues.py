@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "api"))
 
 from app import live_fpl  # noqa: E402
 from app.decision_context import current_context  # noqa: E402
+from app.reference_snapshots import reference_payloads  # noqa: E402
 
 try:
     from google.cloud import storage
@@ -170,14 +171,37 @@ def publish(bucket_name: str, payload: dict[str, Any]) -> tuple[str, str]:
     raise AssertionError("unreachable")
 
 
+def publish_references(bucket_name: str) -> None:
+    """Publish public reference caches even if a later full league fails.
+
+    The VM API has no baked-in data. Its catalog and projections must not rely
+    on a separate planner publishing a sampled competitive cohort.
+    """
+    if storage is None:
+        raise RuntimeError("google-cloud-storage is required to publish references")
+    bootstrap = live_fpl._get("bootstrap-static/", ttl=0)
+    fixtures = live_fpl._get("fixtures/", ttl=0)
+    captured = datetime.now(timezone.utc).isoformat()
+    bootstrap, fixture_cache = reference_payloads(bootstrap, fixtures, captured)
+    bucket = storage.Client().bucket(bucket_name)
+    for filename, payload in (("bootstrap_cache.json", bootstrap), ("fixtures_cache.json", fixture_cache)):
+        bucket.blob(f"snapshots/{filename}").upload_from_string(
+            _canonical(payload), content_type="application/json", timeout=15, retry=None)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bucket", default=os.getenv("FPL_SNAPSHOT_BUCKET") or os.getenv("FPL_JOURNAL_BUCKET"))
     parser.add_argument("--league", type=int, nargs="+", default=[58005, 131997])
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--references-only", action="store_true", help="Publish public references without league hydration")
     args = parser.parse_args()
     if not args.dry_run and not args.bucket:
         parser.error("--bucket or FPL_SNAPSHOT_BUCKET is required")
+    if not args.dry_run:
+        publish_references(args.bucket)
+    if args.references_only:
+        return 0
     for league_id in args.league:
         payload = collect(league_id)
         if args.dry_run:
@@ -190,3 +214,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

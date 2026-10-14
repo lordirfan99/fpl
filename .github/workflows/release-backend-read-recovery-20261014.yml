@@ -1,0 +1,43 @@
+name: release · prepare backend read recovery tag
+
+# This bridge creates the reviewed tag without publishing Netlify. The API must
+# deploy first; GITHUB_TOKEN-created tag pushes do not trigger deploy-web.yml.
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/release-backend-read-recovery-20261014.yml"]
+permissions:
+  contents: write
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify reviewed backend implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '83cbe0bc234451e4cccdb648a88d5da1664dad6cf83b33640bb8a30cc6ccdbb2  api/app/bounded_io.py' | sha256sum --check --status
+          echo '8d311041a0c5b5ffc9475020b89e618a003728a32f5c4d1d89182b8182776c98  api/app/repository.py' | sha256sum --check --status
+          echo '92072b42c543a610253995bed6790fda0da702b4f9bbc10a2151560a5d110331  api/app/compact_league.py' | sha256sum --check --status
+          echo 'd059afa1a301c4f212e3f36ec631659fd81b5aefb71de63f677bb0f74bb26189  infra/scripts/refresh_live_leagues.py' | sha256sum --check --status
+          echo 'b4e68c61ef6f8224a407e39359a7e94d84e45360cb5005c7245fceea939e51c8  infra/deploy/install-live-read-cache.sh' | sha256sum --check --status
+          echo '13205edf9c59c7107b764215c8a373c3c3c3531a045803bd4e0b15ee09d905f1  api/app/reference_snapshots.py' | sha256sum --check --status
+          echo '7a015c4dddd0ad8ff1afc31e78dfb53f55fad1c61e26756d07937cc40dfaf853  infra/deploy/install-live-refresh.sh' | sha256sum --check --status
+      - name: Create deployment tag without starting website rollout
+        shell: bash
+        env:
+          RELEASE_TAG: v2026.10.14-backend-read-recovery
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$(git rev-parse HEAD)"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$RELEASE_TAG" -m "Reviewed backend read recovery; deploy API before website"
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi

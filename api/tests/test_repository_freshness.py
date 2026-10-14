@@ -135,7 +135,7 @@ def test_hash_cache_tracks_payload_identity_and_is_bounded(tmp_path, monkeypatch
     assert second == hashlib.sha256(b'{"managers":[2]}').hexdigest()
     for league_id in range(20):
         repo.league(league_id, 1)
-    assert len(repo._hash_cache) == 16
+    assert len(repo._hash_cache) == repo.HASH_CACHE_LIMIT
 
 
 def live_repo(tmp_path):
@@ -294,3 +294,4 @@ def test_liveness_never_reads_cloud_storage(monkeypatch):
         result = TestClient(app).get("/livez")
     assert result.status_code == 200
     assert result.json()["writes_enabled"] is False
+

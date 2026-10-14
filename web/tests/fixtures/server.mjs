@@ -43,11 +43,18 @@ createServer((req, res) => {
       position: index === 0 || index === 11 ? "GKP" : index < 6 ? "DEF" : index < 11 ? "MID" : "FWD",
       team: "Test Club", cost: 5, multiplier: index < 11 ? 1 : 0,
       is_captain: index === 0, is_vice_captain: index === 1 })) });
-  const fullLeague = url.pathname.match(/^\/v1\/leagues\/(58005|131997)$/);
+  const fullLeague = url.pathname.match(/^\/v1\/leagues\/(58005|131997)(?:\/compact)?$/);
   if (url.pathname.endsWith("/live/status")) { res.end(JSON.stringify(url.pathname.includes("131997") ? { gameweek: 2, ready: false } : { gameweek: 3, ready: true })); return; }
   if (fullLeague) {
     if (url.searchParams.get("gw") !== "2") { res.statusCode = 409; res.end('{"detail":"snapshot_not_finalized"}'); return; }
-    res.end(JSON.stringify({ meta: { snapshot_at: new Date().toISOString() }, managers: [manager(2797967), manager(101010)] })); return;
+    const managers = [manager(2797967), manager(101010)];
+    const body = { meta: { snapshot_at: new Date().toISOString() }, managers };
+    if (url.pathname.endsWith("/compact")) {
+      body.encoding = "league-squads-v1"; body.gameweek = 2; body.count = 2; body.declared_count = 2;
+      body.players = managers[0].squad.map(({ multiplier, is_captain, is_vice_captain, ...player }) => player);
+      body.managers = managers.map(row => ({ ...row, squad: row.squad.map((pick, index) => [index, pick.multiplier, pick.is_captain, pick.is_vice_captain]) }));
+    }
+    res.end(JSON.stringify(body)); return;
   }
   if (url.pathname === "/v1/fixtures") { res.end(JSON.stringify({ gameweeks: {} })); return; }
   if (url.pathname === "/v1/journal") {

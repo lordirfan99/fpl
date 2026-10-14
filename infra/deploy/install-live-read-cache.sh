@@ -54,9 +54,24 @@ with os.fdopen(fd, "w") as stream:
     stream.write("\n".join(lines) + "\n")
 PY
 COMPLETE=0
-trap 'if [ "$COMPLETE" = 0 ]; then restore_previous; fi' EXIT
-bash infra/deploy/install-live-refresh.sh "$TAG"
+API_ATTEMPTED=0
+cleanup_failed() {
+  if [ "$COMPLETE" = 0 ]; then
+    restore_previous || return 1
+    # Dependency/reference failures are cleaned by the staged release installer.
+    # Remove only this invocation's incomplete wrapper backup after restoration;
+    # preserve API-installer state if API installation was actually attempted.
+    if [ "$API_ATTEMPTED" = 0 ] && ! sudo test -e "/opt/fpl-live-refresh/releases/$SHA"; then
+      [ "$BACKUP" = "/var/backups/fpl-live-read-cache/$SHA" ] || return 1
+      sudo rm -rf -- "$BACKUP"
+    fi
+  fi
+}
+trap cleanup_failed EXIT
+bash infra/deploy/install-live-refresh.sh "$TAG" --seed-references
+API_ATTEMPTED=1
 run_api_installer install "$BACKUP/candidate.env"
 sudo touch "$BACKUP/complete"
 COMPLETE=1
 echo 'API release installed; verify reads, then resume previously active timers.'
+
