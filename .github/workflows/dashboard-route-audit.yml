@@ -14,11 +14,11 @@ jobs:
         run: |
           import urllib.request, json, time
           base = "https://sportmania.duckdns.org/fpl-scout-api"
-          paths = ["/v1/catalog/compact", "/v1/catalog", "/v1/live/team?league_id=58005", "/v1/leagues/58005?gw=6", "/v1/leagues/58005/live", "/v1/projections/current"]
+          paths = ["/health", "/ready", "/v1/catalog/compact", "/v1/leagues/58005?gw=6"]
           for path in paths:
               started = time.monotonic()
               try:
-                  with urllib.request.urlopen(base + path, timeout=25) as response:
+                  with urllib.request.urlopen(urllib.request.Request(base + path, headers={"User-Agent": "FPLScoutMonitor/1.0"}), timeout=30) as response:
                       data = response.read()
                       value = json.loads(data)
                       print(path, response.status, len(data), round(time.monotonic()-started, 2), "keys", list(value))
