@@ -1,6 +1,6 @@
 name: stage · V2 real browser preview
 
-# Revalidate reviewed V2 route identity on live published GW transitions.\n# First reviewed merge enables one safe staging deploy. Does NOT update production.
+# Revalidate reviewed V2 route identity on live published GW transitions.\n# Final cutover rehearsal: homepage redirect + real browser interactions.\n# First reviewed merge enables one safe staging deploy. Does NOT update production.
 on:
   push:
     branches: [main]

@@ -2,6 +2,7 @@ import { chromium } from "@playwright/test";
 const origin=process.env.FPL_V2_PREVIEW_URL;
 if(!origin?.startsWith("https://")||!origin.includes("--fpl-scout-intelligence.netlify.app"))throw new Error("Preview site URL required; refusing production");
 const routes=[
+ ["/","Your next FPL decision"],
  ["/v2","Your next FPL decision"],
  ["/v2/team","My FPL team"],
  ["/v2/league","Complete standings"],
@@ -40,6 +41,37 @@ try{
    if(route==="/v2/players"&&!body.includes("Player finder"))exceptions.push("Player finder missing");
    if(route==="/v2/compare?league=131997"&&!body.includes("Select two managers"))exceptions.push("Comparison selector missing");
    if(viewport.width===390 && route==="/v2" && !body.includes("FPL Scout"))exceptions.push("Mobile shell absent");
+   // Test actual browser interactions, not just an HTTP 200 or heading.
+   try{
+     if(route==="/") {
+       if(new URL(page.url()).pathname!=="/v2")exceptions.push("Homepage did not route to V2");
+     }
+     if(route==="/v2") {
+       await page.locator('.fplv2-header nav a[href="/v2/league"]').click({timeout:10000});
+       await page.waitForURL(/\/v2\/league/, {timeout:12000});
+       if(!page.url().includes("/v2/league"))exceptions.push("Primary navigation did not open League");
+     }
+     if(route==="/v2/league") {
+       const search=page.getByRole("searchbox",{name:"Search manager"});
+       await search.fill("2797967");
+       await page.getByRole("button",{name:"Search",exact:true}).click({timeout:10000});
+       await page.waitForURL(/q=2797967/, {timeout:12000});
+       if(await page.locator("tbody tr").count()!==1)exceptions.push("League manager search did not filter to one result");
+     }
+     if(route==="/v2/elite") {
+       await page.locator('.fplv2-tabs a[href="/v2/elite?league=131997"]').click({timeout:10000});
+       await page.waitForURL(/league=131997/, {timeout:12000});
+     }
+     if(route==="/v2/players") {
+       await page.getByRole("searchbox",{name:"Player search"}).fill("a");
+       await page.getByRole("button",{name:"Apply filters"}).click({timeout:10000});
+       await page.waitForURL(/q=a/, {timeout:12000});
+     }
+     if(route==="/v2/compare?league=131997") {
+       await page.getByRole("button",{name:"Compare",exact:true}).click({timeout:10000});
+       await page.waitForURL(/left=\d+.*right=\d+|right=\d+.*left=\d+/, {timeout:12000});
+     }
+   }catch(e){exceptions.push("interaction: "+String(e.message).slice(0,220));}
    if(exceptions.length)errors.push({viewport:viewport.width,route,exceptions});
    console.log(JSON.stringify({viewport:viewport.width,route,status:response?.status(),heading:heading,errors:exceptions}));
    await page.close();
