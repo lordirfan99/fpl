@@ -41,8 +41,9 @@ sudo "$DEST/.venv/bin/python" "$DEST/infra/scripts/refresh_live_leagues.py" --he
 if [ "$MODE" = --seed-references ]; then
   # Keep the new release incomplete until public reference seeding succeeds, so
   # a transient network failure removes only this invocation's staged directory.
+  sudo install -d -o fpl -g fpl -m 0750 /opt/fpl-scout-api/data
   sudo -u fpl "$DEST/.venv/bin/python" "$DEST/infra/scripts/refresh_live_leagues.py" \
-    --bucket irfan-374115-fpl-snapshots --references-only
+    --bucket irfan-374115-fpl-snapshots --references-only --local-data-dir /opt/fpl-scout-api/data
 fi
 COMPLETE=1
 sudo install -d /opt/fpl-live-refresh

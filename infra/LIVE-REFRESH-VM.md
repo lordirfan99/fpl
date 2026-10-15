@@ -18,6 +18,12 @@ do not provision Cloud Scheduler or another Cloud Run collector. API hosting
 also moved to the VM on 6 September. Existing GitHub Actions fixture/journal/monitor jobs stay
 where they are; this migration replaces only the broken live collector path.
 
+The `--seed-references` install mode publishes the two validated reference caches
+and atomically seeds the same files under `/opt/fpl-scout-api/data`; the API can
+therefore use a last-known-good local copy during a temporary GCS timeout. The
+embedded capture timestamp remains authoritative, so stale local data still fails
+freshness gates rather than being presented as current.
+
 ## Evidence and release status
 
 The read API revalidates the live manifest at most every 30 seconds per league
@@ -99,7 +105,7 @@ the external IP/DNS after restart, since an ephemeral external IP can change.
 On the VM, from the clean tagged checkout:
 
 ```bash
-bash infra/deploy/install-live-refresh.sh <release-tag>
+bash infra/deploy/install-live-refresh.sh <release-tag> --seed-references
 sudo systemctl start fpl-live-refresh.service
 systemctl show fpl-live-refresh.service -p Result -p ExecMainStatus
 sudo journalctl -u fpl-live-refresh.service -n 50 --no-pager

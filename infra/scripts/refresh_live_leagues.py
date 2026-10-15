@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import tempfile
 import sys
 import time
 import uuid
@@ -175,7 +176,25 @@ def publish(bucket_name: str, payload: dict[str, Any]) -> tuple[str, str]:
     raise AssertionError("unreachable")
 
 
-def publish_references(bucket_name: str) -> None:
+def _write_local_snapshots(data_dir: Path, payloads: dict[str, dict[str, Any]]) -> None:
+    """Stage every reference then replace the validated files atomically."""
+    data_dir.mkdir(parents=True, exist_ok=True)
+    staged: dict[str, Path] = {}
+    try:
+        for filename, payload in payloads.items():
+            with tempfile.NamedTemporaryFile(dir=data_dir, prefix=f".{filename}.", suffix=".tmp", delete=False) as stream:
+                stream.write(_canonical(payload))
+                stream.flush()
+                os.fsync(stream.fileno())
+                staged[filename] = Path(stream.name)
+        for filename, temporary in staged.items():
+            os.replace(temporary, data_dir / filename)
+    finally:
+        for temporary in staged.values():
+            temporary.unlink(missing_ok=True)
+
+
+def publish_references(bucket_name: str, local_data_dir: Path | None = None) -> None:
     """Publish public reference caches even if a later full league fails.
 
     The VM API has no baked-in data. Its catalog and projections must not rely
@@ -189,8 +208,11 @@ def publish_references(bucket_name: str) -> None:
     bootstrap, fixture_cache = reference_payloads(bootstrap, fixtures, captured)
     bucket = storage.Client().bucket(bucket_name)
     for filename, payload in (("bootstrap_cache.json", bootstrap), ("fixtures_cache.json", fixture_cache)):
+        encoded = _canonical(payload)
         bucket.blob(f"snapshots/{filename}").upload_from_string(
-            _canonical(payload), content_type="application/json", timeout=15, retry=None)
+            encoded, content_type="application/json", timeout=15, retry=None)
+    if local_data_dir is not None:
+        _write_local_snapshots(local_data_dir, {"bootstrap_cache.json": bootstrap, "fixtures_cache.json": fixture_cache})
 
 
 def main() -> int:
@@ -199,11 +221,12 @@ def main() -> int:
     parser.add_argument("--league", type=int, nargs="+", default=[58005, 131997])
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--references-only", action="store_true", help="Publish public references without league hydration")
+    parser.add_argument("--local-data-dir", type=Path, help="Atomically seed API reference files alongside the remote publish")
     args = parser.parse_args()
     if not args.dry_run and not args.bucket:
         parser.error("--bucket or FPL_SNAPSHOT_BUCKET is required")
     if not args.dry_run:
-        publish_references(args.bucket)
+        publish_references(args.bucket, args.local_data_dir)
     if args.references_only:
         return 0
     for league_id in args.league:

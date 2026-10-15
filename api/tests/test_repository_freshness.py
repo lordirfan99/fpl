@@ -299,6 +299,57 @@ def test_liveness_never_reads_cloud_storage(monkeypatch):
 
 
 
+def test_reference_timeout_uses_verified_local_last_known_good(tmp_path, monkeypatch):
+    local = {"_meta": {"fetched_at": "2026-09-01T12:00:00+00:00"}, "events": [{"id": 7}]}
+    repo = _repo(tmp_path, local, None)
+    monkeypatch.setattr(repo, "_read_remote", lambda _: (_ for _ in ()).throw(
+        SnapshotUnavailableError("remote timeout")))
+
+    assert repo._fresh_reference("bootstrap_cache.json") == local
+
+
+def test_expired_local_snapshot_is_returned_unchanged_for_downstream_freshness(tmp_path, monkeypatch):
+    local = {"_meta": {"fetched_at": "2020-01-01T00:00:00+00:00"}, "events": [{"id": 8}]}
+    repo = _repo(tmp_path, local, None)
+    monkeypatch.setattr(repo, "_read_remote", lambda _: (_ for _ in ()).throw(
+        SnapshotUnavailableError("remote timeout")))
+
+    resolved = repo._fresh_reference("bootstrap_cache.json")
+
+    assert resolved["_meta"]["fetched_at"] == local["_meta"]["fetched_at"]
+
+
+def test_missing_local_snapshot_does_not_turn_remote_timeout_into_not_found(tmp_path, monkeypatch):
+    repo = SnapshotRepository(tmp_path)
+    monkeypatch.setattr(repo, "_read_remote", lambda _: (_ for _ in ()).throw(
+        SnapshotUnavailableError("remote timeout")))
+
+    with pytest.raises(SnapshotUnavailableError):
+        repo._fresh_reference("bootstrap_cache.json")
+
+
+def test_invalid_local_snapshot_fails_closed_during_remote_timeout(tmp_path, monkeypatch):
+    path = tmp_path / "bootstrap_cache.json"
+    path.write_text("not json", encoding="utf-8")
+    repo = SnapshotRepository(tmp_path)
+    monkeypatch.setattr(repo, "_read_remote", lambda _: (_ for _ in ()).throw(
+        SnapshotUnavailableError("remote timeout")))
+
+    with pytest.raises(json.JSONDecodeError):
+        repo._fresh_reference("bootstrap_cache.json")
+
+
+def test_read_timeout_uses_local_artifact_without_mutating_it(tmp_path, monkeypatch):
+    local = {"events": [{"id": 9}]}
+    repo = _repo(tmp_path, local, None)
+    before = (tmp_path / "bootstrap_cache.json").read_bytes()
+    monkeypatch.setattr(repo, "_read_remote", lambda _: (_ for _ in ()).throw(
+        SnapshotUnavailableError("remote timeout")))
+
+    assert repo.read("bootstrap_cache.json") == local
+    assert (tmp_path / "bootstrap_cache.json").read_bytes() == before
+
+
 def test_transient_storage_failure_recovers_without_thirty_second_false_missing_cache(tmp_path, monkeypatch):
     blob = FakeBlob('{"events": [6]}', 1, datetime.now(timezone.utc))
     repo = _repo(tmp_path, {}, blob)
