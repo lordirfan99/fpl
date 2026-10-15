@@ -1,3 +1,4 @@
+import { SquadPitch } from "@/v2/visuals";
 import Link from "next/link";
 import { getLeagueV2, gwParam, leagueId, MY_TEAM } from "@/v2/public-data";
 import { Heading, Stat, Source, DataState, LeagueNav, WeekNav } from "@/v2/ui";
@@ -35,13 +36,13 @@ function LeagueContent({result,p,id,selectedGw}:{result:ValidResult;p:Params;id:
      <input aria-label="Search manager" name="q" type="search" placeholder="Manager / team / FPL ID" defaultValue={p.q??""}/>
      <button type="submit">Search</button><span>{filtered.length.toLocaleString()} matches</span>
     </form>
-    <div className="fplv2-table-wrap"><table className="fplv2-table">
-     <thead><tr><th>Rank</th><th>Team / manager</th><th>GW</th><th>Total</th><th>Captain</th><th>Value</th></tr></thead>
-     <tbody>{shown.map(m=><tr key={m.entry_id}><td>#{m.league_rank}</td><td><Link href={url({manager:String(m.entry_id),page:String(page)})}>{m.entry_name}</Link><small style={{display:"block",opacity:.7}}>{m.player_name}</small></td><td>{m.gw_points}</td><td>{m.total_points}</td><td>{m.captain}</td><td>£{m.squad_cost.toFixed(1)}m</td></tr>)}</tbody>
+    <div className="fplv2-table-wrap"><table className="fplv2-table" role="table">
+     <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Rank</th><th scope="col" role="columnheader">Team / manager</th><th scope="col" role="columnheader">GW</th><th scope="col" role="columnheader">Total</th><th scope="col" role="columnheader">Captain</th><th scope="col" role="columnheader">Value</th></tr></thead>
+     <tbody role="rowgroup">{shown.map(m=><tr role="row" key={m.entry_id}><td role="cell" data-label="Rank">#{m.league_rank}</td><td role="cell" data-label="Team / manager"><Link href={url({manager:String(m.entry_id),page:String(page)})}>{m.entry_name}</Link><small style={{display:"block",opacity:.7}}>{m.player_name}</small></td><td role="cell" data-label="GW">{m.gw_points}</td><td role="cell" data-label="Total">{m.total_points}</td><td role="cell" data-label="Captain">{m.captain}</td><td role="cell" data-label="Value">£{m.squad_cost.toFixed(1)}m</td></tr>)}</tbody>
     </table></div>
     {!shown.length&&<p>No recorded manager matches this search.</p>}
     <div className="fplv2-actions">{page>1&&<Link href={url({page:String(page-1),manager:null})}>← Previous</Link>}<span style={{padding:12}}>Page {page} of {Math.max(1,Math.ceil(filtered.length/50))}</span>{page<Math.ceil(filtered.length/50)&&<Link href={url({page:String(page+1),manager:null})}>Next →</Link>}</div>
    </section>
-   {detail&&<section className="fplv2-card" id="manager" aria-label="Recorded manager lineup"><h2>{detail.entry_name} · Recorded GW{data.gameweek}</h2><p>Captain: {detail.captain} · Full squad ({detail.squad.length} players)</p><div className="fplv2-table-wrap"><table className="fplv2-table"><thead><tr><th>Player</th><th>Position</th><th>Team</th><th>Captain</th><th>Multiplier</th></tr></thead><tbody>{detail.squad.map(p=><tr key={p.element}><td>{p.name}</td><td>{p.position}</td><td>{p.team}</td><td>{p.is_captain?"C":p.is_vice_captain?"VC":"—"}</td><td>{p.multiplier}</td></tr>)}</tbody></table></div><div className="fplv2-actions"><Link href={url({manager:null,page:String(page)})}>Close lineup</Link></div></section>}
+   {detail&&<section className="fplv2-card" id="manager" aria-label="Recorded manager lineup"><h2>{detail.entry_name} · Recorded GW{data.gameweek}</h2><SquadPitch squad={detail.squad}/><p>Captain: {detail.captain} · Full squad ({detail.squad.length} players)</p><div className="fplv2-table-wrap"><table className="fplv2-table" role="table"><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Player</th><th scope="col" role="columnheader">Position</th><th scope="col" role="columnheader">Team</th><th scope="col" role="columnheader">Captain</th><th scope="col" role="columnheader">Multiplier</th></tr></thead><tbody role="rowgroup">{detail.squad.map(p=><tr role="row" key={p.element}><td role="cell" data-label="Player">{p.name}</td><td role="cell" data-label="Position">{p.position}</td><td role="cell" data-label="Team">{p.team}</td><td role="cell" data-label="Captain">{p.is_captain?"C":p.is_vice_captain?"VC":"—"}</td><td role="cell" data-label="Multiplier">{p.multiplier}</td></tr>)}</tbody></table></div><div className="fplv2-actions"><Link href={url({manager:null,page:String(page)})}>Close lineup</Link></div></section>}
  </>;
 }

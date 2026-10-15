@@ -16,7 +16,7 @@ const managers = [2797967,101010].map((id,i) => ({ entry_id:id, entry_name:`Test
   gw_points:56, total_points:340, overall_rank:12000, league_rank:i+1, squad_cost:100.5, captain:'Test Player 1', transfers_made:0,
   squad:picks.map((p,i) => [i,p.multiplier,p.is_captain,p.is_vice_captain]) }));
 function put(path,value) { files.set(path,JSON.stringify(value)); }
-put('catalog.json',catalog);put('fixtures.json',{gameweeks:{}});
+put('catalog.json',catalog);put('fixtures.json',{gameweeks:Object.fromEntries([4,5].map(gw=>[gw,data.fixtures.filter(x=>x.event===gw).map(x=>({...x,team_h:'Test Home',team_a:'Test Away'}))]))});
 put('projections.json',{ meta:{snapshot_at:now,generated_at:now,quality_status:'valid'},gameweek:4,projection_version:'projection-v5.0-lab',
   players:data.players.map(p=>({element:p.id,name:p.name,team:'Test Club',position:p.position,xpts_mean:5,p10:2,p50:5,p90:8,
     p_return:.4,p_10_plus:.1,expected_minutes:{p_start:.8,p_bench_appearance:.1,expected_minutes:75,p_60_plus:.8},components:{},source:'test',quality_issues:[]})) });
@@ -33,9 +33,10 @@ for (const id of [58005,131997]) {
   put(`leagues/${id}/research.json`,{gameweek:3,meta:{snapshot_at:now},packet_status:'advisory',
     freshness:{snapshot_at:now,account_state_verified:false,account_gameweek:3},competitive:{model_version:'competitive-v4.0',phase:'MATCH'},transfers:[],captains:[]});
 }
-put('journal/2026-27/index.json',{schema_version:1,season:'2026-27',gameweeks:[],totals:{completed:0,points:0}});
+put('journal/2026-27/index.json',{schema_version:1,season:'2026-27',gameweeks:[{gameweek:3,status:'final',quality:{status:'valid',issues:[]},record_hash:'c'.repeat(64),summary:{gw_points:56,total_points:340,league_rank:1,overall_rank:12000,elite_average:56,points_vs_reference:0,transfers:0,hit_cost:0}}],totals:{completed:1,points:56}});
+put('journal/2026-27/gw/3.json',{season:'2026-27',gameweek:3,record_hash:'c'.repeat(64),generated_at:now,summary:{gw_points:56,total_points:340,league_rank:1,overall_rank:12000,captain:picks[0].name},outcome:{squad:picks.map(p=>({...p,points:3}))}});
 files.set('journal/2026-27/gameweeks.csv','season,gameweek\n');
-const manifest={schema_version:1,release:'a'.repeat(64),revision:'b'.repeat(40),generated_at:now,writes_enabled:false,
+const manifest={schema_version:1,release:createHash('sha256').update(JSON.stringify([...files])).digest('hex'),revision:'b'.repeat(40),generated_at:now,writes_enabled:false,
   gameweeks:{58005:[3],131997:[3]},files:Object.fromEntries([...files].map(([p,s])=>[p,createHash('sha256').update(s).digest('hex')]))};
 let calls=[];
 createServer((req,res)=>{

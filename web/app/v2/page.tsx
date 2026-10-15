@@ -1,3 +1,4 @@
+import { SquadPitch } from "@/v2/visuals";
 import Link from "next/link";
 import { getCatalogV2, getLeagueV2, MY_TEAM } from "@/v2/public-data";
 import { Heading, Stat, Card, Source, DataState } from "@/v2/ui";
@@ -28,6 +29,7 @@ export default async function OverviewV2(){
     <Link href="/v2/players"><strong>Players →</strong><span>Current recorded prices and availability</span></Link>
     <Link href="/sign-in"><strong>Verified plan →</strong><span>Private account, explicit approval required</span></Link>
   </div>
+  {me && <Card title={"Your squad · recorded GW"+(league.ok?league.data.gameweek:"")}><SquadPitch squad={me.squad}/><div className="fplv2-actions"><Link href="/v2/team">Open all team details →</Link></div></Card>}
   <Card title="Evidence boundary">
    <p>Public snapshots are collected periodically, not minute-by-minute. An unavailable Gameweek or incomplete source never becomes a made-up score or actionable transfer recommendation. The original verified private plan stays separate.</p>
   </Card>
