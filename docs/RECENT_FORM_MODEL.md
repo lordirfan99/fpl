@@ -75,6 +75,11 @@ refresh verifies recent-form evidence without replacing `pending_plan.json` or
 submitting account changes. Private preview logs stay on the VM; Actions output
 contains only release version and aggregate verification information.
 
+The workflow supports a dedicated `GCP_VM_DEPLOY_SERVICE_ACCOUNT` repository
+variable, falling back to the shared deployment identity. The first attempted
+release was blocked by missing `compute.instances.get`, before any VM install;
+see the runbook for the exact failed run and resume command.
+
 If install/backfill/preview verification fails after module installation, restore
 the saved modules automatically. Dispatch the same tag with mode `rollback` for
 an explicit later rollback. The pre-release pending-plan fingerprint and timer
