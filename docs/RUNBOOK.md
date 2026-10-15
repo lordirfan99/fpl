@@ -1,65 +1,47 @@
 # Runbook
 
-## Recent-form model — implementation ready, VM deployment blocked (15 October 2026)
+## Recent-form model — deployed and verified (15 October 2026)
 
 Reviewed [PR #156](https://github.com/lordirfan99/fpl/pull/156) adds lagged recent
 attacking evidence to both projection paths, and
 [PR #157](https://github.com/lordirfan99/fpl/pull/157) preserves that evidence when
 the planner binds owned players to authenticated sale prices. Both PRs passed
-required CI before merge. The tagged implementation is
+required CI before merge. The immutable release is
 `v2026.10.15-model-recency`, commit
 `03268bbb8625447b8543461e0d0756caf41ca823`.
 [Main release CI 38675108818](https://github.com/lordirfan99/fpl/actions/runs/38675108818)
 passed both required jobs. Model behavior, evidence and evaluation limits are
 documented in [RECENT_FORM_MODEL.md](RECENT_FORM_MODEL.md).
 
-**Not deployed.** [Deployment run 38675344299](https://github.com/lordirfan99/fpl/actions/runs/38675344299)
-created/verified the tag and authenticated to Google Cloud, but `gcloud compute
-ssh` was denied `compute.instances.get` on
-`projects/irfan-374115/zones/us-central1-a/instances/instance-20260412-121200`.
-The VM installer, public-history backfill and private preview never ran. This
-attempt made no runtime module, account, pending-plan or website changes; retain
-the last known-good runtime references below.
+**Deployment.** PR [#159](https://github.com/lordirfan99/fpl/pull/159), merged as
+`aa690ca` with CI [38686164964](https://github.com/lordirfan99/fpl/actions/runs/38686164964),
+added the guarded operator wrapper. The tagged remote installer was then run
+from the authorized Hermes host over existing Tailscale SSH to
+`irfan@100.72.109.7`. No public SSH firewall or IAP path was opened. No model
+files were copied outside the tagged installer.
 
-**Later transport blocker:** operator retries progressed beyond the initial
-permission failure. [Run 38684611919](https://github.com/lordirfan99/fpl/actions/runs/38684611919)
-successfully updated project SSH metadata, then timed out connecting to
-`34.60.216.122:22`. The operator's Hermes handover states that public SSH is
-intentionally closed and its existing Tailscale SSH connection works. The Codex
-executor inspected for this handover has `vpn_configured: false`, no TCP grants
-and no operator SSH credential; it cannot reuse the Hermes host's connection.
-[PR #159](https://github.com/lordirfan99/fpl/pull/159) supplies a guarded wrapper
-for the already-authorized Hermes/operator Tailscale host. Temporary IAP access
-was removed after the outage recovery below, so the GitHub workflow's public
-SSH transport is retained as blocked rather than forcing an unconfigured IAP
-path. No IAM or firewall changes are part of the operator wrapper. See
-[transport notes](../infra/deploy/RECENCY-TRANSPORT.md).
+**Verification.** The wrapper captured pre/post VM state and verified all 12
+allowlisted installed module hashes against the pinned tag. The installer
+backfilled finished and data-checked gameweeks `[1, 2, 3, 4]`; the resulting
+history inventory covers gameweeks `[1, 2, 3, 4, 5, 6]`. The private
+dashboard-only preview reported `projection_features=recency-v1`,
+`projection_version=competitive-v4.0-recency-v1`, and 14 players with applied
+recent-history evidence. One player retained the explanatory
+`single_haul_dependency` flag. The pre/post `pending_plan.json` SHA-256 was
+identical:
+`d466ddc4b98f3252bccbd0f312c80cfba4932d473a3f8da77fb88cc5f175ed19`.
+The `fpl-auto-runner.timer` state was `active` before and after. The FPL write
+path and Telegram notification path were not invoked. Website deployment was
+not required.
 
-**Identity configuration:** configure an existing VM-authorized deployment service account as
-repository variable `GCP_VM_DEPLOY_SERVICE_ACCOUNT`, with the existing WIF
-provider allowed to impersonate it. This keeps the VM identity separate from
-scheduled public-data jobs; the workflow otherwise falls back to the shared
-`GCP_DEPLOY_SERVICE_ACCOUNT` identity that was denied in the recorded attempt.
-Authentication alone is not evidence of Compute/SSH/sudo authorization. Verify
-the actual target VM access before granting additional privileges; no project
-IAM roles were changed by the failed job.
-
-After verifying the selected transport, rerun the same immutable model tag:
-
-For the operator host with the existing Tailscale connection, use
-`bash infra/deploy/deploy-recency-from-operator.sh` from the reviewed checkout.
-It records pre/post state and checks installed bytes against the pinned tag.
-The GitHub command below remains blocked until an authorized transport exists.
-
-```bash
-gh workflow run deploy-recency-model.yml --ref main \
-  -f release_tag=v2026.10.15-model-recency -f mode=install
-```
-
-Do not mark this model live until the tagged installer, data-checked backfill,
-dashboard-only preview verification and unchanged pending-plan hash all pass.
-On a successful deployment, record its run and update the relevant known-good
-rows. A website deploy is unnecessary. No FPL transfer approval is implied.
+**Operational status.** The model is deployed and verified on the active VM.
+The GitHub-hosted workflow remains transport-blocked at public TCP/22 by design;
+the successful production deployment used the reviewed operator wrapper and
+existing Tailscale route instead. The operator verification artifact was kept
+on the private host under `/tmp/fpl-recency-operator.*`; no private packet or
+credential was published. Update the last-known-good table below to reference
+this tag after this documentation PR passes required CI. No FPL transfer approval
+is implied.
 
 ## Original V1 dashboard restored — 15 October 2026
 
@@ -546,6 +528,7 @@ redeploy it. FPL writes remain disabled.
 | Private dashboard exporter | `v2026.10.07-week-simulator` (`b9ec9f9`) | Scoped file install; verified private packet includes 562 model candidates |
 | VM planning client | `v2026.09.04-current-planning-inputs` (`7fbc39f`) | Existing client retained; authenticated current inputs verified on 7 October |
 | Pre-deadline job | `v2026.10.07-plan-cash-flow` (`cda2ae9`) | Scoped cash-flow gate fix; dashboard-only refresh and fingerprint check succeeded; pending plan unchanged |
+| Recent-form model modules | `v2026.10.15-model-recency` (`03268bb`) | Deployed via guarded operator wrapper over Tailscale SSH; 12/12 module hashes match; recency-v1 preview verified; GW1–4 backfilled; pending plan unchanged; timer restored |
 | live collector | `v2026.10.07-live-read-cache` (`4f8f1f0`) | Collector code installed with API release; original schedule restored and collection running during successful monitor |
 | remaining engine + bot | recovered machine image `fpl-zone-recovery-20260904` | Services active; except for the scoped files above, exact source commit not independently established |
 | Telegram bot token | rotated 2026-09-02, in VM `config/credentials.env` only | `@Fplnaf_bot`, chat `-1004464574417` |
