@@ -1,3 +1,4 @@
+import { SquadPitch } from "@/v2/visuals";
 import Link from "next/link";
 import { getLeagueV2, gwParam, leagueId, MY_TEAM } from "@/v2/public-data";
 import { Heading, DataState, LeagueNav, WeekNav, Source, Stat } from "@/v2/ui";
@@ -33,7 +34,7 @@ function CompareData({result,id,gw,p}:{result:Valid;id:number;gw:number|null;p:P
  <div className="fplv2-columns">
  {[{manager:left,other:onlyLeft},{manager:right,other:onlyRight}].map(({manager,other})=>
  <section className="fplv2-card" key={manager.entry_id}><h2>{manager.entry_name}</h2><p>Rank #{manager.league_rank} · Captain {manager.captain} · {other.length} different picks</p>
- <div className="fplv2-table-wrap"><table className="fplv2-table"><thead><tr><th>Player</th><th>Position</th><th>Role</th></tr></thead><tbody>{manager.squad.map(x=><tr key={x.element}><td>{x.name}{other.some(y=>y.element===x.element)?" *":""}</td><td>{x.position}</td><td>{x.is_captain?"Captain":x.is_vice_captain?"Vice":x.multiplier===0?"Bench":"XI"}</td></tr>)}</tbody></table></div>
+ <SquadPitch squad={manager.squad}/><details className="fplv2-details"><summary>Player details and different picks</summary><div className="fplv2-table-wrap"><table className="fplv2-table" role="table"><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Player</th><th scope="col" role="columnheader">Position</th><th scope="col" role="columnheader">Role</th></tr></thead><tbody role="rowgroup">{manager.squad.map(x=><tr role="row" key={x.element}><td role="cell" data-label="Player">{x.name}{other.some(y=>y.element===x.element)?" *":""}</td><td role="cell" data-label="Position">{x.position}</td><td role="cell" data-label="Role">{x.is_captain?"Captain":x.is_vice_captain?"Vice":x.multiplier===0?"Bench":"XI"}</td></tr>)}</tbody></table></div></details>
  <p>* Unique to this manager&apos;s recorded squad</p>
  </section>)}
  </div>

@@ -26,9 +26,9 @@ function PlayersData({result,p}:{result:Valid;p:Params}){
     <button type="submit">Apply filters</button>
    </form>
    <p>Showing up to 100 of {candidates.length.toLocaleString()} matching players, sorted by recorded price.</p>
-   <div className="fplv2-table-wrap"><table className="fplv2-table">
-    <thead><tr><th>Player</th><th>Club</th><th>Position</th><th>Price</th><th>FPL form</th><th>Status</th></tr></thead>
-    <tbody>{shown.map(x=><tr key={x.id}><td><strong>{x.web_name}</strong>{x.news&&<small style={{display:"block",opacity:.65}}>{x.news.slice(0,90)}</small>}</td><td>{club.get(x.team)||"—"}</td><td>{positions[x.element_type]||"—"}</td><td>£{(x.now_cost/10).toFixed(1)}m</td><td>{x.form||"—"}</td><td>{x.status==="a"?"Available":x.status||"Unverified"}</td></tr>)}</tbody>
+   <div className="fplv2-table-wrap"><table className="fplv2-table" role="table">
+    <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Player</th><th scope="col" role="columnheader">Club</th><th scope="col" role="columnheader">Position</th><th scope="col" role="columnheader">Price</th><th scope="col" role="columnheader">FPL form</th><th scope="col" role="columnheader">Status</th></tr></thead>
+    <tbody role="rowgroup">{shown.map(x=><tr role="row" key={x.id}><td role="cell" data-label="Player"><strong>{x.web_name}</strong>{x.news&&<small style={{display:"block",opacity:.65}}>{x.news.slice(0,90)}</small>}</td><td role="cell" data-label="Club">{club.get(x.team)||"—"}</td><td role="cell" data-label="Position">{positions[x.element_type]||"—"}</td><td role="cell" data-label="Price">£{(x.now_cost/10).toFixed(1)}m</td><td role="cell" data-label="FPL form">{x.form||"—"}</td><td role="cell" data-label="Status">{x.status==="a"?"Available":x.status||"Unverified"}</td></tr>)}</tbody>
    </table></div>
    {!candidates.length&&<p>No players matched your filters. Try another position or search.</p>}
   </section>

@@ -1,26 +1,18 @@
+import { Navigation } from "./navigation";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { DataResult } from "./public-data";
 import { leagueName } from "./public-data";
 
-const sections = [
-  { href: "/v2", label: "Overview" },
-  { href: "/v2/team", label: "My Team" },
-  { href: "/v2/league", label: "League" },
-  { href: "/v2/elite", label: "Elite" },
-  { href: "/v2/players", label: "Players" },
-  { href: "/v2/compare", label: "Compare" },
-  { href: "/v2/planner", label: "Planner" },
-  { href: "/v2/journal", label: "Journal" },
-];
 export function Shell({ children }: { children: ReactNode }) {
   return <div className="fplv2-app">
+    <a className="fplv2-skip" href="#v2-content">Skip to content</a>
     <header className="fplv2-header">
       <div className="fplv2-brand"><span className="fplv2-brand-icon">F</span><span><strong>FPL Scout</strong><small>Intelligence V2 · Preview</small></span></div>
-      <nav aria-label="FPL V2 navigation">{sections.map(s => <Link key={s.href} href={s.href}>{s.label}</Link>)}</nav>
+      <Navigation/>
       <span className="fplv2-status">Public research · read only</span>
     </header>
-    <main className="fplv2-main">{children}</main>
+    <main id="v2-content" className="fplv2-main">{children}</main>
     <footer className="fplv2-footer"><span>Verified FPL capture · not live scores</span><Link href="/this-week">Open existing decision room</Link></footer>
   </div>;
 }

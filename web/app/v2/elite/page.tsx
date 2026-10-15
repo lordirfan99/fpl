@@ -1,3 +1,4 @@
+import { ShareChart } from "@/v2/visuals";
 import { getLeagueV2, gwParam, leagueId, MY_TEAM } from "@/v2/public-data";
 import { Heading, Stat, Source, DataState, LeagueNav, WeekNav } from "@/v2/ui";
 
@@ -31,10 +32,11 @@ function EliteData({result,id,gw}:{result:Valid;id:number;gw:number|null}){
   </div>
   <div className="fplv2-columns">
    <section className="fplv2-card"><h2>Elite squad consensus</h2><p>Every row uses the {elite.length} recorded elite managers as denominator. Captured squads can change after a deadline.</p>
-    <div className="fplv2-table-wrap"><table className="fplv2-table"><thead><tr><th>Player</th><th>Role</th><th>Owned</th><th>Started</th></tr></thead><tbody>{sorted.slice(0,25).map(row=><tr key={row.name+row.position}><td>{row.name}</td><td>{row.position}</td><td>{(row.owned/elite.length*100).toFixed(1)}%</td><td>{(row.started/elite.length*100).toFixed(1)}%</td></tr>)}</tbody></table></div>
+    <ShareChart label="Most owned elite picks" rows={sorted.slice(0,5).map(x=>({label:x.name,value:x.owned/elite.length*100}))}/>
+    <div className="fplv2-table-wrap"><table className="fplv2-table" role="table"><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Player</th><th scope="col" role="columnheader">Role</th><th scope="col" role="columnheader">Owned</th><th scope="col" role="columnheader">Started</th></tr></thead><tbody role="rowgroup">{sorted.slice(0,25).map(row=><tr role="row" key={row.name+row.position}><td role="cell" data-label="Player">{row.name}</td><td role="cell" data-label="Role">{row.position}</td><td role="cell" data-label="Owned">{(row.owned/elite.length*100).toFixed(1)}%</td><td role="cell" data-label="Started">{(row.started/elite.length*100).toFixed(1)}%</td></tr>)}</tbody></table></div>
    </section>
-   <section className="fplv2-card"><h2>Captaincy concentration</h2><p>Actual recorded captain flags, not predicted captain choices.</p>
-    <div className="fplv2-table-wrap"><table className="fplv2-table"><thead><tr><th>Captain</th><th>Managers</th><th>Share</th></tr></thead><tbody>{captains.filter(c=>c.captained>0).slice(0,20).map(c=><tr key={c.name}><td>{c.name}</td><td>{c.captained}</td><td>{(c.captained/elite.length*100).toFixed(1)}%</td></tr>)}</tbody></table></div>
+   <section className="fplv2-card"><h2>Captaincy concentration</h2><ShareChart label="Elite captain share" rows={captains.filter(x=>x.captained>0).slice(0,5).map(x=>({label:x.name,value:x.captained/elite.length*100}))}/><p>Actual recorded captain flags, not predicted captain choices.</p>
+    <div className="fplv2-table-wrap"><table className="fplv2-table" role="table"><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Captain</th><th scope="col" role="columnheader">Managers</th><th scope="col" role="columnheader">Share</th></tr></thead><tbody role="rowgroup">{captains.filter(c=>c.captained>0).slice(0,20).map(c=><tr role="row" key={c.name}><td role="cell" data-label="Captain">{c.name}</td><td role="cell" data-label="Managers">{c.captained}</td><td role="cell" data-label="Share">{(c.captained/elite.length*100).toFixed(1)}%</td></tr>)}</tbody></table></div>
    </section>
   </div>
  </>;
