@@ -198,7 +198,15 @@ class SnapshotRepository:
             local = self._read_local(filename)
         except SnapshotNotFoundError:
             local = None
-        remote = self._read_remote(filename)
+        try:
+            remote = self._read_remote(filename)
+        except SnapshotUnavailableError:
+            # A verified image snapshot is the last-known-good recovery source.
+            # Keep its capture timestamp so downstream freshness gates still see
+            # the data as old rather than silently promoting it.
+            if local is not None:
+                return local
+            raise
         if local is None:
             if remote is None:
                 raise SnapshotNotFoundError(filename)
@@ -223,11 +231,14 @@ class SnapshotRepository:
         return remote
 
     def read(self, filename: str) -> dict[str, Any]:
-        remote = self._read_remote(filename)
+        try:
+            remote = self._read_remote(filename)
+        except SnapshotUnavailableError:
+            # Do not turn a temporary remote outage into a false 503 when the
+            # packaged artifact is still available and independently verified.
+            return self._read_local(filename)
         if remote is not None:
             return remote
-        # Packaged data remains a fail-soft recovery source if GCS is
-        # temporarily unavailable or the requested artifact is not published.
         return self._read_local(filename)
 
     def live_league(self, league_id: int) -> dict[str, Any]:
