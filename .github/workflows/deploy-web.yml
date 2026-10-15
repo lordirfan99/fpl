@@ -19,6 +19,7 @@ concurrency:
 
 env:
   NETLIFY_SITE_ID: e2602e61-b56a-45ff-8f01-debe6037af2e
+  FPL_PUBLIC_DATA_URL: https://lordirfan99.github.io/fpl
 
 jobs:
   deploy:
@@ -46,12 +47,6 @@ jobs:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
       - name: Install deps
         run: npm ci
-      - name: Configure production public data for builds and Functions
-        run: |
-          npx --yes netlify-cli@17 link --id "$NETLIFY_SITE_ID"
-          npx --yes netlify-cli@17 env:set FPL_PUBLIC_DATA_URL https://lordirfan99.github.io/fpl --context production --scope builds functions --force
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
       - name: Build + deploy (production)
         run: >-
           npx --yes netlify-cli@17 deploy --build --prod
