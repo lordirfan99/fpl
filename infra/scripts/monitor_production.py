@@ -107,8 +107,8 @@ def main(*, lightweight: bool = False) -> int:
         if league_status != 200 or hashlib.sha256(league_body).hexdigest() != files[filename]:
             raise RuntimeError(f"League {league_id} integrity failed")
 
-    # These are the ACTUAL public destinations, not obsolete VM endpoints.
-    check_page("/", "Your next FPL decision", 1_500_000)
+    # V1 is the default homepage; explicit V2 research routes remain available.
+    check_page("/", "This gameweek", 1_500_000)
     check_page("/v2/league?league=131997", "Complete standings", 1_500_000)
     check_page("/v2/elite?league=131997", "The top five percent", 1_500_000)
     if lightweight:
