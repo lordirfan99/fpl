@@ -104,6 +104,13 @@ def load_settings():
         return json.load(f)
 
 
+def owned_player(model_player, pick):
+    """Keep model evidence when attaching authenticated account sale prices."""
+    return {**model_player,
+            "selling_price": int(pick.get("selling_price") or model_player["cost"]),
+            "purchase_price": int(pick.get("purchase_price") or model_player["cost"])}
+
+
 def load_creds():
     creds = {}
     with open(os.path.join(BASE, "config", "credentials.env"), encoding="utf-8") as f:
@@ -465,24 +472,7 @@ def main():
         base = els_by_id.get(p["element"])
         if not base:
             continue
-        squad.append({
-            "id": base["id"], "name": base["name"], "position": base["position"],
-            "club": base["club"], "cost": base["cost"],
-            "xpts": base["xpts"], "xpts_horizon": base["xpts_horizon"],
-            "xpts_by_gw": base.get("xpts_by_gw", []),
-            "variance_by_gw": base.get("variance_by_gw", []),
-            "xpts_floor": base.get("xpts_floor"),
-            "xpts_upside": base.get("xpts_upside"),
-            "xpts_variance": base.get("xpts_variance", 0),
-            "p_start": base.get("p_start"),
-            "expected_minutes": base.get("expected_minutes"),
-            "uncertainty_multiplier": base.get("uncertainty_multiplier"),
-            "risk_adjusted_xpts": base.get("risk_adjusted_xpts", base["xpts"]),
-            "confidence": base.get("confidence"),
-            "selling_price": int(p.get("selling_price") or base["cost"]),
-            "purchase_price": int(p.get("purchase_price") or base["cost"]),
-            "status": base.get("status"), "cop": base.get("cop"), "news": base.get("news"),
-        })
+        squad.append(owned_player(base, p))
     bank = team.get("transfers", {}).get("bank", 0)
     free_transfers = 1
     free_transfers_synced = False
