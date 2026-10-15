@@ -2,7 +2,7 @@ import { chromium } from "@playwright/test";
 const origin="https://fpl-scout-intelligence.netlify.app";
 // Real production Chromium verification: only read-only navigation and filtering.
 const routes=[
- ["/","Your next FPL decision"],
+ ["/","This gameweek"],
  ["/v2","Your next FPL decision"],
  ["/v2/team","My FPL team"],
  ["/v2/league","Complete standings"],
@@ -44,7 +44,7 @@ try{
    // Test actual browser interactions, not just an HTTP 200 or heading.
    try{
      if(route==="/") {
-       if(new URL(page.url()).pathname!=="/v2")exceptions.push("Homepage did not route to V2");
+       if(new URL(page.url()).pathname!=="/this-week")exceptions.push("Homepage did not route to V1");
      }
      if(route==="/v2") {
        await page.locator('.fplv2-header nav a[href="/v2/league"]').click({timeout:10000});
