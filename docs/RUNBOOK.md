@@ -1,5 +1,41 @@
 # Runbook
 
+## Original V1 dashboard restored — 15 October 2026
+
+The owner requested the original V1 experience after reviewing V2.
+[PR #154](https://github.com/lordirfan99/fpl/pull/154) restores `/` → `/this-week`
+and aligns the production monitor and preview/production smoke contracts.
+[PR #155](https://github.com/lordirfan99/fpl/pull/155) makes tagged builds supply
+and compile the non-secret public Pages URL. Both PRs passed required CI before
+merge. The original V1 styles, graphics, navigation and pages are retained;
+explicit `/v2` research routes remain available.
+
+**Current web release:** `v2026.10.15-v1-public-data`, main commit
+`b1940fc3720b919f5bf6584993c67a643acd74c3`.
+[Netlify deployment run 38664873799](https://github.com/lordirfan99/fpl/actions/runs/38664873799)
+succeeded at approximately 01:19 UTC, deploy `6ad02a0a960458464edc73b6`.
+Production: <https://fpl-scout-intelligence.netlify.app>.
+
+Read-only Chromium verification passed **48 route/viewport observations** at
+390px, 320px and 1365px, covering the homepage, all 13 V1 public dashboard pages
+and both tracked leagues. The homepage reached `/this-week`; every page rendered
+its V1 shell and scheduled-public-snapshot source label without application
+exceptions. Phone checks confirmed no horizontal page overflow and working
+More-menu open/close controls. My Team showed all 15 graphical squad cards;
+production mobile screenshots were visually reviewed.
+
+The initial `v2026.10.15-v1-restored` deployment restored the homepage, but its
+public-source label was missing. It is superseded by this release: the tagged
+build now pins the public data URL rather than relying on CLI changes to
+Functions-scoped variables. API-mode/local builds without that build setting
+retain runtime selection. Only a public URL is compiled; private tokens and
+backend variables are not bundled. No VM or FPL write changes were made.
+
+**Rollback:** dispatch `deploy-web.yml` at the preceding verified tag
+`v2026.10.15-v2-mobile` (`f19d3f9`) if a web rollback is required; this returns to
+the previously verified V2 presentation. The incomplete initial V1 restore tag
+is not the rollback baseline. Keep VM/private-engine tags unchanged.
+
 ## V2 mobile dashboard release — 15 October 2026
 
 [PR #152](https://github.com/lordirfan99/fpl/pull/152) passed both required CI jobs
@@ -445,7 +481,7 @@ redeploy it. FPL writes remain disabled.
 | VM guest-agent memory guard | `v2026.10.07-outage-recovery` (`a477d33`) | Installed on the active plugin manager; 192 MiB RAM / 64 MiB swap caps verified, OOMScoreAdjust=0, no new OOM kills after reset |
 | Scheduled journal finalizer | `v2026.10.07-journal-recovery` (`1f7360a`) | Tagged finalizer and production monitor passed; five archived weeks verified, both live leagues fresh |
 | API | `v2026.10.07-live-read-cache` (`4f8f1f0`) | Bounded verified live cache installed; production monitor passed under collection; writes disabled; cold-read five-second p95 target remains unmet |
-| dashboard (last verified production rollback baseline) | `v2026.10.15-v2-mobile` (`f19d3f9`) | Netlify deploy `6ad0252053fb6fe4b9905c08`, run 38662882636. Verified 42 production browser observations at 320/390/1365px, including mobile navigation, pitch, charts and search. Previous reviewed web tag: `v2026.10.14-v2-public-verified`; VM/private engine references unchanged. |
+| dashboard (last verified production rollback baseline) | `v2026.10.15-v1-public-data` (`b1940fc`) | Original V1 is the default UI. Netlify deploy `6ad02a0a960458464edc73b6`, run 38664873799; 48 production browser observations passed at 320/390/1365px, with public source labels, mobile navigation and all 15 graphical picks verified. Prior verified web tag: `v2026.10.15-v2-mobile`; VM/private engine references unchanged. |
 | Private dashboard exporter | `v2026.10.07-week-simulator` (`b9ec9f9`) | Scoped file install; verified private packet includes 562 model candidates |
 | VM planning client | `v2026.09.04-current-planning-inputs` (`7fbc39f`) | Existing client retained; authenticated current inputs verified on 7 October |
 | Pre-deadline job | `v2026.10.07-plan-cash-flow` (`cda2ae9`) | Scoped cash-flow gate fix; dashboard-only refresh and fingerprint check succeeded; pending plan unchanged |
