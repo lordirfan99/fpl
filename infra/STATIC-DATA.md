@@ -99,12 +99,12 @@ than presented as a model backtest. Frozen records keep original capture times.
    `https://lordirfan99.github.io/fpl` (build and Functions scopes). Keep
    `FPL_API_BASE_URL` pointing to the existing private backend. Deploy the
    matching reviewed website tag. Never put the read token in a NEXT_PUBLIC var.
-   The standard `deploy-web.yml` now links the exact production site and sets this
-   public URL in both `builds` and `functions` scopes before deploying a tag.
-   This keeps V1 public pages on the verified Pages dataset after ordinary
-   releases; setting only a temporary build-process variable leaves server
-   Functions falling back to the private API. Private backend variables are
-   retained.
+   The standard `deploy-web.yml` supplies this public URL to the tagged build.
+   `web/next.config.ts` pins that URL into the compiled application when supplied,
+   so the server uses the same public dataset even when Netlify CLI deployments
+   do not propagate Functions-scoped environment settings. Only this non-secret
+   URL is compiled; private backend variables and tokens stay server-only.
+   Builds without this setting keep runtime selection for API-mode/local tests.
 7. Verify all 13 dashboard pages, both leagues, search/paging/manager selection,
    journal links/CSV, mobile, stale input states and authenticated private-plan
    recovery. Confirm public browsing reads Pages and does not call the VM API.
