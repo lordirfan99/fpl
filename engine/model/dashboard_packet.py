@@ -2,6 +2,7 @@
 import hashlib
 import json
 from pathlib import Path
+from pipeline_health import PacketValidationError, storage_action
 
 
 def select(row, fields):
@@ -12,11 +13,11 @@ def account_state(team):
     picks = team.get("picks") or []
     transfers = team.get("transfers") or {}
     if len(picks) != 15 or len({p.get("element") for p in picks}) != 15:
-        raise ValueError("Incomplete account squad")
+        raise PacketValidationError("account_invalid", "Incomplete account squad")
     if transfers.get("bank") is None or any(p.get("selling_price") is None for p in picks):
-        raise ValueError("Account prices unavailable")
+        raise PacketValidationError("account_invalid", "Account prices unavailable")
     if transfers.get("limit") is None and transfers.get("unlimited") is not True:
-        raise ValueError("Free transfers unavailable")
+        raise PacketValidationError("account_invalid", "Free transfers unavailable")
     return {
         "picks": sorted([select(p, "element position selling_price purchase_price is_captain is_vice_captain")
                          for p in picks], key=lambda p: p["element"]),
@@ -34,8 +35,10 @@ def make_packet(plan, team, players, bootstrap, fixtures):
     """Build a separate display artifact without modifying plan or plan_id."""
     summary = plan.get("decision_summary") or {}
     manifest = summary.get("source_manifest") or {}
-    if not plan.get("plan_id") or manifest.get("status") != "ready":
-        raise ValueError("Verified canonical plan unavailable")
+    if not plan.get("plan_id"):
+        raise PacketValidationError("plan_invalid", "Verified canonical plan unavailable")
+    if manifest.get("status") != "ready":
+        raise PacketValidationError("source_not_ready", "Verified canonical sources unavailable")
     elements = {p["id"]: p for p in bootstrap["elements"]}
     ids = {p["element"] for p in team["picks"]} | {p["id"] for p in plan["target_starters"] + plan["bench"]}
     rows = []
@@ -87,10 +90,15 @@ def private_bucket(base):
     config = Path(base) / "config" / "dashboard.json"
     if not config.exists():
         return None
-    values = json.loads(config.read_text())
+    try:
+        values = json.loads(config.read_text())
+        if not isinstance(values, dict):
+            raise ValueError()
+    except (OSError, ValueError):
+        raise PacketValidationError("configuration_invalid", "Private dashboard configuration unavailable") from None
     private, public = values.get("private_bucket"), values.get("public_snapshot_bucket")
     if not private or not public or private == public:
-        raise ValueError("Distinct private and public bucket identities are required")
+        raise PacketValidationError("configuration_invalid", "Distinct private and public bucket identities are required")
     return private
 
 
@@ -98,14 +106,20 @@ def publish(base, name, payload):
     bucket_name = private_bucket(base)
     if not bucket_name:
         return False
-    from google.cloud import storage
-    bucket = storage.Client().bucket(bucket_name)
-    bucket.reload(timeout=15)
+    try:
+        encoded = json.dumps(payload, allow_nan=False)
+    except (ValueError, TypeError):
+        raise PacketValidationError("packet_invalid", "Dashboard payload cannot be serialized") from None
+    def bucket_client():
+        from google.cloud import storage
+        return storage.Client().bucket(bucket_name)
+    bucket = storage_action("client", bucket_client)
+    storage_action("metadata", lambda: bucket.reload(timeout=15))
     if bucket.iam_configuration.public_access_prevention != "enforced":
-        raise ValueError("Private bucket must enforce public access prevention")
+        raise PacketValidationError("privacy_guard_failed", "Private bucket must enforce public access prevention")
     blob = bucket.blob(f"dashboard/{name}.json")
     blob.cache_control = "private, no-store"
-    blob.upload_from_string(json.dumps(payload, allow_nan=False), content_type="application/json", timeout=20)
+    storage_action("upload", lambda: blob.upload_from_string(encoded, content_type="application/json", timeout=20))
     return True
 
 

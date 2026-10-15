@@ -22,6 +22,7 @@ from project_paths import resolve_project_root, venv_python
 BASE = str(resolve_project_root(__file__))
 sys.path.insert(0, os.path.join(BASE, "model"))
 from league_alerts import alert_signature, meaningful_league_alerts
+from pipeline_health import diagnostic_from_stderr, failure_episode
 
 VENV_PY = venv_python(BASE)
 STATE_FILE = os.path.join(BASE, "data", "processed", "auto_state.json")
@@ -104,6 +105,16 @@ def should_generate_dashboard_preview(hours_to_deadline):
     return 26 <= hours_to_deadline < 168
 
 
+def report_failure(state, key, label, diagnostic, now, *, gameweek, mode, rc):
+    notify = failure_episode(state, key, diagnostic, now, gameweek=gameweek, mode=mode, rc=rc)
+    message = (f"[auto] {label} unavailable "
+               f"(code={diagnostic['code']}, stage={diagnostic['stage']}, "
+               f"error={diagnostic['error_class']}, rc={rc}). "
+               "Retrying on schedule; identical alerts limited to once per 24h.")
+    # The unit forwards stdout to Telegram; stderr stays in its VM journal.
+    print(message, file=sys.stdout if notify else sys.stderr)
+
+
 def main():
     settings = None
     try:
@@ -133,6 +144,8 @@ def main():
         previous_league = load_json(LEAGUE_STATE_FILE)
         lirc, liout, lierr = run("league_intelligence.py", ["--notifications-disabled"], env=run_env)
         if lirc == 0:
+            if state.pop("league_intelligence_failure", None):
+                print("[auto] league intelligence recovered.")
             state["league_intelligence_refreshed_at"] = now.isoformat()
             current_league = load_json(LEAGUE_STATE_FILE)
             alerts = meaningful_league_alerts(previous_league, current_league)
@@ -155,7 +168,11 @@ def main():
             # League intelligence above remains local input to the plan.
         else:
             refresh_failures.append("league intelligence")
-            print(f"[auto] league intelligence failed rc={lirc}: {(lierr or liout)[-500:]}")
+            report_failure(state, "league_intelligence_failure", "league intelligence",
+                           diagnostic_from_stderr(lierr), now,
+                           gameweek=next((event["id"] for event in bootstrap.get("events", [])
+                                          if event.get("is_next")), None),
+                           mode="league_refresh", rc=lirc)
 
     # --- trigger 1: synchronized canonical V4.1 decision ---
     next_gw = None
@@ -185,6 +202,9 @@ def main():
             args = [] if decision_window else ["--dashboard-only", "--notifications-disabled"]
             rc, out, err = run("pre_deadline_run.py", args, env=run_env)
             if rc == 0:
+                previous_failure = state.pop("pipeline_failure", None)
+                if previous_failure:
+                    print(f"[auto] GW{ev['id']} {'plan' if decision_window else 'dashboard preview'} recovered.")
                 if decision_window:
                     state["plan_gw"] = ev["id"]
                     state["plan_generated_at"] = now.isoformat()
@@ -194,7 +214,11 @@ def main():
                     state["dashboard_plan_gw"] = ev["id"]
                     state["dashboard_plan_generated_at"] = now.isoformat()
             else:
-                print(f"[auto] pipeline failed rc={rc}: {err[-500:]}")
+                diagnostic = diagnostic_from_stderr(err)
+                report_failure(state, "pipeline_failure",
+                               f"GW{ev['id']} {'plan' if decision_window else 'dashboard preview'}",
+                               diagnostic, now, gameweek=ev["id"],
+                               mode="plan" if decision_window else "preview", rc=rc)
 
     # --- trigger 2: post-GW review ---
     last_finished = latest_reviewable_event(bootstrap)

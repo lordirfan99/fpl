@@ -39,6 +39,9 @@ jobs:
           bash -n infra/deploy/install-recency-model.sh
           bash -n infra/deploy/release-recency-model-remote.sh
           bash -n infra/deploy/deploy-recency-from-operator.sh
+          bash -n infra/deploy/install-dashboard-health.sh
+          bash -n infra/deploy/deploy-dashboard-health-from-operator.sh
+          bash -n infra/deploy/run-dashboard-health-remote.sh
           schedule=$(sed -n 's/^OnCalendar=//p' infra/deploy/gcp/systemd/fpl-live-refresh.timer)
           test -n "$schedule"
           systemd-analyze calendar "$schedule"
