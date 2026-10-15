@@ -6,6 +6,7 @@ import pytest
 from backfill_player_history import backfill
 from feature_store_v42 import load_event_history
 from horizon_milp import optimize_horizon
+from pre_deadline_run import owned_player
 from recent_form import attacking_form
 from v4_projection import project_player
 from v42_projection import project_player_v42
@@ -34,6 +35,19 @@ def element(rows):
 
 
 FIXTURES = {(gw, 1): [{"fdr": 3, "opponent": 2, "home": True}] for gw in (7, 8, 9)}
+
+
+def test_owned_squad_keeps_projection_evidence_and_account_sale_price():
+    history = bruno_history()
+    model = {"id": 426, "cost": 119,
+             **project_player(element(history), FIXTURES, 6, [7, 8, 9], history=history)}
+    original = deepcopy(model)
+    owned = owned_player(model, {"element": 426, "selling_price": 117, "purchase_price": 115})
+    assert owned["recent_form"]["single_haul_dependency"]
+    assert owned["selling_price"] == 117
+    assert owned["purchase_price"] == 115
+    assert owned["xpts_by_gw"] == model["xpts_by_gw"]
+    assert model == original
 
 
 def test_stale_haul_lowers_the_full_forecast_and_exposes_evidence():
