@@ -13,7 +13,7 @@ environment used by the VM live collector:
 ```bash
 sudo systemctl stop fpl-live-refresh.timer
 sudo systemctl stop fpl-live-refresh.service
-bash infra/deploy/install-live-refresh.sh <tag>
+bash infra/deploy/install-live-refresh.sh <tag> --seed-references
 ```
 
 Prepare `/tmp/fpl-scout-api.env` outside git with mode 0600. It must contain:

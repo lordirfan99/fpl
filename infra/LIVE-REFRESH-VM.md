@@ -105,7 +105,7 @@ the external IP/DNS after restart, since an ephemeral external IP can change.
 On the VM, from the clean tagged checkout:
 
 ```bash
-bash infra/deploy/install-live-refresh.sh <release-tag>
+bash infra/deploy/install-live-refresh.sh <release-tag> --seed-references
 sudo systemctl start fpl-live-refresh.service
 systemctl show fpl-live-refresh.service -p Result -p ExecMainStatus
 sudo journalctl -u fpl-live-refresh.service -n 50 --no-pager
