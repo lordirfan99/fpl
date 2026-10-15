@@ -30,7 +30,7 @@ finish() {
   rc=$?
   set +e
   if [ "$rc" != 0 ] && [ "$CHANGES_STARTED" = 1 ]; then restore_files; fi
-  if [ "$WAS_ACTIVE" = 1 ]; then sudo systemctl start fpl-auto-runner.timer; fi
+  if [ "$WAS_ACTIVE" = 1 ]; then sudo systemctl start fpl-auto-runner.timer || rc=1; fi
   exit "$rc"
 }
 trap finish EXIT

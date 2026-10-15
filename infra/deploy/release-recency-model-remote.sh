@@ -13,7 +13,7 @@ finish() {
   if [ "$rc" != 0 ] && [ "$INSTALLED" = 1 ]; then
     bash "$RELEASE_DIR/infra/deploy/install-recency-model.sh" "$TAG" --rollback
   fi
-  if [ "$WAS_ACTIVE" = 1 ]; then sudo systemctl start fpl-auto-runner.timer; fi
+  if [ "$WAS_ACTIVE" = 1 ]; then sudo systemctl start fpl-auto-runner.timer || rc=1; fi
   rm -rf "$RELEASE_DIR"
   exit "$rc"
 }
