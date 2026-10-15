@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import tempfile
 import sys
 import time
 import uuid
@@ -175,19 +176,22 @@ def publish(bucket_name: str, payload: dict[str, Any]) -> tuple[str, str]:
     raise AssertionError("unreachable")
 
 
-def _write_local_snapshot(data_dir: Path, filename: str, payload: dict[str, Any]) -> None:
+def _write_local_snapshots(data_dir: Path, payloads: dict[str, dict[str, Any]]) -> None:
+    """Stage every reference then replace the validated files atomically."""
     data_dir.mkdir(parents=True, exist_ok=True)
-    target = data_dir / filename
-    temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
-    encoded = _canonical(payload)
+    staged: dict[str, Path] = {}
     try:
-        with temporary.open("wb") as stream:
-            stream.write(encoded)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, target)
+        for filename, payload in payloads.items():
+            with tempfile.NamedTemporaryFile(dir=data_dir, prefix=f".{filename}.", suffix=".tmp", delete=False) as stream:
+                stream.write(_canonical(payload))
+                stream.flush()
+                os.fsync(stream.fileno())
+                staged[filename] = Path(stream.name)
+        for filename, temporary in staged.items():
+            os.replace(temporary, data_dir / filename)
     finally:
-        temporary.unlink(missing_ok=True)
+        for temporary in staged.values():
+            temporary.unlink(missing_ok=True)
 
 
 def publish_references(bucket_name: str, local_data_dir: Path | None = None) -> None:
@@ -207,8 +211,8 @@ def publish_references(bucket_name: str, local_data_dir: Path | None = None) -> 
         encoded = _canonical(payload)
         bucket.blob(f"snapshots/{filename}").upload_from_string(
             encoded, content_type="application/json", timeout=15, retry=None)
-        if local_data_dir is not None:
-            _write_local_snapshot(local_data_dir, filename, payload)
+    if local_data_dir is not None:
+        _write_local_snapshots(local_data_dir, {"bootstrap_cache.json": bootstrap, "fixtures_cache.json": fixture_cache})
 
 
 def main() -> int:
