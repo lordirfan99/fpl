@@ -14,7 +14,7 @@ FILES=(model/recent_form.py model/component_xpts.py model/v4_projection.py
        model/decision_explanation.py jobs/pre_deadline_run.py
        jobs/pre_deadline_shadow_v42.py jobs/post_gw_review.py jobs/backfill_player_history.py)
 FILES+=(jobs/evaluate_v42_candidate.py model/evaluation_capture.py
-        jobs/evaluate_frozen_forecasts.py)
+        model/pipeline_health.py jobs/evaluate_frozen_forecasts.py)
 WAS_ACTIVE=0
 CHANGES_STARTED=0
 if systemctl is-active --quiet fpl-auto-runner.timer; then WAS_ACTIVE=1; fi

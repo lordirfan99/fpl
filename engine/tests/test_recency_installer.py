@@ -8,6 +8,7 @@ class RecencyInstallerAllowlistTests(unittest.TestCase):
         path = pathlib.Path(__file__).parents[2] / "infra" / "deploy" / "install-recency-model.sh"
         script = path.read_text(encoding="utf-8")
         self.assertIn("model/evaluation_capture.py", script)
+        self.assertIn("model/pipeline_health.py", script)
         self.assertIn("jobs/evaluate_frozen_forecasts.py", script)
         self.assertIn("import recent_form,v4_projection,v42_projection,evaluation_capture,evaluate_frozen_forecasts", script)
         self.assertIn('assert evaluation_capture.SCHEMA_VERSION == 1', script)
