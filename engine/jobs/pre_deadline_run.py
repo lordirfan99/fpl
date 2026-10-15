@@ -45,6 +45,7 @@ from fpl_client import FPLClient  # noqa: E402
 from atomic_io import atomic_write_json  # noqa: E402
 from competitive_v4_client import CompetitiveV4Error, align_current_squad, fetch_competitive_v4  # noqa: E402
 from decision_explanation import build_decision_summary  # noqa: E402
+from pipeline_health import (PublicationError, publication_failure, publication_health)  # noqa: E402
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36"
 POS_MAP = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
@@ -53,17 +54,29 @@ PREFS_FILE = os.path.join(BASE, "config", "player_prefs.json")
 
 def publish_dashboard_plan(base, plan, team, players, bootstrap, fixtures, *, required=False):
     """Only acknowledge a preview after upload and local verification binding."""
+    stage = "export"
+    def record_health(failure=None):
+        try:
+            os.makedirs(os.path.join(base, "data", "processed"), exist_ok=True)
+            atomic_write_json(os.path.join(base, "data", "processed", "dashboard_publication_status.json"),
+                              publication_health(plan, failure))
+        except Exception:
+            # A diagnostics write failure must not replace the original error.
+            print("private dashboard publication diagnostic could not be persisted")
     try:
         from dashboard_packet import export_plan
         if not export_plan(base, plan, team, players, bootstrap, fixtures):
-            raise RuntimeError("Private dashboard publication is not configured")
+            raise PublicationError("not_configured", stage, "ConfigurationUnavailable")
+        stage = "local_binding"
         atomic_write_json(os.path.join(base, "data", "processed", "dashboard_plan.json"), plan)
+        record_health()
         return True
     except Exception as error:
-        # Never log credentials or request bodies from upstream exceptions.
-        print(f"private dashboard publication failed: {type(error).__name__}")
+        failure = publication_failure(error, stage)
+        record_health(failure)
+        print(str(failure))
         if required:
-            raise RuntimeError("Dashboard preview was not published") from None
+            raise failure from None
         return False
 
 

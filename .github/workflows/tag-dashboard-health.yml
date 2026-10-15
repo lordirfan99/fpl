@@ -1,0 +1,46 @@
+name: release · tag reviewed dashboard health fix
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Dashboard health release tag
+        required: true
+        default: v2026.10.15-dashboard-health
+        type: string
+      release_sha:
+        description: Full merged main commit with successful required CI
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  checks: read
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify immutable source and required CI before tagging
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          [[ "$RELEASE_TAG" =~ ^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}-dashboard-health[a-zA-Z0-9.-]*$ ]]
+          [[ "$RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+          gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_SHA/check-runs?per_page=100" > "$RUNNER_TEMP/health-checks.json"
+          python infra/scripts/check_release_ci.py "$RUNNER_TEMP/health-checks.json"
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$RELEASE_SHA"
+          else
+            git tag "$RELEASE_TAG" "$RELEASE_SHA"
+            # GITHUB_TOKEN avoids triggering the website's tag-push workflow.
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
