@@ -188,13 +188,36 @@ def test_reference_publication_supplies_api_paths_and_provenance(monkeypatch):
     assert published["_meta"]["source"] == "official-fpl-api/bootstrap-static"
 
 
+def test_reference_publication_seeds_atomic_local_api_paths(monkeypatch, tmp_path):
+    import json
+    from types import SimpleNamespace
+    bootstrap = {"elements": [{"id": i, "web_name": f"Player {i}"} for i in range(1, 401)],
+                 "teams": [{"id": i, "name": f"Club {i}"} for i in range(1, 21)],
+                 "events": [{"id": i} for i in range(1, 39)],
+                 "element_types": [{"id": i} for i in range(1, 5)]}
+    fixtures = [{"id": i, "event": 7, "team_h": 1, "team_a": 2, "team_h_difficulty": 2, "team_a_difficulty": 3}
+                for i in range(1, 381)]
+    class Blob:
+        def upload_from_string(self, raw, **kwargs):
+            assert json.loads(raw)
+    bucket = SimpleNamespace(blob=lambda _: Blob())
+    monkeypatch.setattr(collector, "storage", SimpleNamespace(Client=lambda: SimpleNamespace(bucket=lambda _: bucket)))
+    monkeypatch.setattr(collector.live_fpl, "_get", lambda path, **_: bootstrap if path == "bootstrap-static/" else fixtures)
+
+    collector.publish_references("test-bucket", tmp_path)
+
+    for name in ("bootstrap_cache.json", "fixtures_cache.json"):
+        assert json.loads((tmp_path / name).read_text(encoding="utf-8"))
+        assert not list(tmp_path.glob(f".{name}.*.tmp"))
+
+
 def test_references_only_never_collects_leagues(monkeypatch):
     calls = []
     monkeypatch.setattr("sys.argv", ["refresh", "--bucket", "test", "--references-only"])
-    monkeypatch.setattr(collector, "publish_references", lambda bucket: calls.append(bucket))
+    monkeypatch.setattr(collector, "publish_references", lambda bucket, local_data_dir=None: calls.append((bucket, local_data_dir)))
     monkeypatch.setattr(collector, "collect", lambda _: pytest.fail("League collection was requested"))
     assert collector.main() == 0
-    assert calls == ["test"]
+    assert calls == [("test", None)]
 
 
 def test_invalid_reference_does_not_publish(monkeypatch):
