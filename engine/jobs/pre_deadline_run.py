@@ -323,13 +323,17 @@ def main():
     calibration = {}
     sys.path.insert(0, os.path.join(BASE, "model"))
     from fixture_engine import fixtures_by_team_gw
+    from feature_store_v42 import history_by_player, load_event_history
+    from recent_form import VERSION as FORM_VERSION
     from v4_projection import captain_rankings, project_player, select_vice
     from calibration import bias_adjustment, calibration_summary, uncertainty_scale
     fmap = fixtures_by_team_gw(fixtures, gw_ids)
     calibration = calibration_summary(
-        os.path.join(BASE, "data", "processed", "residuals.csv"))
+        os.path.join(BASE, "data", "processed", "residuals_recency_v1.csv"))
     empirical_uncertainty = uncertainty_scale(calibration, min_rows=100)
-    projection_version = "competitive-v4.0"
+    projection_version = "competitive-v4.0-recency-v1"
+    player_history = history_by_player(load_event_history(os.path.join(
+        BASE, "data", "processed", "player_event_history.jsonl")), gw)
     registry_path = os.path.join(BASE, "data", "processed", "model_registry.json")
     try:
         with open(registry_path, encoding="utf-8") as registry_handle:
@@ -341,13 +345,12 @@ def main():
     v42_history = v42_strengths = v42_calibration = None
     if projection_version == "competitive-v4.2":
         from calibration_v42 import calibration_summary as calibration_summary_v42
-        from feature_store_v42 import history_by_player, load_event_history, team_strengths
+        from feature_store_v42 import team_strengths
         from v42_projection import project_player_v42
-        v42_history = history_by_player(load_event_history(os.path.join(
-            BASE, "data", "processed", "player_event_history.jsonl")), gw)
+        v42_history = player_history
         v42_strengths = team_strengths(fixtures, gw)
         v42_calibration = calibration_summary_v42(os.path.join(
-            BASE, "data", "processed", "v42_residuals.csv"))
+            BASE, "data", "processed", "v42_residuals_recency_v1.csv"))
     decision_calibration = v42_calibration if projection_version == "competitive-v4.2" else calibration
     # Rolling per-position bias correction: subtract the mean (predicted-actual)
     # residual from the point estimate. Self-activating (0 until enough data),
@@ -378,11 +381,13 @@ def main():
                 "p_dnp": candidate["p_dnp"], "p_1_59": candidate["p_1_59"],
                 "p_60_plus": candidate["p_60_plus"],
                 "degraded_reasons": candidate["degraded_reasons"],
+                "recent_form": candidate["recent_form"],
             }
         else:
             forecast = project_player(
                 el, fmap, gw_so_far, gw_ids,
-                uncertainty_multiplier=empirical_uncertainty)
+                uncertainty_multiplier=empirical_uncertainty,
+                history=player_history.get(int(el["id"]), []))
 
         adj = bias_by_pos.get(pos, 0.0)
         if adj:
@@ -411,6 +416,7 @@ def main():
             "p_dnp": forecast.get("p_dnp"), "p_1_59": forecast.get("p_1_59"),
             "p_60_plus": forecast.get("p_60_plus"),
             "degraded_reasons": forecast.get("degraded_reasons", []),
+            "recent_form": forecast["recent_form"],
         })
 
     # --- bonus layer (Sol P5: replacement-style additive correction) ---
@@ -1011,11 +1017,12 @@ def main():
     # canonical identity over the FULL plan (execution semantics only)
     plan["plan_id"] = canonical_plan_hash(plan)
     plan["decision_summary"]["plan_id"] = plan["plan_id"]
+    plan["projection_features"] = FORM_VERSION
     source_fp = hashlib.sha256(json.dumps(
         source_manifest, sort_keys=True, separators=(",", ":"), default=str
     ).encode("utf-8")).hexdigest()
     plan["input_fp"] = input_fingerprint(
-        gw, f"competitive-v4.0/{projection_version}", next_gw["deadline_time"],
+        gw, f"competitive-v4.0/{projection_version}/{FORM_VERSION}", next_gw["deadline_time"],
         odds_fp=None,
         settings_fp=settings_fingerprint(settings),
         run_id=run_id, source_fp=source_fp)
@@ -1072,10 +1079,12 @@ def main():
               "p_dnp": p.get("p_dnp"), "p_1_59": p.get("p_1_59"),
               "p_60_plus": p.get("p_60_plus"),
               "xpts_by_gw": p.get("xpts_by_gw"), "variance_by_gw": p.get("variance_by_gw"),
+              "recent_form": p.get("recent_form"),
               "status": p.get("status"), "cop": p.get("cop"), "news": p.get("news")} for p in players]
     atomic_write_json(os.path.join(BASE, "data", "processed", f"predictions_gw{gw}.json"),
                       {"gw": gw, "generated_at": now.isoformat(),
                        "model_version": "competitive-v4.0",
+                       "projection_features": FORM_VERSION,
                        "projection_version": projection_version, "players": preds})
 
     # P0.9: verify the persisted plan before declaring success

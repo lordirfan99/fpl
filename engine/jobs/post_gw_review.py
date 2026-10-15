@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(BASE, "execution"))
 sys.path.insert(0, os.path.join(BASE, "model"))
 from fpl_client import FPLClient
 from feature_store_v42 import event_rows, write_event_rows
+from recent_form import VERSION as FORM_VERSION
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36"
 
@@ -54,6 +55,8 @@ def main():
     gw = max(ev["id"] for ev in finished)
     if len(sys.argv) > 1:
         gw = int(sys.argv[1])
+    if gw not in {int(event["id"]) for event in finished}:
+        raise ValueError(f"GW{gw} is not finished and data-checked")
     print(f"=== POST-GW REVIEW: GW{gw} ===")
 
     live = fetch(f"https://fantasy.premierleague.com/api/event/{gw}/live/")
@@ -75,9 +78,12 @@ def main():
     if not os.path.exists(pred_file):
         print("No predictions file for GW%d - model didn't predict this GW." % gw)
         preds = []
+        prediction_features = None
     else:
         with open(pred_file) as f:
-            preds = json.load(f).get("players", [])
+            prediction_snapshot = json.load(f)
+        preds = prediction_snapshot.get("players", [])
+        prediction_features = prediction_snapshot.get("projection_features")
 
     # metrics
     rows = [(p["xpts"], actual.get(p["id"], 0)) for p in preds if p["id"] in actual]
@@ -135,7 +141,8 @@ def main():
         print("(no plan_gw%d.json snapshot - decision audit skipped)" % gw)
 
     # residuals for retraining
-    res_file = os.path.join(BASE, "data", "processed", "residuals.csv")
+    residual_name = "residuals_recency_v1.csv" if prediction_features == FORM_VERSION else "residuals.csv"
+    res_file = os.path.join(BASE, "data", "processed", residual_name)
     new_rows = []
     for p in preds:
         a = actual.get(p["id"])
@@ -185,7 +192,9 @@ def main():
             })
         if candidate_rows:
             import csv
-            candidate_file = os.path.join(BASE, "data", "processed", "v42_residuals.csv")
+            candidate_name = ("v42_residuals_recency_v1.csv"
+                              if shadow.get("projection_features") == FORM_VERSION else "v42_residuals.csv")
+            candidate_file = os.path.join(BASE, "data", "processed", candidate_name)
             existing = []
             fieldnames = list(candidate_rows[0])
             if os.path.exists(candidate_file):

@@ -10,6 +10,7 @@ import math
 from calibration_v42 import calibrate
 from feature_store_v42 import fixture_factors, player_rates, team_rotation_rate
 from minutes_v42 import forecast_minutes_v42
+from recent_form import attacking_form
 
 
 POS_MAP = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
@@ -61,13 +62,21 @@ def _congested(fixture_map, team, gw):
 
 
 def fixture_projection(element, fixture, history, strengths, *, congestion=False,
-                       team_rotation=0.0):
+                       team_rotation=0.0, attacking_rates=None):
     position = POS_MAP.get(int(element.get("element_type") or 3), "MID")
     minutes = forecast_minutes_v42(element, history, congestion=congestion,
                                    team_rotation=team_rotation)
     if minutes.p_appear <= 0:
         return {"mean": 0.0, "variance": 0.0, "components": {}, "minutes": minutes}
     rates = player_rates(history, PRIORS[position])
+    if attacking_rates is not None:
+        # Preserve this model's exposure shrinkage; only replace the observed
+        # attacking rates, leaving minutes/defence and positional priors intact.
+        exposure = float(rates["sample_minutes"])
+        prior_exposure = float(rates["effective_prior_minutes"])
+        for field, observed in attacking_rates.items():
+            rates[field] = (observed * exposure + PRIORS[position][field] * prior_exposure) / (
+                exposure + prior_exposure)
     factors = fixture_factors(element["team"], fixture, strengths)
     share = minutes.expected_minutes / 90.0
 
@@ -110,14 +119,18 @@ def fixture_projection(element, fixture, history, strengths, *, congestion=False
 
 def project_player_v42(element, fixture_map, gw_ids, history_by_element,
                        strengths, calibration=None):
-    history = list(history_by_element.get(int(element["id"]), []))
+    target_gw = gw_ids[0] if gw_ids else 39
+    history = [row for row in history_by_element.get(int(element["id"]), [])
+               if int(row.get("gw") or 0) < target_gw]
+    attacking_rates, form_evidence = attacking_form(history, target_gw)
     rotation = team_rotation_rate(history_by_element, int(element["team"]))
     per_gw = []
     for gw in gw_ids:
         fixtures = fixture_map.get((gw, int(element["team"])), [])
         congestion = _congested(fixture_map, int(element["team"]), gw)
         rows = [fixture_projection(element, fixture, history, strengths,
-                                   congestion=congestion, team_rotation=rotation)
+                                   congestion=congestion, team_rotation=rotation,
+                                   attacking_rates=attacking_rates)
                 for fixture in fixtures]
         if rows:
             mean = sum(r["mean"] for r in rows)
@@ -177,4 +190,5 @@ def project_player_v42(element, fixture_map, gw_ids, history_by_element,
         "components": {k: round(v, 3) for k, v in per_gw[0][3].items()},
         "calibration_sample": calibration_sample,
         "degraded_reasons": degraded,
+        "recent_form": form_evidence,
     }

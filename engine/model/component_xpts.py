@@ -51,7 +51,8 @@ class XPtsForecast:
         return asdict(self)
 
 
-def fixture_xpts(el, fixture, gw_so_far, odds_multiplier=1.0, congestion=False):
+def fixture_xpts(el, fixture, gw_so_far, odds_multiplier=1.0, congestion=False,
+                 attacking_rates=None):
     """Expected points for ONE fixture.
 
     Bootstrap fields expected_goals/assists/goal_involvements/clean_sheets,
@@ -82,6 +83,11 @@ def fixture_xpts(el, fixture, gw_so_far, odds_multiplier=1.0, congestion=False):
     # Expected-stat fields improve rates when FPL exposes them.
     xg90 = _rate(el.get("expected_goals"), mins)
     xa90 = _rate(el.get("expected_assists"), mins)
+    if attacking_rates is not None:
+        goals90 = attacking_rates["goals_scored"]
+        assists90 = attacking_rates["assists"]
+        xg90 = attacking_rates["expected_goals"]
+        xa90 = attacking_rates["expected_assists"]
     raw_goal_rate = goals90 * 0.55 + xg90 * 0.45
     raw_assist_rate = assists90 * 0.60 + xa90 * 0.40
     goal_rate = _shrink_rate(raw_goal_rate, mins, GOAL_PRIOR_90[pos])
@@ -155,14 +161,15 @@ def fixture_xpts(el, fixture, gw_so_far, odds_multiplier=1.0, congestion=False):
                         {k: round(v, 3) for k, v in comps.items()})
 
 
-def gameweek_xpts(el, fixtures, gw_so_far, odds_multiplier_for_fixture=None, congestion=False):
+def gameweek_xpts(el, fixtures, gw_so_far, odds_multiplier_for_fixture=None, congestion=False,
+                  attacking_rates=None):
     """Aggregate one or many fixtures. Empty list = true BGW xPts 0."""
     if not fixtures:
         return XPtsForecast(0, 0, 0, 0, 0, 0, {})
     forecasts = []
     for fx in fixtures:
         mult = odds_multiplier_for_fixture(fx) if odds_multiplier_for_fixture else 1.0
-        forecasts.append(fixture_xpts(el, fx, gw_so_far, mult, congestion))
+        forecasts.append(fixture_xpts(el, fx, gw_so_far, mult, congestion, attacking_rates))
     components = {}
     for fc in forecasts:
         for k, v in fc.components.items():
