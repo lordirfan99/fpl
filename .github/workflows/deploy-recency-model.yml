@@ -70,5 +70,5 @@ jobs:
         run: |
           set -euo pipefail
           gcloud compute ssh instance-20260412-121200 \
-            --project=irfan-374115 --zone=us-central1-a --quiet --tunnel-through-iap \
+            --project=irfan-374115 --zone=us-central1-a --quiet \
             --command="bash -s -- '$RELEASE_TAG' '$MODE'" < infra/deploy/release-recency-model-remote.sh

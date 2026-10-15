@@ -28,9 +28,11 @@ successfully updated project SSH metadata, then timed out connecting to
 intentionally closed and its existing Tailscale SSH connection works. The Codex
 executor inspected for this handover has `vpn_configured: false`, no TCP grants
 and no operator SSH credential; it cannot reuse the Hermes host's connection.
-[PR #159](https://github.com/lordirfan99/fpl/pull/159) selects an authenticated
-IAP tunnel for the GitHub workflow. Actual IAP/SSH access must still be verified;
-no IAM or firewall changes are part of that transport change. See
+[PR #159](https://github.com/lordirfan99/fpl/pull/159) supplies a guarded wrapper
+for the already-authorized Hermes/operator Tailscale host. Temporary IAP access
+was removed after the outage recovery below, so the GitHub workflow's public
+SSH transport is retained as blocked rather than forcing an unconfigured IAP
+path. No IAM or firewall changes are part of the operator wrapper. See
 [transport notes](../infra/deploy/RECENCY-TRANSPORT.md).
 
 **Identity configuration:** configure an existing VM-authorized deployment service account as
@@ -43,6 +45,11 @@ the actual target VM access before granting additional privileges; no project
 IAM roles were changed by the failed job.
 
 After verifying the selected transport, rerun the same immutable model tag:
+
+For the operator host with the existing Tailscale connection, use
+`bash infra/deploy/deploy-recency-from-operator.sh` from the reviewed checkout.
+It records pre/post state and checks installed bytes against the pinned tag.
+The GitHub command below remains blocked until an authorized transport exists.
 
 ```bash
 gh workflow run deploy-recency-model.yml --ref main \
