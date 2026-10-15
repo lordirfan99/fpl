@@ -22,6 +22,12 @@ def test_failed_staging_is_retryable(tmp_path, failure):
     executable("sudo", 'if [ "$1" = "-u" ]; then shift 2; fi\nexec "$@"\n')
     executable("id", "exit 0\n")
     executable("systemctl", '[ "$1" != is-active ]\n')
+    executable("install", '''args=()
+for arg in "$@"; do
+  case "$arg" in -o|-g) skip=1 ;; fpl) [[ "${skip:-0}" = 1 ]] && { skip=0; continue; } ;; *) skip=0; args+=("$arg") ;; esac
+done
+exec /usr/bin/install "${args[@]}"
+''')
     executable("python3", '''mkdir -p "$3/bin"
 printf '#!/bin/bash\\nexit "${FAIL_PIP:-0}"\\n' > "$3/bin/pip"
 printf '#!/bin/bash\\nif [[ "$*" == *--references-only* ]]; then exit "${FAIL_SEED:-0}"; fi\\nexit 0\\n' > "$3/bin/python"
@@ -47,6 +53,7 @@ chmod +x "$3/bin/"*
     source = Path(__file__).resolve().parents[2] / "infra/deploy/install-live-refresh.sh"
     script = tmp_path / "install.sh"
     script.write_text(source.read_text().replace("/opt/fpl-live-refresh", str(runtime))
+                      .replace("/opt/fpl-scout-api/data", str(tmp_path / "api-data"))
                       .replace("/etc/systemd/system/", str(units) + "/"))
     env = {**os.environ, "PATH": str(fakebin) + os.pathsep + os.environ["PATH"], "FAIL_PIP": "9" if failure == "dependencies" else "0", "FAIL_SEED": "9" if failure == "references" else "0"}
     command = ["bash", str(script), "v-test", "--seed-references"]
