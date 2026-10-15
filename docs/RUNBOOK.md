@@ -21,7 +21,19 @@ The VM installer, public-history backfill and private preview never ran. This
 attempt made no runtime module, account, pending-plan or website changes; retain
 the last known-good runtime references below.
 
-**Resume:** configure an existing VM-authorized deployment service account as
+**Later transport blocker:** operator retries progressed beyond the initial
+permission failure. [Run 38684611919](https://github.com/lordirfan99/fpl/actions/runs/38684611919)
+successfully updated project SSH metadata, then timed out connecting to
+`34.60.216.122:22`. The operator's Hermes handover states that public SSH is
+intentionally closed and its existing Tailscale SSH connection works. The Codex
+executor inspected for this handover has `vpn_configured: false`, no TCP grants
+and no operator SSH credential; it cannot reuse the Hermes host's connection.
+[PR #159](https://github.com/lordirfan99/fpl/pull/159) selects an authenticated
+IAP tunnel for the GitHub workflow. Actual IAP/SSH access must still be verified;
+no IAM or firewall changes are part of that transport change. See
+[transport notes](../infra/deploy/RECENCY-TRANSPORT.md).
+
+**Identity configuration:** configure an existing VM-authorized deployment service account as
 repository variable `GCP_VM_DEPLOY_SERVICE_ACCOUNT`, with the existing WIF
 provider allowed to impersonate it. This keeps the VM identity separate from
 scheduled public-data jobs; the workflow otherwise falls back to the shared
@@ -30,7 +42,7 @@ Authentication alone is not evidence of Compute/SSH/sudo authorization. Verify
 the actual target VM access before granting additional privileges; no project
 IAM roles were changed by the failed job.
 
-Then rerun the same immutable model tag:
+After verifying the selected transport, rerun the same immutable model tag:
 
 ```bash
 gh workflow run deploy-recency-model.yml --ref main \
