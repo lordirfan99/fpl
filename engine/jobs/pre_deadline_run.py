@@ -46,6 +46,7 @@ from atomic_io import atomic_write_json  # noqa: E402
 from competitive_v4_client import CompetitiveV4Error, align_current_squad, fetch_competitive_v4  # noqa: E402
 from decision_explanation import build_decision_summary  # noqa: E402
 from pipeline_health import (PublicationError, publication_failure, publication_health)  # noqa: E402
+from evaluation_capture import (build_capture, capture_path, freeze_capture)  # noqa: E402
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36"
 POS_MAP = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
@@ -1077,6 +1078,7 @@ def main():
     atomic_write_json(os.path.join(BASE, "data", "processed", f"plan_gw{gw}.json"), plan)
 
     preds = [{"id": p["id"], "name": p["name"], "pos": p["position"], "xpts": round(p["xpts"], 2),
+              "ep_next": p.get("ep_next"),
               "floor": p.get("xpts_floor"), "upside": p.get("xpts_upside"),
               "p_start": p.get("p_start"), "expected_minutes": p.get("expected_minutes"),
               "p_dnp": p.get("p_dnp"), "p_1_59": p.get("p_1_59"),
@@ -1084,11 +1086,33 @@ def main():
               "xpts_by_gw": p.get("xpts_by_gw"), "variance_by_gw": p.get("variance_by_gw"),
               "recent_form": p.get("recent_form"),
               "status": p.get("status"), "cop": p.get("cop"), "news": p.get("news")} for p in players]
+    # Canonical evidence is frozen before the deadline and separated by model
+    # plus feature version. Re-running this job cannot rewrite the first capture.
+    with open(os.path.join(BASE, "model", "position_baselines.json"), encoding="utf-8") as baseline_handle:
+        position_baselines = json.load(baseline_handle)
+    bootstrap_by_id = {int(element["id"]): element for element in bootstrap.get("elements", [])}
+    capture_players = []
+    for prediction in preds:
+        enriched = dict(prediction)
+        enriched["ep_next"] = (bootstrap_by_id.get(int(prediction["id"]), {}).get("ep_next"))
+        capture_players.append(enriched)
+    capture = build_capture(
+        gw=gw, deadline=next_gw["deadline_time"], generated_at=now.isoformat(),
+        feature_as_of=now.isoformat(), model_version="competitive-v4.0",
+        feature_version=FORM_VERSION, source_payload={"bootstrap": bootstrap, "fixtures": fixtures},
+        players=capture_players, position_baselines=position_baselines)
+    capture_file = capture_path(os.path.join(BASE, "data", "processed"), gw,
+                                capture["model_version"], capture["projection_features"])
+    stored_capture, created_capture = freeze_capture(capture_file, capture)
+    print("immutable forecast capture %s: %s" %
+          ("created" if created_capture else "preserved", capture_file))
     atomic_write_json(os.path.join(BASE, "data", "processed", f"predictions_gw{gw}.json"),
                       {"gw": gw, "generated_at": now.isoformat(),
                        "model_version": "competitive-v4.0",
                        "projection_features": FORM_VERSION,
-                       "projection_version": projection_version, "players": preds})
+                       "projection_version": projection_version, "players": preds,
+                       "capture_path": capture_file,
+                       "capture_fingerprint": stored_capture["source_fingerprint"]})
 
     # P0.9: verify the persisted plan before declaring success
     try:

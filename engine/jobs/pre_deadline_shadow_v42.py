@@ -21,6 +21,7 @@ from fpl_client import FPLClient
 from horizon_milp import optimize_horizon
 from v42_projection import POS_MAP, project_player_v42
 from recent_form import VERSION as FORM_VERSION
+from evaluation_capture import build_capture, capture_path, freeze_capture
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36"
 
@@ -82,6 +83,7 @@ def main():
         forecast = project_player_v42(element, fmap, gw_ids, history, strengths, calibration)
         players.append({
             "id": int(element["id"]), "name": element["web_name"],
+            "ep_next": element.get("ep_next"),
             "position": POS_MAP.get(int(element.get("element_type") or 3), "MID"),
             "club": int(element["team"]), "cost": int(element["now_cost"]),
             "status": element.get("status"), "news": element.get("news"),
@@ -157,8 +159,23 @@ def main():
     with open(tmp, "w", encoding="utf-8") as handle:
         json.dump(candidate, handle, indent=1)
     os.replace(tmp, path)
+    with open(os.path.join(BASE, "model", "position_baselines.json"), encoding="utf-8") as baseline_handle:
+        position_baselines = json.load(baseline_handle)
+    capture = build_capture(
+        gw=gw, deadline=next_event["deadline_time"], generated_at=now.isoformat(),
+        feature_as_of=now.isoformat(), model_version="competitive-v4.2-shadow",
+        feature_version=FORM_VERSION, source_payload={"bootstrap": bootstrap, "fixtures": fixtures},
+        players=players, position_baselines=position_baselines, source_kind="official-fpl")
+    capture_file = capture_path(os.path.join(BASE, "data", "processed"), gw,
+                                capture["model_version"], capture["projection_features"])
+    _, created_capture = freeze_capture(capture_file, capture)
+    candidate["capture_path"] = capture_file
+    candidate["capture_immutable"] = True
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(candidate, handle, indent=1)
+    os.replace(tmp, path)
     print(f"V4.2 shadow GW{gw}: {len(players)} players, {candidate['history_rows']} history rows, "
-          f"optimizer={'ready' if optimizer else 'degraded'}")
+          f"optimizer={'ready' if optimizer else 'degraded'}, capture={'created' if created_capture else 'preserved'}")
     return 0
 
 
