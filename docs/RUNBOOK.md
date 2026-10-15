@@ -1,5 +1,34 @@
 # Runbook
 
+## V2 mobile dashboard release — 15 October 2026
+
+[PR #152](https://github.com/lordirfan99/fpl/pull/152) passed both required CI jobs
+before merge. Release `v2026.10.15-v2-mobile` identifies main commit
+`f19d3f913480ab6c839739c15bd497701040d78e`. Main CI also passed.
+[Netlify deployment run 38662882636](https://github.com/lordirfan99/fpl/actions/runs/38662882636)
+succeeded at approximately 00:58 UTC; deploy ID `6ad0252053fb6fe4b9905c08`.
+Production: <https://fpl-scout-intelligence.netlify.app>.
+
+Read-only production Chromium verification passed 42 route/viewport observations
+at 1365px, 390px and 320px with no application exceptions or failed interactions.
+Checks covered the homepage redirect, all eight V2 pages, both leagues, archived
+GW6 and missing journal GW7, navigation, manager search, player filtering and
+manager comparison. Phone checks confirmed no horizontal page/table/pitch
+overflow, all eight navigation targets at least 44px tall, all 15 recorded squad
+picks and both elite charts. Production mobile screenshots were visually reviewed.
+Local validation passed the production build, 25 unit tests and 33 static-data
+browser tests, including layout checks at 320/390/768/1280px.
+
+This release changes dashboard presentation only. Public manifest validation,
+private account access and transfer approval behavior remain unchanged; public
+`manifest.json` still reports `writes_enabled: false`. No VM changes were made.
+
+**Rollback:** redeploy the preceding reviewed web tag
+`v2026.10.14-v2-public-verified` (`57f7aac54610559f5e2d9b5d0fa8a8ec51379dce`)
+using `deploy-web.yml` with that tag as the workflow-dispatch ref. The older
+`v2026.10.14-free-static-data` remains the pre-V2 fallback. Keep VM/private-engine
+tags unchanged.
+
 ## This Week simulator release — 7 October 2026
 
 Reviewed [PR #125](https://github.com/lordirfan99/fpl/pull/125) passed both required
@@ -416,7 +445,7 @@ redeploy it. FPL writes remain disabled.
 | VM guest-agent memory guard | `v2026.10.07-outage-recovery` (`a477d33`) | Installed on the active plugin manager; 192 MiB RAM / 64 MiB swap caps verified, OOMScoreAdjust=0, no new OOM kills after reset |
 | Scheduled journal finalizer | `v2026.10.07-journal-recovery` (`1f7360a`) | Tagged finalizer and production monitor passed; five archived weeks verified, both live leagues fresh |
 | API | `v2026.10.07-live-read-cache` (`4f8f1f0`) | Bounded verified live cache installed; production monitor passed under collection; writes disabled; cold-read five-second p95 target remains unmet |
-| dashboard (last verified production rollback baseline) | `v2026.10.14-free-static-data` (`b4a26c9`) | Netlify Pages-backed release restored via GitHub Actions run 38560579059 (rerun successful 14 October). This supersedes the October 7 dashboard tag for web rollback only; the October 7 VM/private engine references remain unchanged. |
+| dashboard (last verified production rollback baseline) | `v2026.10.15-v2-mobile` (`f19d3f9`) | Netlify deploy `6ad0252053fb6fe4b9905c08`, run 38662882636. Verified 42 production browser observations at 320/390/1365px, including mobile navigation, pitch, charts and search. Previous reviewed web tag: `v2026.10.14-v2-public-verified`; VM/private engine references unchanged. |
 | Private dashboard exporter | `v2026.10.07-week-simulator` (`b9ec9f9`) | Scoped file install; verified private packet includes 562 model candidates |
 | VM planning client | `v2026.09.04-current-planning-inputs` (`7fbc39f`) | Existing client retained; authenticated current inputs verified on 7 October |
 | Pre-deadline job | `v2026.10.07-plan-cash-flow` (`cda2ae9`) | Scoped cash-flow gate fix; dashboard-only refresh and fingerprint check succeeded; pending plan unchanged |
