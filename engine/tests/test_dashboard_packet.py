@@ -47,6 +47,8 @@ def test_picks_order_independent_but_lineup_prices_chips_not():
 def test_packet_is_sanitized_canonical_and_does_not_mutate(chip):
     team = account()
     players = [{"id": i, "name": f"P{i}", "position": "MID", "secret": "sentinel"} for i in range(1, 16)]
+    players[0]["recent_form"] = {"version": "recency-v1", "status": "applied",
+                                  "single_haul_dependency": True, "secret": "sentinel"}
     plan = {"plan_id": "original", "gw": 3, "team_id": 2797967, "generated_at": "now", "deadline": "later",
             "chip": chip, "target_starters": players[:11], "bench": players[11:], "transfers": [],
             "captain": {"id": 1}, "vice": {"id": 2}, "secret": "sentinel",
@@ -60,6 +62,7 @@ def test_packet_is_sanitized_canonical_and_does_not_mutate(chip):
     assert packet["chip"] == chip
     assert packet["writes_enabled"] is False
     assert "sentinel" not in json.dumps(packet)
+    assert packet["players"][0]["recent_form"]["single_haul_dependency"] is True
     assert len(packet["starters"] + packet["bench"]) == 15
     assert len(packet["simulation_players"]) == len(players)
     assert packet["simulation_players"][-1]["xpts_by_gw"] == [2.5, None, 0]

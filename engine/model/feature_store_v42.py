@@ -78,7 +78,9 @@ def event_rows(gw, live_payload, elements, captured_at):
             "captured_at": captured_at,
         }
         for field in EVENT_FIELDS:
-            row[field] = stats.get(field, 0)
+            # Missing expected stats are unknown, not an observed attacking
+            # blank. The recent-form layer explicitly falls back in this case.
+            row[field] = stats.get(field, None if field.startswith("expected_") else 0)
         rows.append(row)
     return rows
 

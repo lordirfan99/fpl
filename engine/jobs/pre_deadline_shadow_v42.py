@@ -20,6 +20,7 @@ from fixture_engine import fixtures_by_team_gw
 from fpl_client import FPLClient
 from horizon_milp import optimize_horizon
 from v42_projection import POS_MAP, project_player_v42
+from recent_form import VERSION as FORM_VERSION
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36"
 
@@ -71,7 +72,7 @@ def main():
     strengths = team_strengths(fixtures, gw)
     fmap = fixtures_by_team_gw(fixtures, gw_ids)
     calibration = calibration_summary(
-        os.path.join(BASE, "data", "processed", "v42_residuals.csv")
+        os.path.join(BASE, "data", "processed", "v42_residuals_recency_v1.csv")
     )
 
     players = []
@@ -92,7 +93,7 @@ def main():
             **{key: forecast[key] for key in (
                 "p_dnp", "p_1_59", "p_60_plus", "p_start", "expected_minutes",
                 "confidence", "signals", "components", "calibration_sample",
-                "degraded_reasons")},
+                "degraded_reasons", "recent_form")},
         })
 
     by_id = {p["id"]: p for p in players}
@@ -133,6 +134,7 @@ def main():
         "schema_version": 1,
         "artifact_type": "non_executable_shadow",
         "model_version": "competitive-v4.2-shadow",
+        "projection_features": FORM_VERSION,
         "champion_version": "competitive-v4.0",
         "optimizer_version": "v4.1-shadow" if optimizer else None,
         "gw": gw, "generated_at": now.isoformat(),

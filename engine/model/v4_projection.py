@@ -6,6 +6,7 @@ Betting odds are deliberately not read here; historical odds remain usable
 only by offline research/backtests.
 """
 from component_xpts import gameweek_xpts
+from recent_form import attacking_form
 
 
 def captain_score(player):
@@ -57,8 +58,10 @@ def select_vice(starters, captain, min_start=0.75, min_minutes=65.0):
 
 
 def project_player(element, fixtures_by_gw, gw_so_far, gw_ids,
-                   uncertainty_multiplier=1.0):
-    forecasts = [gameweek_xpts(element, fixtures_by_gw.get((gw, element["team"]), []), gw_so_far)
+                   uncertainty_multiplier=1.0, *, history=None):
+    rates, form_evidence = attacking_form(history, gw_ids[0] if gw_ids else gw_so_far + 1)
+    forecasts = [gameweek_xpts(element, fixtures_by_gw.get((gw, element["team"]), []), gw_so_far,
+                               attacking_rates=rates)
                  for gw in gw_ids]
     means = [f.mean for f in forecasts]
     uncertainty_multiplier = max(0.75, min(1.75, float(uncertainty_multiplier)))
@@ -110,4 +113,5 @@ def project_player(element, fixtures_by_gw, gw_so_far, gw_ids,
         "xpts_by_gw": means, "variance_by_gw": variances,
         "components": first.components, "status": status,
         "cop": element.get("chance_of_playing_next_round"), "news": element.get("news"),
+        "recent_form": form_evidence,
     }

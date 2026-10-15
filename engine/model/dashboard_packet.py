@@ -44,6 +44,8 @@ def make_packet(plan, team, players, bootstrap, fixtures):
             continue
         row = select(p, "id name position club cost xpts xpts_by_gw expected_minutes")
         row["facts"] = select(elements[p["id"]], "minutes starts expected_goals expected_assists expected_goals_conceded defensive_contribution saves status news news_added chance_of_playing_next_round team")
+        if p.get("recent_form"):
+            row["recent_form"] = select(p["recent_form"], "version status sample_gws sample_minutes half_life_gws recent_window_gws recent_weight season_xgi_per90 recent_xgi_per90 adjusted_xgi_per90 best_points_gw best_points_share single_haul_dependency")
         rows.append(row)
     gw = plan["gw"]
     return {

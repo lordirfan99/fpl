@@ -296,6 +296,13 @@ def build_decision_summary(plan, *, squad, final_squad, candidates, starters,
         },
         "roadmap": roadmap,
         "captain_rankings": list(captain_rankings or [])[:3],
+        "player_form": [{"id": player["id"], "name": player.get("name"),
+                         "cost": player.get("cost"),
+                         "xpts_by_gw": player.get("xpts_by_gw", []),
+                         "transferred_out": any(move.get("element_out") == player["id"]
+                                                 for move in transfers),
+                         **player["recent_form"]}
+                        for player in squad if player.get("recent_form")],
         "team_diff": team_diff or {},
         "source_manifest": source_manifest or {},
         "uncertainty": {

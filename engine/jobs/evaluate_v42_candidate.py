@@ -227,12 +227,14 @@ def main():
     with open(os.path.join(BASE, "config", "settings.json"), encoding="utf-8") as handle:
         settings = json.load(handle)
     cfg = settings.get("v42_candidate") or {}
-    champion_rows = _rows(os.path.join(PROCESSED, "residuals.csv"))
-    candidate_rows = _rows(os.path.join(PROCESSED, "v42_residuals.csv"))
+    # A changed feature model cannot inherit promotion evidence from the old
+    # projections. Retain the old CSVs for audit and start a separate cohort.
+    champion_rows = _rows(os.path.join(PROCESSED, "residuals_recency_v1.csv"))
+    candidate_rows = _rows(os.path.join(PROCESSED, "v42_residuals_recency_v1.csv"))
     report = evaluate(champion_rows, candidate_rows, cfg,
                       policy_scores(PROCESSED, candidate_rows))
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    state = {"updated_at": now, **report}
+    state = {"updated_at": now, "projection_features": "recency-v1", **report}
     if args.rollback:
         registry = {"active_projection": "competitive-v4.0",
                     "previous_projection": "competitive-v4.2",

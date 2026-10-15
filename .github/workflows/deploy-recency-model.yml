@@ -1,0 +1,73 @@
+name: release · recency-aware player model
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Reviewed model release tag
+        required: true
+        default: v2026.10.15-model-recency
+        type: string
+      mode:
+        description: Install or restore the saved pre-release modules
+        required: true
+        default: install
+        type: choice
+        options: [install, rollback]
+
+permissions:
+  contents: write
+  actions: read
+  id-token: write
+
+concurrency:
+  group: deploy-private-model
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require reviewed main ancestry and green CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          [[ "$RELEASE_TAG" =~ ^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}-model-recency[a-zA-Z0-9.-]*$ ]]
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            sha=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
+          else
+            test "$MODE" = install
+            sha=$(git rev-parse HEAD)
+          fi
+          git merge-base --is-ancestor "$sha" origin/main
+          gh api "repos/$GITHUB_REPOSITORY/commits/$sha/check-runs?per_page=100" > "$RUNNER_TEMP/model-checks.json"
+          python infra/scripts/check_release_ci.py "$RUNNER_TEMP/model-checks.json"
+          if ! git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            git tag "$RELEASE_TAG" "$sha"
+            # GITHUB_TOKEN tag creation deliberately avoids a website rollout.
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
+          git checkout --detach "$sha"
+      - uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Install reviewed modules and backfill public history
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          gcloud compute ssh instance-20260412-121200 \
+            --project=irfan-374115 --zone=us-central1-a --quiet \
+            --command="bash -s -- '$RELEASE_TAG' '$MODE'" < infra/deploy/release-recency-model-remote.sh
