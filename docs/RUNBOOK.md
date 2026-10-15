@@ -1,5 +1,47 @@
 # Runbook
 
+## Recent-form model — implementation ready, VM deployment blocked (15 October 2026)
+
+Reviewed [PR #156](https://github.com/lordirfan99/fpl/pull/156) adds lagged recent
+attacking evidence to both projection paths, and
+[PR #157](https://github.com/lordirfan99/fpl/pull/157) preserves that evidence when
+the planner binds owned players to authenticated sale prices. Both PRs passed
+required CI before merge. The tagged implementation is
+`v2026.10.15-model-recency`, commit
+`03268bbb8625447b8543461e0d0756caf41ca823`.
+[Main release CI 38675108818](https://github.com/lordirfan99/fpl/actions/runs/38675108818)
+passed both required jobs. Model behavior, evidence and evaluation limits are
+documented in [RECENT_FORM_MODEL.md](RECENT_FORM_MODEL.md).
+
+**Not deployed.** [Deployment run 38675344299](https://github.com/lordirfan99/fpl/actions/runs/38675344299)
+created/verified the tag and authenticated to Google Cloud, but `gcloud compute
+ssh` was denied `compute.instances.get` on
+`projects/irfan-374115/zones/us-central1-a/instances/instance-20260412-121200`.
+The VM installer, public-history backfill and private preview never ran. This
+attempt made no runtime module, account, pending-plan or website changes; retain
+the last known-good runtime references below.
+
+**Resume:** configure an existing VM-authorized deployment service account as
+repository variable `GCP_VM_DEPLOY_SERVICE_ACCOUNT`, with the existing WIF
+provider allowed to impersonate it. This keeps the VM identity separate from
+scheduled public-data jobs; the workflow otherwise falls back to the shared
+`GCP_DEPLOY_SERVICE_ACCOUNT` identity that was denied in the recorded attempt.
+Authentication alone is not evidence of Compute/SSH/sudo authorization. Verify
+the actual target VM access before granting additional privileges; no project
+IAM roles were changed by the failed job.
+
+Then rerun the same immutable model tag:
+
+```bash
+gh workflow run deploy-recency-model.yml --ref main \
+  -f release_tag=v2026.10.15-model-recency -f mode=install
+```
+
+Do not mark this model live until the tagged installer, data-checked backfill,
+dashboard-only preview verification and unchanged pending-plan hash all pass.
+On a successful deployment, record its run and update the relevant known-good
+rows. A website deploy is unnecessary. No FPL transfer approval is implied.
+
 ## Original V1 dashboard restored — 15 October 2026
 
 The owner requested the original V1 experience after reviewing V2.
