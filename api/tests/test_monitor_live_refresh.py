@@ -15,7 +15,7 @@ SPEC.loader.exec_module(monitor)
 
 def fake_success(url):
     pages = {
-        "/": "Your next FPL decision",
+        "/": "This gameweek",
         "/v2": "Your next FPL decision",
         "/v2/league?league=131997": "Complete standings",
         "/v2/elite?league=131997": "The top five percent",
@@ -147,4 +147,15 @@ def test_monitor_rejects_stale_public_capture(monkeypatch):
 
     monkeypatch.setattr(monitor, "fetch", fetch)
     with pytest.raises(RuntimeError, match="data stale"):
+        monitor.main(lightweight=True)
+
+
+def test_monitor_rejects_v2_homepage_after_v1_restore(monkeypatch):
+    def fetch(url, limit):
+        if url == monitor.SITE + "/":
+            return 200, b"Your next FPL decision", {}
+        return fake_success(url)
+
+    monkeypatch.setattr(monitor, "fetch", fetch)
+    with pytest.raises(RuntimeError, match="Dashboard route / did not render"):
         monitor.main(lightweight=True)
