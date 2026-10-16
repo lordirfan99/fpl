@@ -14,7 +14,9 @@ FILES=(model/recent_form.py model/component_xpts.py model/v4_projection.py
        model/decision_explanation.py jobs/pre_deadline_run.py
        jobs/pre_deadline_shadow_v42.py jobs/post_gw_review.py jobs/backfill_player_history.py)
 FILES+=(jobs/evaluate_v42_candidate.py model/evaluation_capture.py
-        model/pipeline_health.py jobs/evaluate_frozen_forecasts.py)
+        model/pipeline_health.py jobs/evaluate_frozen_forecasts.py
+        jobs/fpl_auto.py jobs/telegram_notify.py jobs/project_paths.py
+        model/league_alerts.py)
 WAS_ACTIVE=0
 CHANGES_STARTED=0
 if systemctl is-active --quiet fpl-auto-runner.timer; then WAS_ACTIVE=1; fi
@@ -63,6 +65,6 @@ else
     sudo cmp "engine/$path" "$BASE/$path"
   done
   sudo -u fpl "$BASE/.venv/bin/python" -c \
-    'import sys; sys.path[:0]=["/opt/fpl-autopilot/model","/opt/fpl-autopilot/jobs"]; import recent_form,v4_projection,v42_projection,evaluation_capture,evaluate_frozen_forecasts; assert recent_form.VERSION == "recency-v1"; assert evaluation_capture.SCHEMA_VERSION == 1'
+    'import sys; sys.path[:0]=["/opt/fpl-autopilot/model","/opt/fpl-autopilot/jobs"]; import recent_form,v4_projection,v42_projection,evaluation_capture,evaluate_frozen_forecasts,fpl_auto; assert recent_form.VERSION == "recency-v1"; assert evaluation_capture.SCHEMA_VERSION == 1'
 fi
 echo "Recency model $MODE complete; account and pending plan unchanged."
