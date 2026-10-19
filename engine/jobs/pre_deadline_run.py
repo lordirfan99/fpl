@@ -154,12 +154,13 @@ def load_player_prefs():
     return {"keep": [], "exclude": [], "manual_out": [], "manual_out_gw": None}
 
 
-def active_manual_out(prefs, gw):
-    """Apply a manual-out directive only for its declared gameweek."""
+def active_manual_out(prefs, gw, owned_ids=None):
+    """Apply only a current-owned, explicitly gameweek-scoped manual-out directive."""
     scope = prefs.get("manual_out_gw")
-    if scope is not None and int(scope) != int(gw):
+    if scope is None or int(scope) != int(gw):
         return set()
-    return {int(value) for value in prefs.get("manual_out", [])}
+    requested = {int(value) for value in prefs.get("manual_out", [])}
+    return requested if owned_ids is None else requested & {int(value) for value in owned_ids}
 
 
 def send_telegram_card(text, chat_id, token):
@@ -287,7 +288,8 @@ def main():
         return
     gw = next_gw["id"]
     manual_out_gw = prefs.get("manual_out_gw")
-    manual_out = active_manual_out(prefs, gw)
+    owned_ids = {int(pick["element"]) for pick in (team.get("picks") or [])}
+    manual_out = active_manual_out(prefs, gw, owned_ids)
     if manual_out:
         print(f"prefs: scoped manual-out for GW{gw}: {sorted(manual_out)}")
     gw_so_far = gw - 1
@@ -388,7 +390,8 @@ def main():
                 load_event_history(os.path.join(BASE, "data", "processed", "player_event_history.jsonl")),
                 [el for el in elements if el.get("can_select")],
                 [int(value) for value in gw_ids], fixtures, snapshot_dir,
-            )
+                finalized_gameweeks={int(event["id"]) for event in bootstrap.get("events", [])
+                                     if event.get("finished") and event.get("data_checked")})
             training_rows = next(iter(learned_predictions.values())).get("training_rows", 0) if learned_predictions else 0
             print(f"projection={learned_v5_projection.VERSION} | activation={learned_activation_source} | "
                   f"training_rows={training_rows}")
@@ -739,6 +742,8 @@ def main():
                 template_formation=(competitive_context or {}).get("template_formation"),
                 formation_prior_weight=float(settings.get("v4_formation_prior_weight", 0.0)),
                 captain_mean_only=learned_active,
+                forced_out=manual_out,
+                cash_reward=not learned_active,
                 lineup_max=rebuild_lineup_max,
             )
         except Exception as error:
@@ -941,7 +946,7 @@ def main():
             "training_rows": (next(iter(learned_predictions.values())).get("training_rows", 0)
                               if learned_predictions else 0),
         },
-        "model_version": "learned-v5.0" if learned_active else "competitive-v4.0",
+        "model_version": "competitive-v4.0",
         "chip": active_transfer_chip,
         "chip_gw": gw if active_transfer_chip else None,
         "chip_detected_from_live_fpl": bool(active_transfer_chip),
@@ -992,7 +997,7 @@ def main():
     if competitive_context:
         plan["competitive"] = competitive_context
         plan["competitive"]["candidate_gate"] = template_candidate_gate
-        plan["model_version"] = "learned-v5.0" if learned_active else "competitive-v4.0"
+        plan["model_version"] = "competitive-v4.0"
         plan["engine_display"] = "learned-v5.0" if learned_active else "competitive-v4.0"
         plan["engine_note"] = (
             f"competitive-v4.0 canonical packet • {projection_version} projection • optimizer-v4.1"
@@ -1001,7 +1006,7 @@ def main():
     else:
         # Official projections can still produce a safe team sheet, but the
         # transfer pool remains locked without same-run league context.
-        plan["model_version"] = "learned-v5.0" if learned_active else "competitive-v4.0"
+        plan["model_version"] = "competitive-v4.0"
         plan["engine_display"] = ("learned-v5.0 + optimizer-v4.1" if learned_active
                                    else "competitive-v4.0 + optimizer-v4.1")
         plan["engine_note"] = f"{projection_version} projection + horizon MILP v4.1"
@@ -1192,7 +1197,7 @@ def main():
         capture_players.append(enriched)
     capture = build_capture(
         gw=gw, deadline=next_gw["deadline_time"], generated_at=now.isoformat(),
-        feature_as_of=now.isoformat(), model_version=("learned-v5.0" if learned_active else "competitive-v4.0"),
+        feature_as_of=now.isoformat(), model_version="competitive-v4.0",
         feature_version=("learned-v5.0" if learned_active else FORM_VERSION), source_payload={"bootstrap": bootstrap, "fixtures": fixtures},
         players=capture_players, position_baselines=position_baselines)
     capture_file = capture_path(os.path.join(BASE, "data", "processed"), gw,
@@ -1202,7 +1207,7 @@ def main():
           ("created" if created_capture else "preserved", capture_file))
     atomic_write_json(os.path.join(BASE, "data", "processed", f"predictions_gw{gw}.json"),
                       {"gw": gw, "generated_at": now.isoformat(),
-                       "model_version": ("learned-v5.0" if learned_active else "competitive-v4.0"),
+                       "model_version": "competitive-v4.0",
                        "projection_features": ("learned-v5.0" if learned_active else FORM_VERSION),
                        "projection_version": projection_version, "players": preds,
                        "capture_path": capture_file,

@@ -9,7 +9,13 @@ SHA=$(git rev-parse --verify "refs/tags/$TAG^{commit}")
 [ "$(git rev-parse HEAD)" = "$SHA" ] && [ -z "$(git status --porcelain)" ] || { echo 'clean tagged checkout required' >&2; exit 1; }
 BASE=/opt/fpl-autopilot
 BACKUP=/var/backups/fpl-learned-v5/$SHA
-FILES=(model/learned_v5_projection.py jobs/pre_deadline_run.py)
+FILES=(
+  model/learned_v5_projection.py
+  model/proposal_binding.py
+  optimizer/horizon_milp.py
+  jobs/pre_deadline_run.py
+  jobs/post_gw_review.py
+)
 WAS_ACTIVE=0
 CHANGES_STARTED=0
 PENDING_BEFORE=absent

@@ -15,6 +15,7 @@ from learned_v5_projection import (
 )
 from proposal_binding import canonical_plan_hash
 from pre_deadline_run import active_manual_out
+from post_gw_review import merge_residual_rows, residual_target
 from horizon_milp import _captain_utility
 
 
@@ -88,6 +89,14 @@ def test_future_fixture_adjustment_handles_double_without_future_outcomes(tmp_pa
     assert result["fixture_features"][0]["fdr"] == pytest.approx(2.5)
 
 
+def test_fixture_count_zero_is_zero_forecast(tmp_path):
+    _fixture_archive(tmp_path)
+    history = [_row(gw, element, 4) for gw in range(2, 8) for element in range(1, 11)]
+    result = predict_catalog(history, _snapshot(8), [8, 11], _fixture_rows(), tmp_path / "snapshots")[5]
+    assert result["fixture_features"][1]["fixture_count"] == 0
+    assert result["xpts_by_gw"][1] == 0
+
+
 def test_activation_is_explicit(tmp_path):
     assert activation({}, tmp_path / "missing.json")[0] is False
     assert activation({"learned_model": {"enabled": True, "version": VERSION}})[0] is True
@@ -116,6 +125,17 @@ def test_preference_contract_represents_bruno_out_and_palmer_keep():
     assert prefs["manual_out_gw"] == 8
     assert active_manual_out(prefs, 8) == {426}
     assert active_manual_out(prefs, 9) == set()
+
+
+def test_learned_residuals_are_versioned_and_idempotent(tmp_path):
+    assert residual_target("learned-v5.0") == ("residuals_learned_v5.csv", True)
+    assert residual_target("recency-v1")[0] == "residuals_recency_v1.csv"
+    row = {"gw": 8, "element": 426, "predicted": 4.0}
+    path = tmp_path / "residuals.csv"
+    merge_residual_rows(path, [row], deduplicate=True)
+    merge_residual_rows(path, [dict(row, predicted=9.0)], deduplicate=True)
+    assert path.read_text().count("426") == 1
+    assert "9.0" in path.read_text()
 
 
 def test_learned_captain_objective_is_mean_only():

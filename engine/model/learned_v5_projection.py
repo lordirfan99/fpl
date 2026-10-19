@@ -107,12 +107,14 @@ def load_predeadline_snapshots(directory: str | os.PathLike[str], max_gw: int) -
     return snapshots, fingerprints
 
 
-def _training(history: list[dict[str, Any]], snapshots: dict[int, dict[int, dict[str, Any]]], target_gw: int):
+def _training(history: list[dict[str, Any]], snapshots: dict[int, dict[int, dict[str, Any]]], target_gw: int,
+              finalized_gameweeks: set[int] | None = None):
     actual = {(int(_f(row.get("gw"))), int(_f(row.get("element")))): row for row in history}
     xs: list[list[float]] = []
     ys: list[float] = []
     states: list[int] = []
-    for gw in sorted(gw for gw in snapshots if 2 <= gw < int(target_gw)):
+    eligible_gws = finalized_gameweeks if finalized_gameweeks is not None else set(snapshots)
+    for gw in sorted(gw for gw in snapshots if 2 <= gw < int(target_gw) and gw in eligible_gws):
         for player, snapshot in sorted(snapshots[gw].items()):
             outcome = actual.get((gw, player))
             if outcome is None:
@@ -151,11 +153,14 @@ def _fit(xs: list[list[float]], ys: list[float], states: list[int]):
             model.fit(x[mask], y[mask])
             regressors[state] = model
     residuals = []
-    for index, row in enumerate(x):
-        probability = classifier.predict_proba([row])[0]
-        classes = {int(value): offset for offset, value in enumerate(classifier[-1].classes_)}
-        prediction = sum(probability[classes[state]] * float(regressors[state].predict([row])[0])
-                         if state in regressors else probability[classes[state]] * means[state]
+    probabilities_all = classifier.predict_proba(x)
+    classes = {int(value): offset for offset, value in enumerate(classifier[-1].classes_)}
+    predictions_by_state = {
+        state: regressors[state].predict(x) if state in regressors else np.full(len(x), means[state])
+        for state in range(3)
+    }
+    for index in range(len(x)):
+        prediction = sum(probabilities_all[index, classes[state]] * float(predictions_by_state[state][index])
                          for state in range(3) if state in classes)
         residuals.append(float(y[index] - prediction))
     return classifier, regressors, means, max(0.75, float(np.std(residuals)))
@@ -182,14 +187,14 @@ def _fingerprint(history: list[dict[str, Any]], current: list[dict[str, Any]], s
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
 
 
-def predict_catalog(history: list[dict[str, Any]], current_elements: list[dict[str, Any]], target_gws: list[int], fixtures: list[dict[str, Any]], snapshot_dir: str | os.PathLike[str]) -> dict[int, dict[str, Any]]:
+def predict_catalog(history: list[dict[str, Any]], current_elements: list[dict[str, Any]], target_gws: list[int], fixtures: list[dict[str, Any]], snapshot_dir: str | os.PathLike[str], finalized_gameweeks: set[int] | None = None) -> dict[int, dict[str, Any]]:
     """Fit once, then score the whole catalog for all frozen future GWs."""
     if not target_gws:
         raise LearnedModelUnavailable("learned-v5 received no target gameweeks")
     max_prior = max(2, int(target_gws[0]))
     snapshots, snapshot_fps = load_predeadline_snapshots(snapshot_dir, max_prior)
-    xs, ys, states = _training(history, snapshots, int(target_gws[0]))
-    cache_key = _fingerprint(history, current_elements, snapshot_fps, fixtures, target_gws)
+    xs, ys, states = _training(history, snapshots, int(target_gws[0]), finalized_gameweeks)
+    cache_key = _fingerprint(history, current_elements, snapshot_fps, fixtures, target_gws + sorted(finalized_gameweeks or set()))
     cached = getattr(predict_catalog, "_cache", None)
     if cached and cached[0] == cache_key:
         fitted, training_count, residual_sd = cached[1:]
@@ -214,7 +219,7 @@ def predict_catalog(history: list[dict[str, Any]], current_elements: list[dict[s
         fixture_meta = []
         for gw in target_gws:
             adjustment, count, fdr = _fixture_adjustment(fixtures, int(element.get("team") or 0), int(gw))
-            per_gw.append(round(base * adjustment, 3))
+            per_gw.append(round(base * adjustment * count if count else 0.0, 3))
             fixture_meta.append({"gw": int(gw), "fixture_count": count, "fdr": round(fdr, 3), "adjustment": round(adjustment, 4)})
         mean = per_gw[0]
         variance = max(0.35, residual_sd ** 2 + mean * (1.0 - p_starter) * 1.5)
@@ -226,12 +231,15 @@ def predict_catalog(history: list[dict[str, Any]], current_elements: list[dict[s
             "xpts_variance": round(variance, 3), "variance_by_gw": [round(variance, 3)] * len(per_gw),
             "p_dnp": round(p_dnp, 4), "p_1_59": round(p_cameo, 4), "p_60_plus": round(p_starter, 4),
             "p_start": round(p_starter, 4), "expected_minutes": round(59.0 * p_cameo + 75.0 * p_starter, 2),
-            "confidence": None,
+            "confidence": round(max(0.0, min(1.0, 1.0 / (1.0 + residual_sd))), 4),
             "uncertainty_multiplier": round(residual_sd, 3),
+            "floor": round(max(0.0, mean - residual_sd), 3),
+            "upside": round(mean + residual_sd, 3),
             "model_version": VERSION, "training_rows": training_count,
-            "training_gameweeks": sorted(gw for gw in snapshots if 2 <= gw < int(target_gws[0])),
+            "training_gameweeks": sorted(gw for gw in snapshots if 2 <= gw < int(target_gws[0])
+                                          and (finalized_gameweeks is None or gw in finalized_gameweeks)),
             "fixture_features": fixture_meta,
-            "degraded_reasons": ["confidence_not_reported; residual uncertainty exposed instead"],
+            "degraded_reasons": ["residual uncertainty is in-sample heuristic, not out-of-sample calibrated"],
             "components": {"learned_two_stage": round(mean, 3)},
         }
     return outputs
