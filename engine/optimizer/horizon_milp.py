@@ -32,8 +32,10 @@ def _robust(player: dict[str, Any], week: int, risk_penalty: float) -> float:
     return _mean(player, week) - risk_penalty * math.sqrt(_variance(player, week))
 
 
-def _captain_utility(player: dict[str, Any], week: int) -> float:
-    """Mirror V4's ceiling-aware captain score inside the MILP objective."""
+def _captain_utility(player: dict[str, Any], week: int, *, mean_only: bool = False) -> float:
+    """Return the captain objective; learned-v5 deliberately uses mean only."""
+    if mean_only:
+        return _mean(player, week)
     role_bonus = {"FWD": 0.15, "MID": 0.12, "DEF": 0.0, "GKP": -0.15}.get(
         player.get("position"), 0.0
     )
@@ -103,6 +105,7 @@ def optimize_horizon(current_squad: list[dict[str, Any]],
                      transfer_friction: float = 0.15,
                      template_formation: str | None = None,
                      formation_prior_weight: float = 0.0,
+                     captain_mean_only: bool = False,
                      lineup_max: dict[str, int] | None = None,
                      timeout_seconds: int = 25) -> dict[str, Any]:
     """Solve a legal receding-horizon FPL plan and return JSON-safe evidence."""
@@ -220,7 +223,8 @@ def optimize_horizon(current_squad: list[dict[str, Any]],
             robust = _robust(player, week, risk_penalty)
             mean = _mean(player, week)
             objective.append(weight * robust * lineup[player_id][week])
-            objective.append(weight * _captain_utility(player, week) * captain[player_id][week])
+            objective.append(weight * _captain_utility(
+                player, week, mean_only=captain_mean_only) * captain[player_id][week])
             objective.append(weight * bench_weight * robust
                              * (squad[player_id][week] - lineup[player_id][week]))
         if shape_applied:

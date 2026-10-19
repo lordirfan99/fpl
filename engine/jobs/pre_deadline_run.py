@@ -47,6 +47,7 @@ from competitive_v4_client import CompetitiveV4Error, align_current_squad, fetch
 from decision_explanation import build_decision_summary  # noqa: E402
 from pipeline_health import (PublicationError, publication_failure, publication_health)  # noqa: E402
 from evaluation_capture import (build_capture, capture_path, freeze_capture)  # noqa: E402
+from learned_v5_projection import LearnedModelUnavailable  # noqa: E402
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36"
 POS_MAP = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
@@ -137,7 +138,7 @@ def load_creds():
 
 
 def load_player_prefs():
-    """{keep: [ids], exclude: [ids]} from config/player_prefs.json (safe)."""
+    """Load keep/exclude and a scoped manual-out directive from private prefs."""
     if os.path.exists(PREFS_FILE):
         try:
             with open(PREFS_FILE, encoding="utf-8") as f:
@@ -145,10 +146,20 @@ def load_player_prefs():
             return {
                 "keep": [int(x) for x in d.get("keep", [])],
                 "exclude": [int(x) for x in d.get("exclude", [])],
+                "manual_out": [int(x) for x in d.get("manual_out", [])],
+                "manual_out_gw": int(d["manual_out_gw"]) if d.get("manual_out_gw") is not None else None,
             }
         except Exception:
             pass
-    return {"keep": [], "exclude": []}
+    return {"keep": [], "exclude": [], "manual_out": [], "manual_out_gw": None}
+
+
+def active_manual_out(prefs, gw):
+    """Apply a manual-out directive only for its declared gameweek."""
+    scope = prefs.get("manual_out_gw")
+    if scope is not None and int(scope) != int(gw):
+        return set()
+    return {int(value) for value in prefs.get("manual_out", [])}
 
 
 def send_telegram_card(text, chat_id, token):
@@ -275,6 +286,10 @@ def main():
         print("No upcoming gameweek found - season over?")
         return
     gw = next_gw["id"]
+    manual_out_gw = prefs.get("manual_out_gw")
+    manual_out = active_manual_out(prefs, gw)
+    if manual_out:
+        print(f"prefs: scoped manual-out for GW{gw}: {sorted(manual_out)}")
     gw_so_far = gw - 1
     active_transfer_chip = detected_transfer_chip(team, gw)
     print(f"=== PRE-DEADLINE RUN: GW{gw} (deadline {next_gw['deadline_time']}) ===")
@@ -356,13 +371,53 @@ def main():
     player_history = history_by_player(load_event_history(os.path.join(
         BASE, "data", "processed", "player_event_history.jsonl")), gw)
     registry_path = os.path.join(BASE, "data", "processed", "model_registry.json")
+    learned_predictions = None
+    learned_active = False
+    learned_activation_source = None
     try:
-        with open(registry_path, encoding="utf-8") as registry_handle:
-            registry = json.load(registry_handle)
-        if registry.get("active_projection") == "competitive-v4.2":
-            projection_version = "competitive-v4.2"
-    except (OSError, ValueError, TypeError):
-        pass
+        import learned_v5_projection
+        from learned_v5_projection import activation, predict_catalog
+        learned_active, learned_activation_source = activation(settings, registry_path)
+        if learned_active:
+            learned_cfg = settings.get("learned_model") or {}
+            snapshot_dir = learned_cfg.get(
+                "snapshot_dir", os.path.join(BASE, "data", "processed", "predeadline_snapshots"))
+            if not os.path.isabs(snapshot_dir):
+                snapshot_dir = os.path.join(BASE, snapshot_dir)
+            learned_predictions = predict_catalog(
+                load_event_history(os.path.join(BASE, "data", "processed", "player_event_history.jsonl")),
+                [el for el in elements if el.get("can_select")],
+                [int(value) for value in gw_ids], fixtures, snapshot_dir,
+            )
+            training_rows = next(iter(learned_predictions.values())).get("training_rows", 0) if learned_predictions else 0
+            print(f"projection={learned_v5_projection.VERSION} | activation={learned_activation_source} | "
+                  f"training_rows={training_rows}")
+    except LearnedModelUnavailable as error:
+        print(f"!! LEARNED-V5 ACTIVE BUT UNAVAILABLE - transfers fail closed: {error}")
+        raise SystemExit(1) from error
+    except ImportError as error:
+        if learned_active:
+            print(f"!! LEARNED-V5 ACTIVE BUT DEPENDENCIES UNAVAILABLE - transfers fail closed: {error}")
+            raise SystemExit(1) from error
+    except Exception as error:
+        if learned_active:
+            print(f"!! LEARNED-V5 FIT FAILED - transfers fail closed: {error!r}")
+            raise SystemExit(1) from error
+    if learned_active:
+        projection_version = "learned-v5.0"
+        decision_calibration = {}
+        empirical_uncertainty = 1.0
+    else:
+        projection_version = "competitive-v4.0-recency-v1"
+    registry_path = os.path.join(BASE, "data", "processed", "model_registry.json")
+    if not learned_active:
+        try:
+            with open(registry_path, encoding="utf-8") as registry_handle:
+                registry = json.load(registry_handle)
+            if registry.get("active_projection") == "competitive-v4.2":
+                projection_version = "competitive-v4.2"
+        except (OSError, ValueError, TypeError):
+            pass
     v42_history = v42_strengths = v42_calibration = None
     if projection_version == "competitive-v4.2":
         from calibration_v42 import calibration_summary as calibration_summary_v42
@@ -372,7 +427,8 @@ def main():
         v42_strengths = team_strengths(fixtures, gw)
         v42_calibration = calibration_summary_v42(os.path.join(
             BASE, "data", "processed", "v42_residuals_recency_v1.csv"))
-    decision_calibration = v42_calibration if projection_version == "competitive-v4.2" else calibration
+    decision_calibration = ({ } if learned_active else
+                            v42_calibration if projection_version == "competitive-v4.2" else calibration)
     # Rolling per-position bias correction: subtract the mean (predicted-actual)
     # residual from the point estimate. Self-activating (0 until enough data),
     # shrunk by sample size and hard-capped in calibration.bias_adjustment.
@@ -409,6 +465,17 @@ def main():
                 el, fmap, gw_so_far, gw_ids,
                 uncertainty_multiplier=empirical_uncertainty,
                 history=player_history.get(int(el["id"]), []))
+
+        # learned-v5 is an explicit production mode.  Its one fit is shared by
+        # the whole catalog; no player-level refit or silent V4 fallback is
+        # allowed when activation has been requested.
+        if learned_active:
+            learned = learned_predictions.get(int(el["id"]))
+            if learned is None:
+                print(f"!! LEARNED-V5 missing player {el['id']} - transfers fail closed")
+                raise SystemExit(1)
+            forecast = {**forecast, **learned}
+            forecast["components"] = {**forecast.get("components", {}), **learned["components"]}
 
         adj = bias_by_pos.get(pos, 0.0)
         if adj:
@@ -512,7 +579,7 @@ def main():
 
     # --- keep/exclude preferences (user buttons on the bot) ---
     keep_ids = set(prefs["keep"])
-    exclude_ids = set(prefs["exclude"])
+    exclude_ids = set(prefs["exclude"]) | manual_out
     if keep_ids or exclude_ids:
         names = {p["id"]: p["name"] for p in players}
         print("prefs: keep", [names.get(i, i) for i in sorted(keep_ids)],
@@ -626,6 +693,10 @@ def main():
         if missing_keeps:
             print(f"!! {active_transfer_chip} rebuild conflicts with keep preference(s): {sorted(missing_keeps)}")
             sys.exit(1)
+        missing_manual_out = manual_out & final_ids
+        if missing_manual_out:
+            print(f"!! {active_transfer_chip} rebuild retained forced manual-out player(s): {sorted(missing_manual_out)}")
+            sys.exit(1)
         squad_ids = {p["id"] for p in squad}
         for pos in SQUAD_QUOTA:
             outs = sorted((p for p in squad if p["position"] == pos and p["id"] not in final_ids),
@@ -667,12 +738,17 @@ def main():
                 transfer_friction=float(settings.get("v4_transfer_friction", 0.15)),
                 template_formation=(competitive_context or {}).get("template_formation"),
                 formation_prior_weight=float(settings.get("v4_formation_prior_weight", 0.0)),
+                captain_mean_only=learned_active,
                 lineup_max=rebuild_lineup_max,
             )
         except Exception as error:
             print(f"!! V4.1 HORIZON MILP FAILED - no plan persisted: {error!r}")
             sys.exit(1)
         first_week = horizon_plan["weeks"][0]
+        forced_outs = {int(move.get("element_out")) for move in first_week.get("transfers") or []}
+        if not manual_out.issubset(forced_outs):
+            print(f"!! forced manual-out infeasible for GW{gw}; required={sorted(manual_out)} actual={sorted(forced_outs)}")
+            sys.exit(1)
         first_hits = int(first_week.get("hits") or 0)
         for index, move in enumerate(first_week.get("transfers") or []):
             transfers.append({
@@ -852,10 +928,20 @@ def main():
         ),
         "validation": validation,
         "chip_suggestion": chip_suggestion,
-        "data_note": "Official FPL + calibrated statistical V4; betting odds are not used.",
+        "data_note": ("Official FPL + learned-v5 two-stage model; betting odds are not used."
+                      if learned_active else "Official FPL + calibrated statistical V4; betting odds are not used."),
         "bonus_note": bonus_note,
-        "prefs": {"keep": sorted(keep_ids), "exclude": sorted(exclude_ids)},
-        "model_version": "competitive-v4.0",
+        "prefs": {"keep": sorted(keep_ids), "exclude": sorted(set(prefs["exclude"])),
+                  "manual_out": sorted(manual_out), "manual_out_gw": manual_out_gw},
+        "learned_model": {
+            "active": learned_active, "version": "learned-v5.0" if learned_active else None,
+            "activation": learned_activation_source, "fallback": False if learned_active else True,
+            "training_gameweeks": (next(iter(learned_predictions.values())).get("training_gameweeks", [])
+                                   if learned_predictions else []),
+            "training_rows": (next(iter(learned_predictions.values())).get("training_rows", 0)
+                              if learned_predictions else 0),
+        },
+        "model_version": "learned-v5.0" if learned_active else "competitive-v4.0",
         "chip": active_transfer_chip,
         "chip_gw": gw if active_transfer_chip else None,
         "chip_detected_from_live_fpl": bool(active_transfer_chip),
@@ -870,7 +956,8 @@ def main():
         # approval-side canonical_plan_hash(plan) sees the identical shape)
         "plan_id": None,
         "input_fp": None,
-        "engine_display": "competitive-v4.0 + optimizer-v4.1",
+        "engine_display": ("learned-v5.0 + optimizer-v4.1" if learned_active
+                            else "competitive-v4.0 + optimizer-v4.1"),
         "horizon_plan": horizon_plan,
         "captain_rankings": captain_evidence[:3],
     }
@@ -905,8 +992,8 @@ def main():
     if competitive_context:
         plan["competitive"] = competitive_context
         plan["competitive"]["candidate_gate"] = template_candidate_gate
-        plan["model_version"] = "competitive-v4.0"
-        plan["engine_display"] = "competitive-v4.0"
+        plan["model_version"] = "learned-v5.0" if learned_active else "competitive-v4.0"
+        plan["engine_display"] = "learned-v5.0" if learned_active else "competitive-v4.0"
         plan["engine_note"] = (
             f"competitive-v4.0 canonical packet • {projection_version} projection • optimizer-v4.1"
         )
@@ -914,8 +1001,9 @@ def main():
     else:
         # Official projections can still produce a safe team sheet, but the
         # transfer pool remains locked without same-run league context.
-        plan["model_version"] = "competitive-v4.0"
-        plan["engine_display"] = "competitive-v4.0 + optimizer-v4.1"
+        plan["model_version"] = "learned-v5.0" if learned_active else "competitive-v4.0"
+        plan["engine_display"] = ("learned-v5.0 + optimizer-v4.1" if learned_active
+                                   else "competitive-v4.0 + optimizer-v4.1")
         plan["engine_note"] = f"{projection_version} projection + horizon MILP v4.1"
         plan["competitive"] = {
             "model_version": "competitive-v4.0", "fallback": False,
@@ -952,7 +1040,13 @@ def main():
         "run_id": run_id,
         "projection": {"status": "ready", "version": projection_version,
                        "registry": "owner-approved" if projection_version == "competitive-v4.2"
-                       else "production-default"},
+                       else "explicit-settings" if learned_active else "production-default",
+                       "learned": learned_active,
+                       "training_gameweeks": (next(iter(learned_predictions.values())).get("training_gameweeks", [])
+                                              if learned_predictions else []),
+                       "training_rows": (next(iter(learned_predictions.values())).get("training_rows", 0)
+                                         if learned_predictions else 0),
+                       "fallback": False if learned_active else True},
         "official_fpl": {"status": "ready", "fetched_at": now.isoformat(), "source": "official-fpl-api"},
         "account": {"status": "ready" if len(squad) == 15 and free_transfers_synced else "invalid",
                     "fetched_at": now.isoformat(), "squad_count": len(squad),
@@ -1021,12 +1115,12 @@ def main():
     # canonical identity over the FULL plan (execution semantics only)
     plan["plan_id"] = canonical_plan_hash(plan)
     plan["decision_summary"]["plan_id"] = plan["plan_id"]
-    plan["projection_features"] = FORM_VERSION
+    plan["projection_features"] = "learned-v5.0" if learned_active else FORM_VERSION
     source_fp = hashlib.sha256(json.dumps(
         source_manifest, sort_keys=True, separators=(",", ":"), default=str
     ).encode("utf-8")).hexdigest()
     plan["input_fp"] = input_fingerprint(
-        gw, f"competitive-v4.0/{projection_version}/{FORM_VERSION}", next_gw["deadline_time"],
+        gw, f"competitive-v4.0/{projection_version}/{('learned-v5.0' if learned_active else FORM_VERSION)}", next_gw["deadline_time"],
         odds_fp=None,
         settings_fp=settings_fingerprint(settings),
         run_id=run_id, source_fp=source_fp)
@@ -1098,8 +1192,8 @@ def main():
         capture_players.append(enriched)
     capture = build_capture(
         gw=gw, deadline=next_gw["deadline_time"], generated_at=now.isoformat(),
-        feature_as_of=now.isoformat(), model_version="competitive-v4.0",
-        feature_version=FORM_VERSION, source_payload={"bootstrap": bootstrap, "fixtures": fixtures},
+        feature_as_of=now.isoformat(), model_version=("learned-v5.0" if learned_active else "competitive-v4.0"),
+        feature_version=("learned-v5.0" if learned_active else FORM_VERSION), source_payload={"bootstrap": bootstrap, "fixtures": fixtures},
         players=capture_players, position_baselines=position_baselines)
     capture_file = capture_path(os.path.join(BASE, "data", "processed"), gw,
                                 capture["model_version"], capture["projection_features"])
@@ -1108,8 +1202,8 @@ def main():
           ("created" if created_capture else "preserved", capture_file))
     atomic_write_json(os.path.join(BASE, "data", "processed", f"predictions_gw{gw}.json"),
                       {"gw": gw, "generated_at": now.isoformat(),
-                       "model_version": "competitive-v4.0",
-                       "projection_features": FORM_VERSION,
+                       "model_version": ("learned-v5.0" if learned_active else "competitive-v4.0"),
+                       "projection_features": ("learned-v5.0" if learned_active else FORM_VERSION),
                        "projection_version": projection_version, "players": preds,
                        "capture_path": capture_file,
                        "capture_fingerprint": stored_capture["source_fingerprint"]})

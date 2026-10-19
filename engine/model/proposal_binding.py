@@ -94,7 +94,7 @@ def settings_fingerprint(settings):
             "v4_max_paid_transfers", "v4_transfer_risk_penalty",
             "v4_bench_depth_weight", "v4_captain_min_start",
             "v4_captain_min_minutes", "v4_transfer_friction",
-            "competitive_v4", "league_intelligence"]
+            "competitive_v4", "league_intelligence", "learned_model"]
     blob = {k: settings.get(k) for k in keys if k in settings}
     payload = json.dumps(blob, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
