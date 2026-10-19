@@ -18,8 +18,14 @@ source fingerprint; it is not refit per player.
 - The three-GW forecast uses one current-cutoff catalog and fixture snapshot.
   Future fixture difficulty is a bounded fixed adjustment and preserves doubles;
   no future capture or outcome is copied into features.
-- Residual standard deviation and state probabilities are exposed. `confidence` is
-  intentionally `null`; the release does not fabricate confidence.
+- Residual standard deviation and state probabilities are exposed. Numeric
+  `confidence` is a compatibility heuristic, not a calibrated probability;
+  `degraded_reasons` explicitly labels residual uncertainty as in-sample.
+- Live injury/unavailability and chance-of-playing gates override learned scores.
+- `snapshot_dir` may point at the existing `data/raw` archive: for each training
+  GW the loader selects the last timestamped capture strictly before its deadline.
+  This lets subsequent finalized weeks enter training without manually renaming
+  archives; GW1 remains excluded.
 
 ## Planning and approval safeguards
 
@@ -49,8 +55,9 @@ bash infra/deploy/install-learned-v5-model.sh v2026.10.19-gw8-learned-v5
 bash infra/deploy/install-learned-v5-model.sh v2026.10.19-gw8-learned-v5 --rollback
 ```
 
-The installer is allowlisted to `engine/model/learned_v5_projection.py` and
-`engine/jobs/pre_deadline_run.py`, backs them up under
+The installer allowlists five runtime modules: `learned_v5_projection.py`,
+`proposal_binding.py`, `horizon_milp.py`, `pre_deadline_run.py`, and
+`post_gw_review.py`. It backs them up under
 `/var/backups/fpl-learned-v5/<commit>`, verifies the tag and source hashes, stops
 and restores the auto-runner timer, and checks that `pending_plan.json` and
 `settings.json` hashes are unchanged. It never writes FPL or replaces private

@@ -477,8 +477,7 @@ def main():
             if learned is None:
                 print(f"!! LEARNED-V5 missing player {el['id']} - transfers fail closed")
                 raise SystemExit(1)
-            forecast = {**forecast, **learned}
-            forecast["components"] = {**forecast.get("components", {}), **learned["components"]}
+            forecast = dict(learned)
 
         adj = bias_by_pos.get(pos, 0.0)
         if adj:
@@ -515,7 +514,7 @@ def main():
     # fixture-sim E[bonus] map and applies delta = E[bonus]_2026 - embedded.
     # The ML row-wise model stays diagnostics-only (failed the 5% gate).
     bonus_note = None
-    bonus_enabled = bool(settings.get("bonus_model_enabled", False))
+    bonus_enabled = bool(settings.get("bonus_model_enabled", False)) and not learned_active
     if bonus_enabled:
         try:
             sys.path.insert(0, os.path.join(BASE, "model"))

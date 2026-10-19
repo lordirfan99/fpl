@@ -52,7 +52,7 @@ else
   [ "$free_disk_mb" -ge 300 ] || { echo "insufficient disk: ${free_disk_mb}MiB (need >=300MiB)" >&2; exit 1; }
   sudo "$BASE/.venv/bin/python" -c 'import numpy,scipy; print(numpy.__version__, scipy.__version__)'
   for path in "${FILES[@]}"; do sudo "$BASE/.venv/bin/python" -c 'import ast,sys; ast.parse(open(sys.argv[1],encoding="utf-8").read())' "engine/$path"; done
-  sudo mkdir -p "$BACKUP/model" "$BACKUP/jobs"
+  sudo mkdir -p "$BACKUP/model" "$BACKUP/jobs" "$BACKUP/optimizer"
   for path in "${FILES[@]}"; do
     if ! sudo test -f "$BACKUP/$path" && ! sudo test -f "$BACKUP/$path.absent"; then
       if sudo test -f "$BASE/$path"; then sudo cp -p "$BASE/$path" "$BACKUP/$path"; else sudo touch "$BACKUP/$path.absent"; fi

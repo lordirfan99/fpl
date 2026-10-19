@@ -142,3 +142,33 @@ def test_learned_captain_objective_is_mean_only():
     player = {"position": "DEF", "xpts_by_gw": [5.0], "variance_by_gw": [9.0]}
     assert _captain_utility(player, 0, mean_only=True) == 5.0
     assert _captain_utility(player, 0) > 5.0
+
+
+def test_live_availability_overrides_learned_score(tmp_path):
+    _fixture_archive(tmp_path)
+    history = [_row(gw, element, 4) for gw in range(2, 8) for element in range(1, 11)]
+    current = _snapshot(8)
+    current[4].update(status="i", chance_of_playing_next_round=0)
+    output = predict_catalog(history, current, [8, 9, 10], _fixture_rows(),
+                             tmp_path / "snapshots", finalized_gameweeks={2, 3, 4, 5, 6})
+    assert output[5]["xpts"] == 0
+    assert output[5]["p_start"] == 0
+    assert output[5]["expected_minutes"] == 0
+    assert output[5]["p_dnp"] == 1
+    assert output[1]["training_gameweeks"] == [2, 3, 4, 5, 6]
+    assert output[1]["training_rows"] == 50
+    assert "xpts_floor" in output[1] and "xpts_upside" in output[1]
+    assert output[1]["recent_form"]["version"] == VERSION
+
+
+def test_dated_archive_selects_only_predeadline_snapshot(tmp_path):
+    from learned_v5_projection import load_predeadline_snapshots
+    (tmp_path / "bootstrap-static.json").write_text(json.dumps({"events": [
+        {"id": 2, "deadline_time": "2026-08-28T17:30:00Z"}]}))
+    before = tmp_path / "bootstrap_20260828_1615.json"
+    after = tmp_path / "bootstrap_20260828_1815.json"
+    before.write_text(json.dumps({"elements": _snapshot(2)}))
+    after.write_text(json.dumps({"elements": _snapshot(3)}))
+    snapshots, hashes = load_predeadline_snapshots(tmp_path, 2)
+    assert snapshots[2][1]["minutes"] == 120
+    assert before.name in hashes and after.name not in hashes

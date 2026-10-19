@@ -8,6 +8,7 @@ current-cutoff catalog/fixture snapshot; no future capture or outcome is read.
 from __future__ import annotations
 
 import hashlib
+import datetime as dt
 import json
 import math
 import os
@@ -90,8 +91,23 @@ def load_predeadline_snapshots(directory: str | os.PathLike[str], max_gw: int) -
     root = Path(directory)
     snapshots: dict[int, dict[int, dict[str, Any]]] = {}
     fingerprints: dict[str, str] = {}
+    archive_deadlines = {}
+    current_bootstrap = root / "bootstrap-static.json"
+    if current_bootstrap.is_file():
+        events = json.loads(current_bootstrap.read_text()).get("events", [])
+        archive_deadlines = {int(event["id"]): dt.datetime.fromisoformat(
+            event["deadline_time"].replace("Z", "+00:00")) for event in events}
+    dated = sorted(root.glob("bootstrap_????????_????.json")) if archive_deadlines else []
     for gw in range(2, int(max_gw) + 1):
         path = _snapshot_file(root, gw)
+        if path is None and gw in archive_deadlines:
+            eligible = [candidate for candidate in dated if dt.datetime.strptime(
+                candidate.stem.removeprefix("bootstrap_"), "%Y%m%d_%H%M").replace(
+                    tzinfo=dt.timezone.utc) < archive_deadlines[gw]
+                and (gw - 1 not in archive_deadlines or dt.datetime.strptime(
+                    candidate.stem.removeprefix("bootstrap_"), "%Y%m%d_%H%M").replace(
+                        tzinfo=dt.timezone.utc) >= archive_deadlines[gw - 1])]
+            path = eligible[-1] if eligible else None
         if path is None:
             continue
         raw = path.read_bytes()
@@ -215,6 +231,17 @@ def predict_catalog(history: list[dict[str, Any]], current_elements: list[dict[s
         p_dnp = probabilities[classes[0]] if 0 in classes else 0.0
         p_cameo = probabilities[classes[1]] if 1 in classes else 0.0
         p_starter = probabilities[classes[2]] if 2 in classes else 0.0
+        status = element.get("status", "a")
+        chance = element.get("chance_of_playing_next_round")
+        availability = 1.0 if chance is None else max(0.0, min(1.0, _f(chance) / 100.0))
+        if status not in ("a", "d") or availability < 0.5:
+            availability = 0.0
+        elif status == "d" and chance is None:
+            availability = 0.75
+        base *= availability
+        p_cameo *= availability
+        p_starter *= availability
+        p_dnp = 1.0 - p_cameo - p_starter
         per_gw = []
         fixture_meta = []
         for gw in target_gws:
@@ -233,8 +260,10 @@ def predict_catalog(history: list[dict[str, Any]], current_elements: list[dict[s
             "p_start": round(p_starter, 4), "expected_minutes": round(59.0 * p_cameo + 75.0 * p_starter, 2),
             "confidence": round(max(0.0, min(1.0, 1.0 / (1.0 + residual_sd))), 4),
             "uncertainty_multiplier": round(residual_sd, 3),
-            "floor": round(max(0.0, mean - residual_sd), 3),
-            "upside": round(mean + residual_sd, 3),
+            "xpts_floor": round(max(0.0, mean - residual_sd), 3),
+            "xpts_upside": round(mean + residual_sd, 3),
+            "recent_form": {"version": VERSION, "status": "learned_lagged_features",
+                            "uncertainty": "in_sample_training_residual_heuristic"},
             "model_version": VERSION, "training_rows": training_count,
             "training_gameweeks": sorted(gw for gw in snapshots if 2 <= gw < int(target_gws[0])
                                           and (finalized_gameweeks is None or gw in finalized_gameweeks)),
