@@ -37,6 +37,7 @@ jobs:
           bash -n infra/deploy/install-plan-cash-flow-validation.sh
           bash -n infra/deploy/install-live-read-cache.sh
           bash -n infra/deploy/install-recency-model.sh
+          bash -n infra/deploy/install-learned-v5-model.sh
           bash -n infra/deploy/release-recency-model-remote.sh
           bash -n infra/deploy/deploy-recency-from-operator.sh
           bash -n infra/deploy/install-dashboard-health.sh

@@ -1,0 +1,4 @@
+# Scoped production add-on for learned-v5. Existing NumPy/SciPy are intentionally reused.
+scikit-learn==1.7.2
+joblib==1.5.2
+threadpoolctl==3.6.0

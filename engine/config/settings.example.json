@@ -13,6 +13,11 @@
   "v42_candidate": {
     "shadow_enabled": true
   },
+  "learned_model": {
+    "enabled": true,
+    "version": "learned-v5.0-two-stage-classifier-ridge",
+    "snapshot_dir": "data/processed/predeadline_snapshots"
+  },
   "competitive_v4": {
     "enabled": false,
     "league_id": 0,

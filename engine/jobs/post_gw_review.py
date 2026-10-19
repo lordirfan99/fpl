@@ -38,6 +38,37 @@ def load_settings():
         return json.load(f)
 
 
+def residual_target(projection_features):
+    """Keep learned-v5 calibration rows isolated from legacy residual streams."""
+    if projection_features == "learned-v5.0":
+        return "residuals_learned_v5.csv", True
+    return ("residuals_recency_v1.csv" if projection_features == FORM_VERSION else "residuals.csv"), False
+
+
+def merge_residual_rows(path, new_rows, deduplicate=False):
+    import csv
+    if not new_rows:
+        return 0
+    existing = []
+    fieldnames = list(new_rows[0].keys())
+    if os.path.exists(path):
+        with open(path, newline="", encoding="utf-8") as source:
+            reader = csv.DictReader(source)
+            existing = list(reader)
+            fieldnames = list(dict.fromkeys((reader.fieldnames or []) + fieldnames))
+    if deduplicate:
+        merged = {(int(row["gw"]), int(row["element"])): row for row in existing}
+        merged.update({(int(row["gw"]), int(row["element"])): row for row in new_rows})
+        rows = [merged[key] for key in sorted(merged)]
+    else:
+        rows = existing + new_rows
+    with open(path, "w", newline="", encoding="utf-8") as target:
+        writer = csv.DictWriter(target, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    return len(new_rows)
+
+
 def main():
     settings = load_settings()
     team_id = settings["team_id"]
@@ -141,7 +172,7 @@ def main():
         print("(no plan_gw%d.json snapshot - decision audit skipped)" % gw)
 
     # residuals for retraining
-    residual_name = "residuals_recency_v1.csv" if prediction_features == FORM_VERSION else "residuals.csv"
+    residual_name, learned_residuals = residual_target(prediction_features)
     res_file = os.path.join(BASE, "data", "processed", residual_name)
     new_rows = []
     for p in preds:
@@ -155,19 +186,8 @@ def main():
                          "p_start": p.get("p_start"),
                          "expected_minutes": p.get("expected_minutes")})
     if new_rows:
-        import csv
-        existing = []
-        fieldnames = list(new_rows[0].keys())
-        if os.path.exists(res_file):
-            with open(res_file, newline="", encoding="utf-8") as source:
-                reader = csv.DictReader(source)
-                existing = list(reader)
-                fieldnames = list(dict.fromkeys((reader.fieldnames or []) + fieldnames))
-        with open(res_file, "w", newline="", encoding="utf-8") as target:
-            writer = csv.DictWriter(target, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(existing + new_rows)
-        print(f"appended {len(new_rows)} residuals -> residuals.csv")
+        merge_residual_rows(res_file, new_rows, deduplicate=learned_residuals)
+        print(f"appended {len(new_rows)} residuals -> {residual_name}")
 
     # Score the candidate independently. This cannot alter the live champion.
     shadow_file = os.path.join(BASE, "data", "processed", f"v42_shadow_gw{gw}.json")

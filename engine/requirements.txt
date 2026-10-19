@@ -7,4 +7,5 @@ uvicorn[standard]>=0.30
 pandas>=2.0
 scipy>=1.11
 -r requirements-private-dashboard.txt
+-r requirements-learned-v5.txt
 # camoufox / playwright (OIDC browser login) are runtime-only, not installed in CI

@@ -32,8 +32,10 @@ def _robust(player: dict[str, Any], week: int, risk_penalty: float) -> float:
     return _mean(player, week) - risk_penalty * math.sqrt(_variance(player, week))
 
 
-def _captain_utility(player: dict[str, Any], week: int) -> float:
-    """Mirror V4's ceiling-aware captain score inside the MILP objective."""
+def _captain_utility(player: dict[str, Any], week: int, *, mean_only: bool = False) -> float:
+    """Return the captain objective; learned-v5 deliberately uses mean only."""
+    if mean_only:
+        return _mean(player, week)
     role_bonus = {"FWD": 0.15, "MID": 0.12, "DEF": 0.0, "GKP": -0.15}.get(
         player.get("position"), 0.0
     )
@@ -103,6 +105,9 @@ def optimize_horizon(current_squad: list[dict[str, Any]],
                      transfer_friction: float = 0.15,
                      template_formation: str | None = None,
                      formation_prior_weight: float = 0.0,
+                     captain_mean_only: bool = False,
+                     forced_out: set[int] | None = None,
+                     cash_reward: bool = True,
                      lineup_max: dict[str, int] | None = None,
                      timeout_seconds: int = 25) -> dict[str, Any]:
     """Solve a legal receding-horizon FPL plan and return JSON-safe evidence."""
@@ -120,10 +125,15 @@ def optimize_horizon(current_squad: list[dict[str, Any]],
         raise ValueError(f"lineup_max caps cannot seat 11 players: {caps}")
     protected = {int(value) for value in (protected or set())}
     excluded = {int(value) for value in (excluded or set())}
+    forced_out = {int(value) for value in (forced_out or set())}
+    owned = {int(player["id"]) for player in current_squad}
+    if not forced_out.issubset(owned):
+        raise ValueError("forced_out must be a subset of the current squad")
+    if forced_out & protected:
+        raise ValueError("forced_out conflicts with protected players")
     players = _prune(current_squad, candidates, horizon)
     by_id = {int(player["id"]): player for player in players}
     ids = sorted(by_id)
-    owned = {int(player["id"]) for player in current_squad}
     if not owned.issubset(by_id):
         raise ValueError("candidate pruning removed an owned player")
 
@@ -161,6 +171,8 @@ def optimize_horizon(current_squad: list[dict[str, Any]],
             model += captain[player_id][week] <= lineup[player_id][week]
             if player_id in protected:
                 model += transfer_out[player_id][week] == 0
+            if player_id in forced_out and week == 0:
+                model += transfer_out[player_id][week] == 1
             if player_id in excluded:
                 model += transfer_in[player_id][week] == 0
                 model += lineup[player_id][week] == 0
@@ -220,7 +232,8 @@ def optimize_horizon(current_squad: list[dict[str, Any]],
             robust = _robust(player, week, risk_penalty)
             mean = _mean(player, week)
             objective.append(weight * robust * lineup[player_id][week])
-            objective.append(weight * _captain_utility(player, week) * captain[player_id][week])
+            objective.append(weight * _captain_utility(
+                player, week, mean_only=captain_mean_only) * captain[player_id][week])
             objective.append(weight * bench_weight * robust
                              * (squad[player_id][week] - lineup[player_id][week]))
         if shape_applied:
@@ -230,7 +243,9 @@ def optimize_horizon(current_squad: list[dict[str, Any]],
         objective.append(-weight * 4.0 * hits[week])
         objective.append(-transfer_friction * transfer_count[week])
         objective.append(-0.01 * lost_roll[week])
-    objective.extend([0.01 * cash[horizon - 1], 0.05 * ft[horizon]])
+    if cash_reward:
+        objective.append(0.01 * cash[horizon - 1])
+    objective.append(0.05 * ft[horizon])
     model += pulp.lpSum(objective)
 
     solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=max(5, int(timeout_seconds)))
