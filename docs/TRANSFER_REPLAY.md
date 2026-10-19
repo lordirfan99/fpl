@@ -12,17 +12,27 @@ fixed policy:
   actuals are used for that fallback.
 - New purchases use their archived catalog price. Retained players keep purchase
   price; sale value is `purchase + floor((current - purchase)/2)` for gains and
-  purchase otherwise.
+  current market price otherwise.
 - Catalog candidates must be available (`status == a`, chance not zero). A player
   already held but subsequently unavailable may be retained, but cannot be picked
   in the XI. Legal squads are 2 GKP / 5 DEF / 5 MID / 3 FWD, max three per club;
   XI, autosub, captain and vice-captain are scored from the event history.
 
-The GW2 starting sale ledger is incomplete in the public historical picks payload.
-The replay therefore uses GW3 catalog prices for the actual GW2 15 when setting
-wildcard budget. This is a documented sensitivity, not a claim of exact purchase
-history. Capture filenames/save timestamps are operational provenance rather than
+The public picks payload lacks a purchase ledger. When supplied, the optional
+`initial_purchase_ledger.json` reconstructs initial purchases from GW1 archived
+prices plus official GW2 transfer prices, and checks the GW2 squad identity.
+On this dataset both that ledger and a GW3 market-value sensitivity yield a
+£99.7m wildcard budget. Earlier preseason purchase-price differences remain
+unverified. Without the optional ledger, the replay uses GW3 market valuation.
+Capture filenames/save timestamps are operational provenance rather than
 cryptographic proof of deadline capture. GW7 is excluded because it is unfinished.
+The replay is retrospective development research, not an untouched holdout.
+
+Parent-reviewed rerun: two-stage Bayes scores 34, 73, 71, 51 in GW3–6;
+142 unchanged warmup points + 229 replay points = 371 through GW6, versus
+340 actual. Ridge scores 357 total; archived `ep_next` scores 330. The +100
+request was not achieved. Neither the historical best-model selection nor the
+four-week sample establishes a top-five-percent finish.
 
 ## Reproduce
 

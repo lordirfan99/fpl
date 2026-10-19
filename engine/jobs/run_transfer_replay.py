@@ -83,7 +83,7 @@ def lineup(squad: list[int], predictions: dict[int, float], catalog: dict[int, d
 
 def sale_value(holding: Holding, current_price: int) -> int:
     gain = current_price - holding.purchase
-    return holding.purchase + (gain // 2 if gain > 0 else 0)
+    return holding.purchase + gain // 2 if gain > 0 else current_price
 
 
 def choose_squad(candidates: dict[int, dict[str, Any]], predictions: dict[int, float], budget: int, current: list[int] | None, holdings: dict[int, Holding] | None) -> tuple[list[int], list[int], list[int], int, int, int, int]:
@@ -127,7 +127,8 @@ def choose_squad(candidates: dict[int, dict[str, Any]], predictions: dict[int, f
     xi = [i for i in ids if y[i].value() > 0.5]
     captain = next(i for i in ids if c[i].value() > 0.5)
     vice = max((i for i in xi if i != captain), key=lambda i: (predictions[i], -i))
-    bench = [i for i in squad if i not in xi]
+    bench = sorted((i for i in squad if i not in xi),
+                   key=lambda i: (int(candidates[i]["element_type"]) != 1, -predictions[i], i))
     spent = sum(cost[i] for i in squad)
     if current is None:
         newbank = budget - spent
@@ -141,23 +142,8 @@ def choose_squad(candidates: dict[int, dict[str, Any]], predictions: dict[int, f
 
 
 def score(xi: list[int], bench: list[int], captain: int, vice: int, gw: int, actual: dict[tuple[int, int], dict[str, Any]], positions: dict[int, int]) -> dict[str, Any]:
-    minutes = lambda i: float(actual[(gw, i)]["minutes"])
-    points = lambda i: float(actual[(gw, i)]["total_points"])
-    final = set(xi)
-    subs = []
-    missing = [i for i in xi if minutes(i) == 0]
-    available = [i for i in bench if minutes(i) > 0]
-    for number in range(min(len(missing), len(available)) + 1):
-        for incoming in itertools.combinations(available, number):
-            for outgoing in itertools.combinations(missing, number):
-                candidate = (set(xi) - set(outgoing)) | set(incoming)
-                if legal_xi(list(candidate), {i: {"element_type": positions[i], "team": 0} for i in candidate}):
-                    final = candidate
-                    subs = [list(pair) for pair in zip(outgoing, incoming)]
-        if subs:
-            break
-    effective = captain if minutes(captain) > 0 else vice if minutes(vice) > 0 else None
-    return {"base": sum(points(i) for i in final), "captain_extra": points(effective) if effective else 0.0, "total": sum(points(i) for i in final) + (points(effective) if effective else 0.0), "effective_captain": effective, "subs": subs}
+    from run_model_tournament import score as score_lineup
+    return score_lineup(xi, bench, captain, vice, gw, positions, None, actual)
 
 
 def model_predictions(history: list[dict[str, Any]], gw: int, catalog: dict[int, dict[str, Any]], model: str) -> dict[int, float]:
@@ -169,8 +155,8 @@ def model_predictions(history: list[dict[str, Any]], gw: int, catalog: dict[int,
         values = {int(r["element"]): float(r["predicted"]) for r in predict_ridge(history, gw)}
     else:
         values = {}
-    prior_ids = {int(r["element"]) for r in history if int(r["gw"]) < gw}
-    return {i: values.get(i, NEW_PLAYER_PRIOR[int(row["element_type"])]) for i, row in catalog.items() if i in prior_ids or i not in prior_ids}
+    return {i: values.get(i, NEW_PLAYER_PRIOR[int(row["element_type"])])
+            for i, row in catalog.items()}
 
 
 def run(history_path: pathlib.Path, catalog_dir: pathlib.Path, gw2_path: pathlib.Path, output: pathlib.Path, official_history_path: pathlib.Path | None = None) -> dict[str, Any]:
@@ -192,9 +178,18 @@ def run(history_path: pathlib.Path, catalog_dir: pathlib.Path, gw2_path: pathlib
         # prices for the actual GW2 squad plus the recorded GW2 bank (£1.0m).
         first_raw = {int(r["id"]): r for r in json.loads((catalog_dir / "bootstrap_20260904_1615.json").read_text())["elements"]}
         first_catalog = active_catalog(catalog_dir / "bootstrap_20260904_1615.json")
-        start_budget = 10 + sum(int(first_raw[i]["now_cost"]) for i in squad)
+        start_budget = int(gw2["entry_history"]["bank"]) + sum(int(first_raw[i]["now_cost"]) for i in squad)
+        ledger_path = catalog_dir / "initial_purchase_ledger.json"
+        if ledger_path.exists():
+            ledger = json.loads(ledger_path.read_text())
+            purchases = {int(i): int(price) for i, price in ledger["purchase_prices"].items()}
+            if set(purchases) != set(squad):
+                raise ValueError("starting purchase ledger does not match GW2 squad")
+            start_budget = int(gw2["entry_history"]["bank"]) + sum(
+                sale_value(Holding(purchases[i], purchases[i]), int(first_raw[i]["now_cost"]))
+                for i in squad)
         holdings = {i: Holding(int(first_catalog[i]["now_cost"]), int(first_catalog[i]["now_cost"])) for i in squad if i in first_catalog}
-        bank = 10
+        bank = int(gw2["entry_history"]["bank"])
         rows = []
         cumulative = 142
         for gw in GWS:
@@ -231,11 +226,9 @@ def run(history_path: pathlib.Path, catalog_dir: pathlib.Path, gw2_path: pathlib
                 raise AssertionError(f"GW{gw} legality/cash invariant failed: bank={bank} squad={legal_squad(squad, catalog)} xi={legal_xi(xi, catalog)}")
             positions = {i: int(catalog.get(i, first_raw.get(i))["element_type"]) for i in squad}
             result = score(xi, bench, cap, vice, gw, actual, positions)
-            official_packet = json.loads((catalog_dir.parent.parent / "points-backtest" / f"entry_2797967_event_{gw}_picks_.json").read_text()) if False else None
-            actual_team = None
             rows.append({"gw": gw, "points": result["total"], "xi": xi, "bench": bench, "captain": cap, "vice": vice, "transfer_count": transfer_count, "bank": bank, "squad_cost": spent, "substitutions": result["subs"], "effective_captain": result["effective_captain"]})
             cumulative += result["total"]
-        results[model] = {"model": model, "starting_gw1_2": 142, "rows": rows, "cumulative_gw6": round(cumulative, 6), "delta_to_official_340": round(cumulative - 340, 6), "budget_sensitivity": "GW3 wildcard holdings valued at GW3 catalog prices because historical purchase ledger for all GW2 players is unavailable."}
+        results[model] = {"model": model, "starting_gw1_2": 142, "rows": rows, "cumulative_gw6": round(cumulative, 6), "delta_to_official_340": round(cumulative - 340, 6), "starting_wildcard_budget": start_budget, "budget_sensitivity": ("GW1 archived prices plus official GW2 transfer prices reconstruct starting purchases; any earlier preseason purchase-price differences remain unverified." if ledger_path.exists() else "GW3 market valuation used; starting purchase ledger unavailable.")}
     manifest = {p.name: {"sha256": hashlib.sha256(p.read_bytes()).hexdigest(), "bytes": p.stat().st_size} for p in sorted(catalog_dir.glob("bootstrap_*.json"))}
     out = {"history_sha256": hashlib.sha256(history_path.read_bytes()).hexdigest(), "catalog_manifest": manifest, "models": results, "policy": {"wildcard_gw": 3, "free_transfers": "at most one per GW4-6; no hits; no banked-FT exploit", "availability": "status a and chance_of_playing_next_round != 0", "new_player_prior": NEW_PLAYER_PRIOR, "unfinished_gw_excluded": 7}, "limits": {"capture_note": "Filenames and save timestamps are operational provenance, not cryptographic proof of deadline capture.", "history_max_gw": 6, "history_captured_at_max": max(r["captured_at"] for r in history)}}
     output.parent.mkdir(parents=True, exist_ok=True)
