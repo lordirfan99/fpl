@@ -99,6 +99,20 @@ def test_remote_probe_source_is_deployed_layout_not_repo_layout():
     assert 'credentials.env' not in core._REMOTE_SCRIPT and 'engine.execution' not in core._REMOTE_SCRIPT
 
 
+def test_monitor_no_change_artifact_is_silent(tmp_path):
+    text = '# Cron Job: FPL\n\n**Job ID:** 64db3292a611\n\n**Run Time:** 2026-10-20 18:47:49\n\n**Mode:** monitor\n**Status:** no_change (agent run suppressed)\n'
+    assert bridge.response_json(text) is None
+    outputs = tmp_path / 'outputs'
+    outputs.mkdir()
+    (outputs / 'noop.md').write_text(text)
+    assert bridge.sweep(tmp_path / 'state', outputs, evaluate=False) == []
+    assert bridge.sweep(tmp_path / 'state', outputs, evaluate=False) == []
+    with pytest.raises(core.SidecarError):
+        bridge.response_json(text.replace('no_change (agent run suppressed)', 'failed'))
+    with pytest.raises(core.SidecarError):
+        bridge.response_json('# Cron Job: FPL\n**Status:** no_change (agent run suppressed)')
+
+
 def test_parse_final_response_only():
     payload={'event_key':'real'};text='# Job\n## Prompt\n{"event_key":"wrong"}\n## Response\n\n'+json.dumps(payload)
     assert bridge.response_json(text)==payload

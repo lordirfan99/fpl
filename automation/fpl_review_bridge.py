@@ -13,7 +13,11 @@ import fpl_hybrid_review as core  # noqa: E402
 
 def response_json(text):
     marker='\n## Response\n'
-    if marker not in text:raise core.SidecarError('Cron output has no completed response section')
+    if marker not in text:
+        lines = {line.strip() for line in text.splitlines()}
+        if {'**Mode:** monitor', '**Status:** no_change (agent run suppressed)'} <= lines:
+            return None
+        raise core.SidecarError('Cron output has no completed response section')
     response=text.rsplit(marker,1)[1].strip()
     if response=='[SILENT]':return None
     if response.startswith('```json\n') and response.endswith('\n```'):response=response[8:-4]
