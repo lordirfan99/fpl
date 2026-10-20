@@ -1,170 +1,121 @@
-"""
-FPL Autopilot - post-GW decision audit (attribution).
-
-Separates WHY the GW under/over-performed instead of just reporting points.
-The spec (7 Aug audit) demanded these categories be separated so
-"retraining" is not just accumulating residuals:
-
-  1. bad prediction      - model predicted X, player scored Y (model error)
-  2. bad minutes assumption - player predicted to play (high xPts) who barely
-                           played (minutes < 45 with prediction >= 4)
-  3. captain variance    - captain actual vs best-other-starter actual
-  4. transfer decision   - element_in scored vs element_out scored (net of hit)
-  5. injury after deadline - planned player now flagged injured/unavailable
-  6. bench points        - points left on the bench
-  7. chip outcome        - if a chip was played: projection vs actual
-  8. luck vs process     - aggregate residual: XI actual vs XI predicted
-
-Pure functions, unit-tested. Callers: jobs/post_gw_review.py (live),
-tests (mocked data). Run standalone:
-    .venv/Scripts/python.exe jobs/post_gw_audit.py <gw>
-"""
+"""Post-GW observations: distinguish frozen forecasts from official execution."""
 
 
-def build_audit(plan, actuals, minutes, current_elements, gw_points=None, chip_played=None):
-    """Return an audit dict with per-category findings.
+def captain_context(plan, official_picks=None, chip_played=None):
+    """Use the effective official captain, including vice fallback, when known."""
+    if official_picks is not None:
+        rows = official_picks.get('picks') or []
+        effective = next((p for p in rows if int(p.get('multiplier') or 0) > 1), None)
+        nominated = next((p for p in rows if p.get('is_captain')), None)
+        chosen = effective or nominated
+        return {'id': chosen.get('element') if chosen else None,
+                'multiplier': int(chosen.get('multiplier') or 0) if chosen else 0,
+                'chip': official_picks.get('active_chip'), 'source': 'official_entry_picks'}
+    chip = chip_played if chip_played is not None else plan.get('chip')
+    return {'id': (plan.get('captain') or {}).get('id'),
+            'multiplier': 3 if chip == '3xc' else 2, 'chip': chip,
+            'source': 'planned_only_unverified'}
 
-    plan:   the plan_gw{gw}.json snapshot for the GW (starters, bench,
-            transfers, captain, target_xpts, chip...).
-    actuals:{player_id: FPL points} from event/{gw}/live.
-    minutes:{player_id: minutes played} from the same live payload.
-    current_elements: {player_id: element} from TODAY's bootstrap (post-GW,
-            so post-deadline injuries are visible).
-    gw_points: actual total points scored in the GW (entry history).
-    chip_played: the chip actually used in the GW (from entry picks chips[]),
-            defaults to plan.get("chip").
 
-    Returns {"categories": {...}, "lines": [...], "summary": {...}}.
-    """
-    actuals = actuals or {}
-    minutes = minutes or {}
-    current_elements = current_elements or {}
-    chip_played = chip_played or plan.get("chip")
+def build_audit(plan, actuals, minutes, current_elements, gw_points=None,
+                chip_played=None, official_picks=None):
+    actuals, minutes, current_elements = actuals or {}, minutes or {}, current_elements or {}
     lines = []
-
-    starters = plan.get("target_starters", [])
-    bench = plan.get("bench", [])
-    transfers = plan.get("transfers", [])
-    cap = plan.get("captain") or {}
-    cap_id = cap.get("id")
+    starters, bench, transfers = plan.get('target_starters', []), plan.get('bench', []), plan.get('transfers', [])
+    cap = captain_context(plan, official_picks, chip_played)
+    cap_id, multiplier, chip = cap['id'], cap['multiplier'], cap['chip']
 
     def nm(pid):
-        return current_elements.get(pid, {}).get("web_name", str(pid))
+        return current_elements.get(pid, {}).get('web_name', str(pid))
 
-    # --- 1 + 2: prediction / minutes assumptions on the XI ---
-    bad_pred = []       # predicted >= 5, actual <= 1
-    bad_mins = []       # predicted >= 4, played < 45
-    pred_total = act_total = 0.0
+    bad_pred, bad_mins = [], []
+    pred_total = sum(float(p.get('xpts', 0)) for p in starters)
+    complete = bool(starters) and all(p['id'] in actuals and p['id'] in minutes for p in starters)
+    act_total = sum(float(actuals[p['id']]) for p in starters) if complete else None
     for p in starters:
-        pid = p["id"]
-        pred = float(p.get("xpts", 0))
-        act = float(actuals.get(pid, 0))
-        mins = int(minutes.get(pid, 0) or 0)
-        pred_total += pred
-        act_total += act
-        if pred >= 5.0 and act <= 1.0:
+        pid = p['id']
+        if pid not in actuals or pid not in minutes:
+            continue
+        pred, act, mins = float(p.get('xpts', 0)), float(actuals[pid]), int(minutes[pid])
+        if pred >= 5 and act <= 1:
             bad_pred.append((nm(pid), pred, act, mins))
-        if pred >= 4.0 and mins < 45:
+        if pred >= 4 and mins < 45:
             bad_mins.append((nm(pid), pred, act, mins))
     if bad_pred:
-        lines.append("🔴 Bad predictions: " + ", ".join(
-            f"{n} (pred {p:.1f} -> {a})" for n, p, a, _ in bad_pred))
+        lines.append('🔴 Large forecast misses: '+', '.join(f'{n} (pred {p:.1f} -> {a:g})' for n,p,a,_ in bad_pred))
     if bad_mins:
-        lines.append("⏱️ Bad minutes assumptions: " + ", ".join(
-            f"{n} (pred {p:.1f}, played {m}')" for n, p, _, m in bad_mins))
+        lines.append('⏱️ Minutes shortfalls: '+', '.join(f"{n} (pred {p:.1f}, played {m}')" for n,p,_,m in bad_mins))
 
-    # --- 3: captain ---
-    cap_pts = None
-    cap_line = None
-    if cap_id and cap_id in actuals:
+    cap_pts, cap_line, cap_gap = None, None, None
+    if cap_id in actuals:
         cap_pts = float(actuals[cap_id])
-        best_other = max((float(actuals[p["id"]]) for p in starters if p["id"] != cap_id), default=0.0)
-        cap_diff = cap_pts - best_other
-        if cap_diff < -2.0:
-            cap_line = (f"👑 Captain {nm(cap_id)} scored {cap_pts:.0f} "
-                        f"(armband {cap_pts*2:.0f}); best other starter {best_other:.0f} "
-                        f"({best_other*2:.0f}) - captaincy cost {abs(cap_diff*2):.0f} pts (variance or bad call)")
-        elif cap_diff >= 0:
-            cap_line = f"👑 Captain {nm(cap_id)} scored {cap_pts:.0f} (armband {cap_pts*2:.0f}) - best starter pick ✅"
+        label = 'official' if official_picks is not None else 'planned multiplier; unverified'
+        cap_line = f'👑 Captain {nm(cap_id)}: {cap_pts:g} × {multiplier} = {cap_pts*multiplier:g} pts ({label}); extra over single-count XI base {cap_pts*max(0,multiplier-1):g}'
+        if official_picks is not None:
+            eligible = [p['element'] for p in official_picks.get('picks', [])
+                        if int(p.get('position') or 99) <= 11 and p['element'] != cap_id
+                        and minutes.get(p['element'], 0) > 0 and p['element'] in actuals]
         else:
-            cap_line = f"👑 Captain {nm(cap_id)} scored {cap_pts:.0f} (armband {cap_pts*2:.0f}) - ok"
+            eligible = [p['id'] for p in starters if p['id'] != cap_id and minutes.get(p['id'],0)>0 and p['id'] in actuals]
+        if eligible and multiplier > 1:
+            best_other = max(float(actuals[pid]) for pid in eligible)
+            cap_gap = (cap_pts-best_other)*(multiplier-1)
+            cap_line += f'; extra-captain gap vs best other starting player {cap_gap:+g} pts (hindsight only)'
         lines.append(cap_line)
 
-    # --- 4: transfers ---
     transfer_lines = []
     for t in transfers:
-        pid_in, pid_out = t.get("element_in"), t.get("element_out")
-        a_in = float(actuals.get(pid_in, 0))
-        a_out = float(actuals.get(pid_out, 0))
-        hit = -4.0 if t.get("hit") or t.get("chip_required") and False else 0.0
-        net = a_in - a_out + hit
-        verdict = "✅" if net > 0 else ("🟡" if net == 0 else "❌")
-        transfer_lines.append(f"{verdict} {t.get('out_name', nm(pid_out))} -> {t.get('in_name', nm(pid_in))}: "
-                              f"{a_in:.0f} vs {a_out:.0f} (net {net:+.0f})")
-    if transfer_lines:
-        lines.append("🔄 Transfers: " + " | ".join(transfer_lines))
-
-    # --- 5: injury after deadline ---
-    involved = []
-    for t in transfers:
-        involved.append(t.get("element_in"))
-    for p in starters + bench:
-        involved.append(p.get("id"))
-    injured_after = []
-    for pid in involved:
-        if not pid:
+        incoming, outgoing = t.get('element_in'), t.get('element_out')
+        if incoming not in actuals or outgoing not in actuals:
+            transfer_lines.append('Outcome unavailable for one transfer; not scored')
             continue
+        a_in, a_out = float(actuals[incoming]), float(actuals[outgoing])
+        net = a_in-a_out-(4 if t.get('hit') else 0)
+        transfer_lines.append(f"{t.get('out_name',nm(outgoing))} -> {t.get('in_name',nm(incoming))}: {a_in:g} vs {a_out:g} (net {net:+g}, single GW only)")
+    if transfer_lines:
+        lines.append('🔄 Planned transfers: '+' | '.join(transfer_lines))
+
+    flagged = []
+    for pid in {p['id'] for p in starters+bench}:
         el = current_elements.get(pid, {})
-        if el.get("status") in ("i", "u"):
-            cop = el.get("chance_of_playing_next_round")
-            injured_after.append(f"{nm(pid)} ({el.get('status')}, cop={cop})")
-    if injured_after:
-        lines.append("🏥 Injured after deadline: " + ", ".join(injured_after))
+        if el.get('status') in ('i','u','s'):
+            flagged.append(f"{nm(pid)} ({el.get('status')})")
+    lines.append('🏥 Current availability flags: '+(', '.join(flagged) if flagged else 'none among planned players')+'; injury onset relative to deadline is not verified')
+    bench_pts = sum(float(actuals[p['id']]) for p in bench) if all(p['id'] in actuals for p in bench) else None
+    if bench_pts is not None and bench:
+        top = max(bench,key=lambda p:actuals[p['id']])
+        lines.append(f"🪑 Planned bench raw points: {bench_pts:g} (best: {nm(top['id'])} {actuals[top['id']]:g}); not a recoverable-gain estimate")
+
+    weighted = None
+    if official_picks is not None:
+        picks = official_picks.get('picks') or []
+        if picks and all(p['element'] in actuals for p in picks):
+            weighted = sum(float(actuals[p['element']])*int(p.get('multiplier') or 0) for p in picks)
+            lines.append(f'📋 Official weighted-picks total: {weighted:g} (captain/chip/autosubs included)'
+                         +(f'; entry history {gw_points:g}' if gw_points is not None else ''))
+        lines.append(f"🎩 Official chip: {chip or 'none'}; frozen plan chip: {plan.get('chip') or 'none'}"
+                     +(' — mismatch; activation path requires execution evidence' if chip != plan.get('chip') else ''))
+    elif chip:
+        lines.append(f'🎩 Planned chip: {chip}; official activation not verified')
+    if chip == '3xc' and cap_pts is not None and official_picks is not None:
+        marginal = cap_pts*max(0,multiplier-2)
+        lines.append(f'🎩 Triple Captain incremental points vs normal captain: {marginal:g}; total captain contribution {cap_pts*multiplier:g}')
+
+    residual = act_total-pred_total if act_total is not None else None
+    mae = round(sum(abs(float(actuals[p['id']])-float(p.get('xpts',0))) for p in starters)/len(starters),2) if complete and starters else None
+    verdict = 'outcomes incomplete; attribution unavailable'
+    if residual is not None:
+        verdict = ('below forecast' if residual < 0 else 'above forecast' if residual > 0 else 'equal to forecast')+'; cause undetermined (forecast error and/or match variance)'
+        lines.append(f'📈 Forecast residual: planned XI predicted {pred_total:.1f} vs raw actual {act_total:.1f} ({residual:+.1f}, MAE {mae}) — excludes captain/chip extras and autosubs; {verdict}')
     else:
-        lines.append("🏥 No injuries after deadline in planned players ✅")
-
-    # --- 6: bench points ---
-    bench_pts = sum(float(actuals.get(p["id"], 0)) for p in bench)
-    if bench:
-        top_bench = max((p for p in bench), key=lambda p: float(actuals.get(p["id"], 0)))
-        lines.append(f"🪑 Bench points left: {bench_pts:.0f} "
-                     f"(best: {nm(top_bench['id'])} {float(actuals.get(top_bench['id'], 0)):.0f})")
-
-    # --- 7: chip outcome ---
-    if chip_played:
-        proj = float(plan.get("target_xpts", 0) or 0)
-        actual = float(gw_points) if gw_points is not None else act_total
-        diff = actual - proj
-        lines.append(f"🎩 Chip {chip_played}: projected {proj:.1f}, actual {actual:.1f} ({diff:+.1f})")
-
-    # --- 8: luck vs process (aggregate residual) ---
-    residual = act_total - pred_total
-    mae = round(sum(abs(float(actuals.get(p["id"], 0)) - float(p.get("xpts", 0)))
-                     for p in starters) / max(1, len(starters)), 2)
-    if residual > 8:
-        luck = "outperformed model (+variance/luck)"
-    elif residual < -8:
-        luck = "underperformed model (-variance/luck)"
-    else:
-        luck = "in line with model (process working)"
-    summary = {
-        "xi_predicted": round(pred_total, 1),
-        "xi_actual": round(act_total, 1),
-        "residual": round(residual, 1),
-        "xi_mae": mae,
-        "captain_points": cap_pts,
-        "bench_points": round(bench_pts, 1),
-        "verdict": luck,
-    }
-    lines.append(f"📈 Luck vs process: XI predicted {pred_total:.1f} vs actual {act_total:.1f} "
-                 f"({residual:+.1f}, MAE {mae:.2f}) -> {luck}")
-
-    return {"categories": {
-        "bad_predictions": bad_pred,
-        "bad_minutes": bad_mins,
-        "captain_line": cap_line,
-        "transfers": transfer_lines,
-        "injured_after_deadline": injured_after,
-        "bench_points": round(bench_pts, 1),
-        "chip_outcome": chip_played,
-    }, "lines": lines, "summary": summary}
+        lines.append('📈 Forecast residual unavailable: some official player outcomes are missing')
+    summary = {'xi_predicted':round(pred_total,1),'xi_actual':round(act_total,1) if act_total is not None else None,
+               'residual':round(residual,1) if residual is not None else None,'xi_mae':mae,'captain_points':cap_pts,
+               'captain_multiplier':multiplier,'captain_total_points':cap_pts*multiplier if cap_pts is not None else None,
+               'captain_extra_points':cap_pts*max(0,multiplier-1) if cap_pts is not None else None,
+               'captain_hindsight_gap':cap_gap,'official_weighted_total':weighted,'entry_points':gw_points,
+               'actual_chip':chip if official_picks is not None else None,'planned_chip':plan.get('chip'),
+               'injury_timing_verified':False,'bench_points':bench_pts,'verdict':verdict}
+    return {'categories':{'bad_predictions':bad_pred,'bad_minutes':bad_mins,'captain_line':cap_line,
+                           'transfers':transfer_lines,'injured_after_deadline':flagged,'bench_points':bench_pts,'chip_outcome':chip},
+            'lines':lines,'summary':summary}

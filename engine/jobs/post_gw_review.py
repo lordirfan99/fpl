@@ -9,6 +9,7 @@ FPL Autopilot - post-GW review (after a gameweek closes).
 
 Run: .venv/Scripts/python.exe jobs/post_gw_review.py [gw]
 """
+import argparse
 import json
 import os
 import sys
@@ -69,7 +70,17 @@ def merge_residual_rows(path, new_rows, deduplicate=False):
     return len(new_rows)
 
 
+def history_rows(payload):
+    rows = payload.get("current", payload.get("history", []))
+    return rows if isinstance(rows, list) else []
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("gw", nargs="?", type=int)
+    parser.add_argument("--report-only", action="store_true",
+                        help="Read official results and print audit without changing history, residuals or forecasts")
+    args = parser.parse_args()
     settings = load_settings()
     team_id = settings["team_id"]
     client = FPLClient()
@@ -84,8 +95,8 @@ def main():
         print("No finished and data-checked gameweeks yet.")
         return
     gw = max(ev["id"] for ev in finished)
-    if len(sys.argv) > 1:
-        gw = int(sys.argv[1])
+    if args.gw is not None:
+        gw = args.gw
     if gw not in {int(event["id"]) for event in finished}:
         raise ValueError(f"GW{gw} is not finished and data-checked")
     print(f"=== POST-GW REVIEW: GW{gw} ===")
@@ -101,8 +112,9 @@ def main():
     # and data-checked. The merge is idempotent by (gw, element).
     captured_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     history_file = os.path.join(BASE, "data", "processed", "player_event_history.jsonl")
-    write_event_rows(history_file, event_rows(gw, live, bootstrap["elements"], captured_at))
-    print(f"V4.2 history: official data-checked GW{gw} persisted")
+    if not args.report_only:
+        write_event_rows(history_file, event_rows(gw, live, bootstrap["elements"], captured_at))
+        print(f"V4.2 history: official data-checked GW{gw} persisted")
 
     # predictions
     pred_file = os.path.join(BASE, "data", "processed", f"predictions_gw{gw}.json")
@@ -115,6 +127,7 @@ def main():
             prediction_snapshot = json.load(f)
         preds = prediction_snapshot.get("players", [])
         prediction_features = prediction_snapshot.get("projection_features")
+        print(f"Historical forecast: {prediction_snapshot.get('projection_version', 'unknown')} | features {prediction_features} | captured {prediction_snapshot.get('generated_at', 'unknown')}")
 
     # metrics
     rows = [(p["xpts"], actual.get(p["id"], 0)) for p in preds if p["id"] in actual]
@@ -131,23 +144,39 @@ def main():
 
     # team performance
     team_history = client.entry_history(team_id)
-    hist = team_history.get("history", [])
+    hist = history_rows(team_history)
     cur = next((h for h in hist if h.get("event") == gw), None)
     if cur:
-        print(f"GW{gw} points: {cur.get('points')} | total: {cur.get('total_points')} | rank: {cur.get('rank')} | rank delta: {cur.get('rank_sort')}")
+        previous = max((h for h in hist if int(h.get("event", 0)) < gw),
+                       key=lambda h: int(h["event"]), default={})
+        delta = (int(cur["overall_rank"]) - int(previous["overall_rank"])
+                 if cur.get("overall_rank") is not None and previous.get("overall_rank") is not None else None)
+        hit_cost = int(cur.get("event_transfers_cost") or 0)
+        print(f"GW{gw} official points: {cur.get('points')} | hits: {hit_cost} | net: {int(cur['points'])-hit_cost} | total: {cur.get('total_points')} | overall rank: {cur.get('overall_rank')}")
+        if delta is not None:
+            print(f"Overall rank change: {delta:+d} (positive = dropped)")
     else:
         print("GW%d not in entry history yet" % gw)
 
-    # captain performance from live picks
+    # Historical official picks, not today's team or the frozen proposal, own
+    # the actual chip, autosub and effective-captain multipliers.
+    picks = None
     try:
         picks = client.entry_picks(team_id, gw)
-        pick_map = {p["element"]: p for p in picks.get("picks", [])}
-        cap_el = next((e for e, p in pick_map.items() if p.get("is_captain")), None)
-        if cap_el:
-            cap_pts = actual.get(cap_el, 0)
-            print(f"captain: {els.get(cap_el, {}).get('web_name', cap_el)} scored {cap_pts} -> {2 * cap_pts} pts with armband")
+        if len(picks.get("picks") or []) != 15:
+            raise ValueError("official picks are incomplete")
+        from post_gw_audit import captain_context
+        context = captain_context({}, official_picks=picks)
+        cap_el = context["id"]
+        if cap_el in actual:
+            cap_pts = actual[cap_el]
+            print(f"captain: {els.get(cap_el, {}).get('web_name', cap_el)} scored {cap_pts} x {context['multiplier']} = {context['multiplier'] * cap_pts} pts | official chip: {context['chip'] or 'none'}")
+        if not cur and isinstance(picks.get("entry_history"), dict):
+            cur = picks["entry_history"]
+            print(f"Official picks entry-history fallback: {cur.get('points')} points")
     except Exception as e:
-        print("captain check skipped:", repr(e)[:100])
+        picks = None
+        print("Official captain/chip check unavailable:", type(e).__name__)
 
     # --- decision audit (attribution, 7 Aug feature) ---
     # Separates bad prediction / bad minutes / captain variance / transfer
@@ -162,7 +191,7 @@ def main():
                 plan = json.load(f)
             audit = post_gw_audit.build_audit(
                 plan, actual, minutes, els,
-                gw_points=cur.get("points") if cur else None)
+                gw_points=cur.get("points") if cur else None, official_picks=picks)
             print("\n--- DECISION AUDIT (attribution) ---")
             for ln in audit["lines"]:
                 print("  " + ln)
@@ -170,6 +199,10 @@ def main():
             print("decision audit skipped:", repr(e)[:120])
     else:
         print("(no plan_gw%d.json snapshot - decision audit skipped)" % gw)
+
+    if args.report_only:
+        print("Report-only: no history, residual, shadow or plan files changed; no FPL writes.")
+        return
 
     # residuals for retraining
     residual_name, learned_residuals = residual_target(prediction_features)
