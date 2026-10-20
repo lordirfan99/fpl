@@ -479,7 +479,7 @@ class TestPostGwAudit(unittest.TestCase):
         self.assertEqual(cats["bench_points"], 9)
         self.assertEqual(cats["chip_outcome"], "3xc")
         joined = "\n".join(audit["lines"])
-        self.assertIn("Luck vs process", joined)
+        self.assertIn("Forecast residual", joined)
         self.assertIn("Captain", joined)
 
     def test_luck_summary_numbers(self):
@@ -490,7 +490,7 @@ class TestPostGwAudit(unittest.TestCase):
         self.assertEqual(s["xi_predicted"], 17.0)
         self.assertEqual(s["xi_actual"], 8.0)
         self.assertEqual(s["residual"], -9.0)
-        self.assertIn("underperformed", s["verdict"])
+        self.assertIn("below forecast", s["verdict"])
 
 
 # ---------------------------------------------------------------------------
