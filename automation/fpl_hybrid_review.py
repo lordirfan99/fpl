@@ -1,373 +1,289 @@
 #!/usr/bin/env python3
-"""Read-only, owner-approved FPL hybrid review sidecar.
-
-This module deliberately has no execution client imports. It records advisory
-research bound to an exact model plan and evaluates frozen weekly snapshots.
-"""
+"""Advisory-only FPL research sidecar; never changes the account or pending plan."""
 from __future__ import annotations
-
 import argparse
 import contextlib
 import datetime as dt
 import fcntl
 import hashlib
 import json
+import math
 import os
+from pathlib import Path
 import re
 import subprocess
 import sys
 import tempfile
-import urllib.error
+import time
 import urllib.request
-from pathlib import Path
-from typing import Any
+from urllib.parse import urlparse
 
 UTC = dt.timezone.utc
-DEFAULT_STATE = Path.home() / ".local" / "state" / "fpl-hybrid-review"
-PUBLIC_BASE = "https://fantasy.premierleague.com/api"
-_ALLOWED_SUGGESTIONS = {"retain", "recalculate", "request_approval", "hold"}
-_ALLOWED_VERDICTS = {"agree", "disagree", "insufficient_evidence"}
-
+DEFAULT_STATE = Path.home()/'.local/state/fpl-hybrid-review'
+PUBLIC_BASE = 'https://fantasy.premierleague.com/api'
 
 class SidecarError(RuntimeError):
-    """A visible, safe failure; callers must not fall back to stale state."""
+    pass
 
+def clock():
+    return dt.datetime.now(UTC)
 
-def now() -> str:
-    return dt.datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+def stamp(value=None):
+    return (value or clock()).isoformat()
 
-
-def sha(value: Any) -> str:
-    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
-
-
-def read_json(path: Path) -> Any:
+def parsed(value):
     try:
-        with path.open(encoding="utf-8") as fh:
-            return json.load(fh)
-    except (OSError, json.JSONDecodeError) as exc:
-        raise SidecarError(f"invalid or unreadable JSON: {path}") from exc
+        result = dt.datetime.fromisoformat(str(value).replace('Z','+00:00'))
+        assert result.tzinfo is not None
+        return result.astimezone(UTC)
+    except (ValueError, TypeError, AssertionError) as e:
+        raise SidecarError('Missing or invalid timezone-aware timestamp') from e
 
+def sha(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',',':'), allow_nan=False).encode()).hexdigest()
 
-def atomic_json(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    os.chmod(path.parent, 0o700)
-    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+def read_json(path):
+    return json.loads(Path(path).read_text())
+
+def atomic_json(path, value):
+    path = Path(path); path.parent.mkdir(parents=True,exist_ok=True); path.parent.chmod(0o700)
+    fd, temporary = tempfile.mkstemp(dir=path.parent,prefix='.'+path.name)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(value, fh, indent=2, sort_keys=True)
-            fh.write("\n")
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
+        with os.fdopen(fd,'w') as f:
+            json.dump(value,f,sort_keys=True,indent=2,allow_nan=False); f.write('\n')
+        os.chmod(temporary,0o600); os.replace(temporary,path)
     finally:
-        with contextlib.suppress(FileNotFoundError):
-            os.unlink(tmp)
-
+        with contextlib.suppress(FileNotFoundError): os.unlink(temporary)
 
 @contextlib.contextmanager
-def locked(state: Path):
-    state.mkdir(parents=True, exist_ok=True)
-    os.chmod(state, 0o700)
-    with (state / ".lock").open("a+", encoding="utf-8") as fh:
-        os.chmod(state / ".lock", 0o600)
-        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
-        yield
+def locked(state):
+    state=Path(state); state.mkdir(parents=True,exist_ok=True); state.chmod(0o700)
+    with (state/'.lock').open('a') as f:
+        os.chmod(state/'.lock',0o600); fcntl.flock(f,fcntl.LOCK_EX); yield
 
+def retry(function):
+    for attempt in range(2):
+        try: return function()
+        except (OSError, ValueError, subprocess.SubprocessError):
+            if attempt: raise
+            time.sleep(0.5)
 
-def compact(value: Any) -> Any:
-    """Remove volatile timestamps and secrets before fingerprinting/output."""
-    if isinstance(value, dict):
-        return {k: compact(v) for k, v in value.items() if k.lower() not in {"capturedat", "captured_at", "checked_at", "updated_at", "timestamp", "token", "password", "cookie", "authorization"}}
-    if isinstance(value, list):
-        return [compact(v) for v in value]
-    return value
-
-
-def _safe_remote_env() -> tuple[str, str, str]:
-    host = os.environ.get("FPL_REVIEW_SSH_HOST", "100.72.109.7")
-    user = os.environ.get("FPL_REVIEW_SSH_USER", "irfan")
-    identity = os.environ.get("FPL_REVIEW_SSH_IDENTITY", str(Path.home() / ".ssh" / "pc_irfan_key"))
-    if not re.fullmatch(r"[A-Za-z0-9_.@:-]+", host) or not re.fullmatch(r"[A-Za-z0-9_.-]+", user):
-        raise SidecarError("unsafe SSH host/user configuration")
-    if not os.path.isabs(identity) or not os.path.exists(identity):
-        raise SidecarError("SSH identity is missing or not an absolute local path")
-    return host, user, identity
-
-
-_REMOTE_SCRIPT = r'''import json, os
-root = "/opt/fpl-autopilot"
-out = {}
-for name in ("pending_plan.json", "dashboard_plan.json"):
-    path = os.path.join(root, name)
-    try:
-        with open(path, encoding="utf-8") as f: out[name] = json.load(f)
-    except FileNotFoundError: pass
-    except Exception as e: out[name] = {"error": type(e).__name__}
-try:
-    import sys
-    sys.path.insert(0, root)
-    from engine.execution.fpl_client import FPLClient
-    team_id = int(os.environ["FPL_REVIEW_ENTRY"])
-    out["account"] = FPLClient().my_team(team_id)
-except Exception as e:
-    out["account_error"] = type(e).__name__
-print(json.dumps(out, separators=(",", ":")))
+_REMOTE_SCRIPT = '''import sys,json,datetime,pathlib
+B=pathlib.Path('/opt/fpl-autopilot');sys.path.insert(0,str(B/'execution'))
+from fpl_client import FPLClient
+out={'captured_at':datetime.datetime.now(datetime.timezone.utc).isoformat()}
+for name in ['pending_plan.json','dashboard_plan.json']:
+ p=B/'data/processed'/name
+ if p.exists():out[name]=json.loads(p.read_text())
+t=FPLClient().my_team(ENTRY)
+out['account']={'picks':t['picks'],'transfers':t['transfers']}
+print(json.dumps(out))
 '''
 
-
-def remote_probe(entry: int, timeout: int = 25) -> dict[str, Any]:
-    host, user, identity = _safe_remote_env()
-    # Do not forward the agent's environment (which may contain unrelated secrets).
-    env = {"FPL_REVIEW_ENTRY": str(entry), "PATH": os.environ.get("PATH", "/usr/bin:/bin")}
-    command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-i", identity, f"{user}@{host}", "/opt/fpl-autopilot/.venv/bin/python", "-"]
-    try:
-        result = subprocess.run(command, input=_REMOTE_SCRIPT, text=True, capture_output=True, timeout=timeout, check=True, env=env)
-        data = json.loads(result.stdout)
-    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
-        raise SidecarError("read-only SSH probe failed") from exc
-    if not isinstance(data, dict) or "account_error" in data:
-        raise SidecarError("remote source missing a fresh account snapshot")
-    return data
-
-
-def public_json(path: str, timeout: int = 20) -> Any:
-    request = urllib.request.Request(f"{PUBLIC_BASE}/{path.lstrip('/')}", headers={"User-Agent": "fpl-hybrid-review/1"})
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return json.load(response)
-    except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
-        raise SidecarError(f"official public source failed: {path}") from exc
-
-
-def plan_from_probe(probe: dict[str, Any], gw: int) -> tuple[dict[str, Any], str]:
-    candidates = []
-    for name in ("pending_plan.json", "dashboard_plan.json"):
-        item = probe.get(name)
-        if isinstance(item, dict) and item.get("gameweek") in (gw, str(gw)) and not item.get("error"):
-            candidates.append((name, item))
-    if not candidates:
-        raise SidecarError("no fresh same-gameweek pending/dashboard plan")
-    # Pending is preferred because it is the canonical actionable artifact.
-    name, plan = next(((n, p) for n, p in candidates if n == "pending_plan.json"), candidates[0])
-    if not plan.get("plan_id") and not plan.get("id"):
-        raise SidecarError("plan has no exact plan id")
-    return plan, "pending_executed" if name == "pending_plan.json" and plan.get("executed") else ("pending" if name == "pending_plan.json" else "dashboard_preview")
-
-
-def public_snapshot(plan: dict[str, Any], include_summaries: bool = False) -> dict[str, Any]:
-    """Capture only model-owned/target players, not the entire public catalogue."""
-    bootstrap = public_json("bootstrap-static/")
-    if not isinstance(bootstrap, dict):
-        raise SidecarError("official bootstrap has invalid shape")
-    picks = plan.get("picks") or plan.get("lineup") or []
-    ids = {int(p.get("element", p.get("id"))) for p in picks if isinstance(p, dict) and str(p.get("element", p.get("id", ""))).isdigit()}
-    elements = [e for e in bootstrap.get("elements", []) if isinstance(e, dict) and e.get("id") in ids]
-    fixtures = public_json("fixtures/")
-    result: dict[str, Any] = {"elements": elements, "fixtures": fixtures if isinstance(fixtures, list) else []}
-    if include_summaries:
-        result["element_summaries"] = {str(pid): public_json(f"element-summary/{pid}/") for pid in sorted(ids)}
+def remote_probe(entry):
+    host=os.environ.get('FPL_REVIEW_SSH_HOST','100.72.109.7'); user=os.environ.get('FPL_REVIEW_SSH_USER','irfan')
+    identity=os.environ.get('FPL_REVIEW_SSH_IDENTITY',str(Path.home()/'.ssh/pc_irfan_key'))
+    if not re.fullmatch(r'[A-Za-z0-9_.:-]+',host) or not re.fullmatch(r'[A-Za-z0-9_.-]+',user): raise SidecarError('Invalid SSH identity configuration')
+    if not Path(identity).is_absolute() or not Path(identity).is_file(): raise SidecarError('SSH identity unavailable')
+    command=['ssh','-o','BatchMode=yes','-o','IdentitiesOnly=yes','-o','ConnectTimeout=8','-i',identity,f'{user}@{host}',
+             'cd /opt/fpl-autopilot && sudo -u fpl env HOME=/home/fpl FPL_AUTOPILOT_HOME=/opt/fpl-autopilot .venv/bin/python -']
+    def fetch():
+        result=subprocess.run(command,input=_REMOTE_SCRIPT.replace('ENTRY',str(int(entry))),text=True,capture_output=True,timeout=20,check=True)
+        return json.loads(result.stdout)
+    result=retry(fetch)
+    if abs((clock()-parsed(result['captured_at'])).total_seconds())>180: raise SidecarError('Remote account capture is stale')
+    if len(result.get('account',{}).get('picks',[]))!=15: raise SidecarError('Authenticated account must have 15 picks')
     return result
 
+def public_json(path):
+    def fetch():
+        req=urllib.request.Request(PUBLIC_BASE+'/'+path.lstrip('/'),headers={'User-Agent':'FPL-hybrid-review/1'})
+        with urllib.request.urlopen(req,timeout=12) as r:return json.load(r)
+    return retry(fetch)
 
-def snapshot(probe: dict[str, Any], plan: dict[str, Any], source_kind: str, gw: int, entry: int) -> dict[str, Any]:
-    account = probe.get("account")
-    if not isinstance(account, dict):
-        raise SidecarError("account snapshot is missing")
-    return {"gameweek": gw, "entry": entry, "plan_id": plan.get("plan_id", plan.get("id")), "source_kind": source_kind,
-            "plan": plan, "account": {k: account[k] for k in ("picks", "bank", "transfers", "transfers_available") if k in account},
-            "captured_at": now()}
+def choose_plan(probe,gw,at):
+    candidates=[]
+    for name in ['pending_plan.json','dashboard_plan.json']:
+        p=probe.get(name)
+        if not isinstance(p,dict) or p.get('gw')!=gw:continue
+        generated=parsed(p.get('generated_at'))
+        if -300 <= (at-generated).total_seconds() <= 6*3600 and re.fullmatch('[0-9a-f]{64}',str(p.get('plan_id',''))):
+            candidates.append((generated,name,p))
+    if not candidates:raise SidecarError('No fresh same-GW model plan (maximum age 6h)')
+    _,name,p=max(candidates,key=lambda row:row[0])
+    kind='dashboard_preview' if name=='dashboard_plan.json' else ('pending_executed' if p.get('status')=='executed' else 'pending')
+    return p,kind
 
+def scoring_module():
+    sys.path.insert(0,str(Path(__file__).parent))
+    import fpl_review_scoring
+    return fpl_review_scoring
 
-def event_key(snap: dict[str, Any]) -> str:
-    stable = compact(snap)
-    return f"gw{snap['gameweek']}:{snap['plan_id']}:{sha(stable)[:16]}"
+def metadata(elements):
+    return {int(e['id']):{'position':int(e['element_type']),'club':int(e['team'])} for e in elements}
 
+def normalize_plan(plan):
+    order={'GKP':1,'DEF':2,'MID':3,'FWD':4}
+    starters=sorted(plan['target_starters'],key=lambda p:order[p['position']])
+    bench=plan['bench']; keepers=[p for p in bench if p['position']=='GKP']; outfield=[p for p in bench if p['position']!='GKP']
+    rows=starters+keepers+outfield
+    return {'picks':[{'element':p['id'],'position':i+1,'is_captain':p['id']==plan['captain']['id'],'is_vice_captain':p['id']==plan['vice']['id']} for i,p in enumerate(rows)],
+            'hit_cost':4*sum(bool(t.get('hit')) for t in plan.get('transfers',[])), 'chip':plan.get('chip')}
 
-def changed_events(previous: dict[str, Any] | None, current: dict[str, Any], deadline: dt.datetime | None = None) -> list[str]:
-    if previous is None:
-        events = ["first_monitor"]
-    else:
-        old = compact(previous)
-        new = compact(current)
-        events = []
-        if sha(old.get("plan")) != sha(new.get("plan")): events.append("plan_changed")
-        if sha(old.get("account")) != sha(new.get("account")): events.append("account_changed")
-        if old.get("public_hash") != new.get("public_hash"): events.append("public_data_changed")
-        if old.get("gameweek") != new.get("gameweek"): events.append("gameweek_changed")
-    if deadline:
-        hours = (deadline - dt.datetime.now(UTC)).total_seconds() / 3600
-        if 0 <= hours <= 1: events.append("deadline_1h")
-        elif 1 < hours <= 2: events.append("deadline_2h")
-        elif 2 < hours <= 24: events.append("deadline_24h")
-    return sorted(set(events))
+def phase(deadline,at):
+    hours=(deadline-at).total_seconds()/3600
+    return 'T1' if hours<=1 else 'T2' if hours<=2 else 'T24' if hours<=24 else 'daily'
 
+def capture(entry):
+    at=clock(); b=public_json('bootstrap-static/'); fixtures=public_json('fixtures/')
+    future=[e for e in b['events'] if parsed(e['deadline_time'])>at]
+    if not future:raise SidecarError('No upcoming gameweek; season monitoring should be paused')
+    event=min(future,key=lambda e:parsed(e['deadline_time'])); gw=int(event['id']); probe=remote_probe(entry)
+    plan,kind=choose_plan(probe,gw,at); model=normalize_plan(plan)
+    owned={p['element'] for p in probe['account']['picks']}; ids=owned|{p['element'] for p in model['picks']}
+    extra=(plan.get('competitive') or {}).get('critical_missing',[])[:5]
+    ids.update(int(p['element']) for p in extra if p.get('element') is not None)
+    fields='id web_name element_type team now_cost status chance_of_playing_next_round news news_added minutes starts total_points goals_scored assists clean_sheets goals_conceded saves bonus expected_goals expected_assists expected_goals_conceded penalties_order corners_and_indirect_freekicks_order direct_freekicks_order'.split()
+    elements=[{k:e.get(k) for k in fields} for e in b['elements'] if e['id'] in ids]
+    for e in elements:
+        minutes=int(e['minutes'] or 0)
+        e['xgi_per90']=round((float(e['expected_goals'] or 0)+float(e['expected_assists'] or 0))*90/minutes,3) if minutes else None
+        e['xgc_per90']=round(float(e['expected_goals_conceded'] or 0)*90/minutes,3) if minutes else None
+    if ids-{e['id'] for e in elements}:raise SidecarError('Official catalogue missing a relevant player')
+    scoring_module().validate_picks(model['picks'],metadata(elements))
+    scoring_module().validate_picks(probe['account']['picks'],metadata(elements))
+    clubs={e['team'] for e in elements}
+    relevant=[f for f in fixtures if f.get('event') in range(gw,min(39,gw+3)) and clubs.intersection([f['team_h'],f['team_a']])]
+    completed=[f['id'] for f in fixtures if f.get('finished') and clubs.intersection([f['team_h'],f['team_a']])]
+    projection=[{k:p.get(k) for k in ['id','name','position','xpts','p_start','expected_minutes','xpts_by_gw']} for p in plan['target_starters']+plan['bench']]
+    return {'captured_at':stamp(at),'gameweek':gw,'deadline':event['deadline_time'],'entry':entry,'plan_id':plan['plan_id'],
+            'source_kind':kind,'plan_generated_at':plan['generated_at'],'model_version':plan.get('projection_version'),'model':model,
+            'account':probe['account'],'projection':projection,'elements':elements,'teams':[{k:t[k] for k in ['id','name','short_name']} for t in b['teams']],
+            'fixtures':relevant,'completed_match_ids':completed,'phase':phase(parsed(event['deadline_time']),at),'daily_bucket':at.date().isoformat()}
 
-def monitor(state: Path, snap: dict[str, Any], public_hash: str = "", deadline: dt.datetime | None = None) -> dict[str, Any]:
-    snap = dict(snap, public_hash=public_hash)
+def trigger_identity(snap):
+    health=[{k:e.get(k) for k in ['id','team','now_cost','status','chance_of_playing_next_round','news','news_added']} for e in snap['elements']]
+    account={'picks':[{k:p.get(k) for k in ['element','position','is_captain','is_vice_captain']} for p in snap['account']['picks']],
+             'transfers':{k:snap['account']['transfers'].get(k) for k in ['bank','limit','made','status']}}
+    fixture_fields=['id','event','team_h','team_a','kickoff_time']
+    return sha({'gw':snap['gameweek'],'plan':snap['plan_id'],'source_kind':snap['source_kind'],'model':snap['model_version'],
+                'account':account,'health':health,'fixtures':[{k:f.get(k) for k in fixture_fields} for f in snap['fixtures']],
+                'completed':snap['completed_match_ids'],'day':snap['daily_bucket'],'phase':snap['phase']})
+
+def monitor(state,snap):
+    state=Path(state)
     with locked(state):
-        last_path = state / "last_snapshot.json"
-        previous = read_json(last_path) if last_path.exists() else None
-        events = changed_events(previous, snap, deadline)
-        record = {"event_key": event_key(snap), "fingerprint": sha(compact(snap)), "events": events, "snapshot_id": sha(compact(snap)), "state_path": str(state)}
-        atomic_json(last_path, snap)
-        atomic_json(state / "last_monitor.json", record)
-    return record
+        latest=state/'latest_request.json'; old=read_json(latest) if latest.exists() else None; base=trigger_identity(snap)
+        attempt=0
+        if old and old['base_key']==base:
+            done=(state/'reviews'/(old['event_key']+'.json')).exists()
+            if done or (clock()-parsed(old['captured_at'])).total_seconds()<3600:return old
+            attempt=old['attempt']+1
+        key=sha({'base':base,'attempt':attempt}); snapshot_id=sha(snap)
+        request={'event_key':key,'snapshot_id':snapshot_id,'base_key':base,'attempt':attempt,'captured_at':snap['captured_at'],
+                 'gameweek':snap['gameweek'],'deadline':snap['deadline'],'plan_id':snap['plan_id'],'phase':snap['phase']}
+        immutable=state/'snapshots'/(key+'.json')
+        if immutable.exists():raise SidecarError('Immutable snapshot collision')
+        atomic_json(immutable,{'request':request,'snapshot':snap}); atomic_json(latest,request)
+        return request
 
+def context(state):
+    req=read_json(Path(state)/'latest_request.json'); bundle=read_json(Path(state)/'snapshots'/(req['event_key']+'.json'))
+    if (clock()-parsed(req['captured_at'])).total_seconds()>3600:raise SidecarError('Research snapshot older than one hour; run monitor')
+    snap=bundle['snapshot']; histories={}
+    # Only critical owned players, not the entire player catalogue.
+    ids=[p['element'] for p in snap['model']['picks']]
+    for pid in ids:
+        history=public_json(f'element-summary/{pid}/').get('history',[])
+        histories[str(pid)]=[{k:r.get(k) for k in ['round','minutes','total_points','expected_goals','expected_assists']} for r in history[-3:]]
+    return {**req,'research_material':snap,'recent_matches':histories,'review_already_recorded':(Path(state)/'reviews'/(req['event_key']+'.json')).exists()}
 
-def research_context(source: dict[str, Any], snap: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
-    """Return compact, JSON-only material safe for the web-only review job."""
-    public = source.get("public", {})
-    if not isinstance(public, dict):
-        public = {}
-    return {"event_key": event["event_key"], "snapshot_id": event["snapshot_id"],
-            "gameweek": snap["gameweek"], "entry": snap["entry"], "plan_id": snap["plan_id"],
-            "source_kind": snap["source_kind"], "model_plan": compact(snap["plan"]),
-            "observed_account": compact(snap["account"]), "public_context": compact(public)}
+def validate_review(review,bundle,at=None):
+    at=at or clock(); req=bundle['request']; snap=bundle['snapshot']
+    required={'event_key','snapshot_id','verdict','suggested_action','checked_at','evidence','affected_players','uncertainty','summary'}
+    if not isinstance(review,dict) or not required<=review.keys() or set(review)-required-{'alternative'}:raise SidecarError('Review schema mismatch')
+    if any(review[k]!=req[k] for k in ['event_key','snapshot_id']):raise SidecarError('Review/event binding mismatch')
+    if review['verdict'] not in {'agree','disagree','insufficient_evidence'} or review['suggested_action'] not in {'retain','recalculate','request_approval','hold'}:raise SidecarError('Invalid review verdict/action')
+    if isinstance(review['uncertainty'],bool) or not isinstance(review['uncertainty'],(int,float)) or not math.isfinite(review['uncertainty']) or not 0<=review['uncertainty']<=1:raise SidecarError('Invalid uncertainty heuristic')
+    if not isinstance(review['summary'],str) or not 10<=len(review['summary'])<=1800:raise SidecarError('Review summary length invalid')
+    checked=parsed(review['checked_at']); captured=parsed(req['captured_at'])
+    if checked<captured-dt.timedelta(minutes=5) or checked>at+dt.timedelta(minutes=5) or at-captured>dt.timedelta(hours=2):raise SidecarError('Review timestamps stale or future')
+    if not isinstance(review['evidence'],list) or not 1<=len(review['evidence'])<=10:raise SidecarError('Evidence list invalid')
+    for e in review['evidence']:
+        if not isinstance(e,dict) or set(e)!={'url','published_at','checked_at'}:raise SidecarError('Evidence schema invalid')
+        url=urlparse(e['url'])
+        if url.scheme!='https' or not url.hostname or url.username or url.password or len(e['url'])>1000:raise SidecarError('Evidence URL invalid')
+        when=parsed(e['checked_at'])
+        if when>at+dt.timedelta(minutes=5) or when<captured-dt.timedelta(hours=6):raise SidecarError('Evidence check timestamp invalid')
+        if e['published_at'] is not None and parsed(e['published_at'])>at+dt.timedelta(minutes=5):raise SidecarError('Future evidence publication')
+    allowed={p['id'] for p in snap['elements']}
+    if not isinstance(review['affected_players'],list) or len(review['affected_players'])>20:raise SidecarError('Affected players invalid')
+    for p in review['affected_players']:
+        if not isinstance(p,dict) or set(p)!={'id','assumption'} or type(p['id']) is not int or p['id'] not in allowed or not isinstance(p['assumption'],str) or not 5<=len(p['assumption'])<=500:raise SidecarError('Affected player/assumption invalid')
+    if review.get('alternative') is not None:
+        alt=review['alternative']
+        if not isinstance(alt,dict) or set(alt)!={'picks'}:raise SidecarError('Alternative permits picks only, no transfers/chips')
+        scoring_module().validate_picks(alt['picks'],metadata(snap['elements']))
+        if {p['element'] for p in alt['picks']}!={p['element'] for p in snap['model']['picks']}:raise SidecarError('Alternative cannot change the model squad')
 
-
-def validate_review(review: dict[str, Any], expected: dict[str, Any]) -> None:
-    required = {"event_key", "snapshot_id", "verdict", "suggested_action", "checked_at", "evidence", "affected_players", "uncertainty"}
-    missing = required - review.keys()
-    if missing: raise SidecarError(f"review missing fields: {sorted(missing)}")
-    if review["event_key"] != expected["event_key"] or review["snapshot_id"] != expected["snapshot_id"]: raise SidecarError("review is not bound to current event")
-    if review["verdict"] not in _ALLOWED_VERDICTS or review["suggested_action"] not in _ALLOWED_SUGGESTIONS: raise SidecarError("invalid verdict or suggested action")
-    if not isinstance(review["uncertainty"], (int, float)) or not 0 <= review["uncertainty"] <= 1: raise SidecarError("uncertainty must be 0..1")
-    if not isinstance(review["evidence"], list) or not review["evidence"]: raise SidecarError("at least one evidence item is required")
-    for item in review["evidence"]:
-        if not isinstance(item, dict) or not item.get("url") or "published_at" not in item or not item.get("checked_at"): raise SidecarError("evidence needs url, published_at (nullable), checked_at")
-    for player in review["affected_players"]:
-        if not isinstance(player, dict) or not isinstance(player.get("id"), int): raise SidecarError("affected player needs numeric id")
-        allowed = {int(p.get("element", p.get("id"))) for p in (expected["snapshot"].get("plan", {}).get("picks") or expected["snapshot"].get("plan", {}).get("lineup") or []) if isinstance(p, dict) and str(p.get("element", p.get("id", ""))).isdigit()}
-        allowed.update(int(pid) for pid in expected["snapshot"].get("plan", {}).get("target_player_ids", []) if str(pid).isdigit())
-        if player["id"] not in allowed: raise SidecarError("affected player is not in model or declared shortlist")
-    if review.get("alternative"):
-        _validate_alternative(review["alternative"], expected["snapshot"].get("plan", {}))
-
-
-def _validate_alternative(alt: dict[str, Any], plan: dict[str, Any]) -> None:
-    model = plan.get("picks") or plan.get("lineup")
-    if not isinstance(model, list): raise SidecarError("model plan has no picks for alternative binding")
-    model_ids = {int(p.get("element", p.get("id"))) for p in model if isinstance(p, dict) and str(p.get("element", p.get("id", ""))).isdigit()}
-    alt_ids = {int(p.get("element", p.get("id"))) for p in alt.get("picks", []) if isinstance(p, dict) and str(p.get("element", p.get("id", ""))).isdigit()}
-    if alt_ids != model_ids: raise SidecarError("alternative must reorder the same model 15; transfers are not allowed")
-    if len(alt.get("picks", [])) != 15: raise SidecarError("alternative must contain exactly 15 picks")
-
-
-def record_review(state: Path, review: dict[str, Any]) -> Path:
+def record_review(state,review):
+    state=Path(state)
     with locked(state):
-        latest = read_json(state / "last_monitor.json") if (state / "last_monitor.json").exists() else None
-        snap = read_json(state / "last_snapshot.json") if (state / "last_snapshot.json").exists() else None
-        if not latest or not snap: raise SidecarError("no current monitor snapshot")
-        expected = dict(latest, snapshot=snap)
-        validate_review(review, expected)
-        key = re.sub(r"[^A-Za-z0-9_.:-]", "_", review["event_key"])
-        path = state / "reviews" / f"{key}.json"
+        key=review.get('event_key','')
+        if not re.fullmatch('[0-9a-f]{64}',key):raise SidecarError('Invalid event ID')
+        req=read_json(state/'latest_request.json'); bundle=read_json(state/'snapshots'/(key+'.json'))
+        if req['event_key']!=key:raise SidecarError('Superseded review; no longer current')
+        validate_review(review,bundle); path=state/'reviews'/(key+'.json')
         if path.exists():
-            old = read_json(path)
-            if sha(old) != sha(review): raise SidecarError("immutable review already exists with different content")
+            if read_json(path)['review']!=review:raise SidecarError('Immutable review cannot be rewritten')
             return path
-        payload = dict(review, recorded_at=now(), input_hash=sha(compact(snap)))
-        atomic_json(path, payload)
-        return path
+        snap=bundle['snapshot']; model=snap['model']; hybrid={**model,'picks':review['alternative']['picks']} if review.get('alternative') else model
+        saved={'request':req,'snapshot':snap,'review':review,'model':model,'hybrid':hybrid,'recorded_at':stamp(),
+               'prospective_eligible':clock()<parsed(snap['deadline']),'hybrid_adjusted':hybrid!=model}
+        atomic_json(path,saved); return path
 
+def evaluate_live(state):
+    state=Path(state); events=public_json('bootstrap-static/')['events']; reports=[]
+    for ev in events:
+        if not ev.get('finished') or not ev.get('data_checked'):continue
+        gw=int(ev['id']); target=state/'evaluations'/f'gw{gw}.json'
+        if target.exists():continue
+        reviews=[read_json(p) for p in (state/'reviews').glob('*.json')]
+        eligible=[r for r in reviews if r['snapshot']['gameweek']==gw and r['prospective_eligible'] and parsed(r['recorded_at'])<parsed(ev['deadline_time'])]
+        if not eligible:continue
+        r=max(eligible,key=lambda r:parsed(r['recorded_at'])); snap=r['snapshot']; meta=metadata(snap['elements'])
+        live=public_json(f'event/{gw}/live/'); actual={int(e['id']):e['stats'] for e in live['elements']}
+        players={pid:{**m,'minutes':actual[pid]['minutes'],'points':actual[pid]['total_points']} for pid,m in meta.items() if pid in actual}
+        hist=public_json(f"entry/{snap['entry']}/history/"); row=next((h for h in hist['current'] if h['event']==gw),None)
+        if row is None:raise SidecarError('Official owner result unavailable')
+        outcome={'gameweek':gw,'status':'finished','data_checked':True,'deadline':ev['deadline_time'],'players':players,'model':r['model'],'hybrid':r['hybrid'],
+                 'owner_actual':{'official':True,'net_points':int(row['points'])-int(row['event_transfers_cost']),'source':PUBLIC_BASE+f"/entry/{snap['entry']}/history/"}}
+        result=scoring_module().evaluate(outcome)
+        result.update({'event_key':r['request']['event_key'],'plan_id':snap['plan_id'],'scope':'weekly frozen recommendations, not season-long transfer-policy backtest',
+                       'owner_actual_is_realized_not_prefrozen':True,'hybrid_adjusted':r['hybrid_adjusted']})
+        with locked(state):
+            if target.exists():continue
+            atomic_json(target,result)
+        reports.append(result)
+    return reports
 
-def _picks(item: dict[str, Any]) -> list[dict[str, Any]]:
-    picks = item.get("picks") or item.get("lineup")
-    if not isinstance(picks, list) or len(picks) != 15: raise SidecarError("recommendation must contain 15 picks")
-    return [dict(p) for p in picks]
-
-
-def score_lineup(recommendation: dict[str, Any], players: dict[int, dict[str, Any]]) -> int:
-    picks = _picks(recommendation)
-    starters = [p for p in picks if int(p.get("position", 0)) <= 11]
-    bench = sorted([p for p in picks if int(p.get("position", 0)) > 11], key=lambda p: int(p["position"]))
-    if len(starters) != 11 or len(bench) != 4: raise SidecarError("recommendation positions must be 1..15")
-    def pdata(p):
-        pid = int(p.get("element", p.get("id"))); return pid, players.get(pid, {})
-    active = list(starters)
-    for starter in starters:
-        pid, stat = pdata(starter)
-        if stat.get("minutes", 0): continue
-        for sub in bench:
-            sid, sstat = pdata(sub)
-            if sstat.get("minutes", 0) and _legal_formation(active, starter, sub, players):
-                active[active.index(starter)] = sub
-                break
-    total = 0
-    captain = next((p for p in picks if p.get("is_captain") or p.get("captain")), None)
-    vice = next((p for p in picks if p.get("is_vice_captain") or p.get("vice_captain")), None)
-    captain_id = int(captain.get("element", captain.get("id"))) if captain else None
-    captain_played = captain_id in {int(p.get("element", p.get("id"))) for p in active} and players.get(captain_id, {}).get("minutes", 0) > 0
-    for p in active:
-        pid, stat = pdata(p); multiplier = 1
-        if pid == captain_id and captain_played: multiplier = 2
-        total += int(stat.get("points", 0)) * multiplier
-    if not captain_played and vice:
-        vid = int(vice.get("element", vice.get("id")))
-        if vid in {int(p.get("element", p.get("id"))) for p in active} and players.get(vid, {}).get("minutes", 0) > 0:
-            total += int(players[vid].get("points", 0))
-    return total
-
-
-def _legal_formation(active: list[dict[str, Any]], outgoing: dict[str, Any], incoming: dict[str, Any], players: dict[int, dict[str, Any]]) -> bool:
-    positions = [players.get(int(p.get("element", p.get("id"))), {}).get("position", p.get("element_type")) for p in active if p != outgoing]
-    positions.append(players.get(int(incoming.get("element", incoming.get("id"))), {}).get("position", incoming.get("element_type")))
-    # FPL formation: one GK; >=3 DEF, >=2 MID, >=1 FWD.
-    return positions.count(1) == 1 and positions.count(2) >= 3 and positions.count(3) >= 2 and positions.count(4) >= 1
-
-
-def evaluate(payload: dict[str, Any]) -> dict[str, Any]:
-    if payload.get("status") != "finished" or payload.get("data_checked") is not True: raise SidecarError("evaluation requires finished, data_checked outcome")
-    players = {int(k): v for k, v in payload.get("players", {}).items()}
-    result = {"gameweek": payload.get("gameweek"), "evaluated_at": now(), "scope": "weekly_decision_comparison"}
-    for name in ("model", "hybrid"):
-        item = payload.get(name)
-        if not isinstance(item, dict): raise SidecarError(f"missing {name} recommendation")
-        gross = score_lineup(item, players)
-        hits = int(item.get("hit_cost", 0))
-        result[name] = {"gross_points": gross, "hit_cost": hits, "net_points": gross - hits}
-    actual = payload.get("owner_actual")
-    if not isinstance(actual, dict) or not actual.get("official"):
-        raise SidecarError("owner_actual must be official and explicitly marked")
-    result["owner_actual"] = {"net_points": actual.get("net_points"), "source": actual.get("source")}
-    return result
-
-
-def cli() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("monitor", "collect", "record", "status", "evaluate"))
-    parser.add_argument("--state-dir", type=Path, default=Path(os.environ.get("FPL_REVIEW_STATE_DIR", DEFAULT_STATE)))
-    parser.add_argument("--input", type=Path, help="captured probe/review/evaluation JSON")
-    parser.add_argument("--gameweek", type=int)
-    parser.add_argument("--entry", type=int, default=int(os.environ.get("FPL_REVIEW_ENTRY", "2797967")))
-    args = parser.parse_args()
+def cli():
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('command',choices=['monitor','collect','record','status','evaluate'])
+    parser.add_argument('--state-dir',type=Path,default=DEFAULT_STATE);parser.add_argument('--input',type=Path);parser.add_argument('--entry',type=int,default=2797967)
+    a=parser.parse_args()
     try:
-        if args.command in {"monitor", "collect"}:
-            if not args.gameweek: raise SidecarError("--gameweek is required")
-            offline = bool(args.input)
-            source = read_json(args.input) if offline else remote_probe(args.entry)
-            plan, kind = plan_from_probe(source, args.gameweek)
-            if not offline:
-                source["public"] = public_snapshot(plan, include_summaries=args.command == "collect")
-            snap = snapshot(source, plan, kind, args.gameweek, args.entry)
-            public_hash = sha(source.get("public", {})) if isinstance(source.get("public"), dict) else ""
-            result = monitor(args.state_dir, snap, public_hash=public_hash)
-            if args.command == "collect": result["research_material"] = research_context(source, snap, result)
-            print(json.dumps(result, sort_keys=True, separators=(",", ":")))
-        elif args.command == "record":
-            if not args.input: raise SidecarError("--input is required")
-            print(str(record_review(args.state_dir, read_json(args.input))))
-        elif args.command == "status":
-            path = args.state_dir / "last_monitor.json"
-            print(json.dumps(read_json(path) if path.exists() else {"status": "never_monitored"}, sort_keys=True))
+        if a.command=='monitor':
+            request=monitor(a.state_dir,capture(a.entry));print(json.dumps({k:request[k] for k in ['event_key','snapshot_id']}))
+        elif a.command=='collect':print(json.dumps(context(a.state_dir),separators=(',',':')))
+        elif a.command=='record':
+            if not a.input:raise SidecarError('--input required')
+            print(record_review(a.state_dir,read_json(a.input)))
+        elif a.command=='status':print(json.dumps(read_json(a.state_dir/'latest_request.json')))
         else:
-            if not args.input: raise SidecarError("--input is required")
-            print(json.dumps(evaluate(read_json(args.input)), sort_keys=True))
+            for report in evaluate_live(a.state_dir):print(json.dumps(report))
         return 0
-    except SidecarError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+    except Exception as error:
+        print('FPL review source/validation failed: '+type(error).__name__+(' '+str(error) if isinstance(error,SidecarError) else ''),file=sys.stderr)
         return 2
 
-
-if __name__ == "__main__":
-    raise SystemExit(cli())
+if __name__=='__main__':raise SystemExit(cli())

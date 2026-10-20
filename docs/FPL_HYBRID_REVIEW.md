@@ -1,101 +1,72 @@
-# FPL hybrid review sidecar
+# FPL hybrid research sidecar
 
-`automation/fpl_hybrid_review.py` is an advisory-only sidecar. It does not import the
-FPL execution client and has no transfer, lineup, captain, chip, or model-weight
-mutation path.
+## Scope
 
-## Commands
+This is an **advisory layer**, not a new model scheduler, a hard execution gate or permission to edit the team. The existing VM auto-runner remains the sole scheduled optimizer/approval-card source. Its original transfer, price, account, deadline, hit, chip and owner-approval safeguards remain unchanged.
 
-Use a private state directory (the default is
-`~/.local/state/fpl-hybrid-review`, mode 0700; JSON and lock files are mode 0600).
-The offline form is useful for a cron wrapper that has already captured the
-read-only VM response:
+The research LLM has **web tools only**: no terminal, SSH, file writing, credentials, FPL execution or scheduler tools. A deterministic collector supplies fresh official/account/model data. A separate validator reads the completed cron response, rejects malformed/stale/unbound reviews and publishes only an advisory summary. No LLM text is executed as code or shell commands.
 
-```sh
-python automation/fpl_hybrid_review.py monitor --gameweek 8 --input /private/probe.json
-python automation/fpl_hybrid_review.py collect --gameweek 8 --input /private/probe.json
-python automation/fpl_hybrid_review.py status
-python automation/fpl_hybrid_review.py record --input /private/review.json
-python automation/fpl_hybrid_review.py evaluate --input /private/finished-gw.json
-```
+## Files and commands
 
-The probe JSON contains only `pending_plan.json`, `dashboard_plan.json`, and a
-fresh `account` response. `pending_plan.json` is preferred and is labelled
-`pending` (or `pending_executed`); dashboard-only data is labelled
-`dashboard_preview`. Same-gameweek and exact plan-id binding is required.
+- `automation/fpl_hybrid_review.py`: collect/read-only SSH, change monitor, immutable snapshots, strict review recording and finalized-result collection.
+- `automation/fpl_review_bridge.py`: parses **only the last `## Response` section** of a completed Hermes cron artifact, validates/records it, deduplicates publication and evaluates newly available results once daily.
+- `automation/fpl_review_scoring.py`: pure lineup legality/autosub/captain/hit evaluator.
+- `automation/FPL_REVIEW_PROMPT.md`: complete bounded web-only reviewer instructions/schema.
 
-For a live read-only capture, a wrapper may call `remote_probe(entry)` and
-`public_json()` from the module. SSH configuration is environment-only:
-
-* `FPL_REVIEW_SSH_HOST`
-* `FPL_REVIEW_SSH_USER`
-* `FPL_REVIEW_SSH_IDENTITY`
-* `FPL_REVIEW_ENTRY`
-
-The fixed remote command runs `/opt/fpl-autopilot/.venv/bin/python -` and reads
-only the two plan files plus `FPLClient.my_team`. It never reads
-`credentials.env`/session values and never invokes an execution method.
-
-## Review contract
-
-`record` accepts strict JSON containing the exact `event_key` and `snapshot_id`
-from `status`, a verdict (`agree`, `disagree`, `insufficient_evidence`), a
-suggestion (`retain`, `recalculate`, `request_approval`, `hold`), uncertainty
-0..1, affected numeric player IDs, and evidence entries with URL,
-`published_at` (nullable for explicit unknown), and `checked_at`. Reviews are
-immutable. An optional alternative must contain the same model player IDs (no
-fabricated transfers); absent alternatives mean the hybrid remains identical to
-the model and is recorded as no adjustment.
-
-Fingerprints omit timestamps and private credential fields, so unchanged checks
-are silent at the caller level. Meaningful plan/account/public changes and the
-24h/2h/1h deadline windows produce events. A failed source read raises a visible
-error and does not reuse an earlier snapshot.
-
-## Evaluation boundary
-
-`evaluate` accepts only finished, `data_checked` official outcomes. The pure
-scorer handles starter/bench order, legal formation autosubs, captain/vice
-fallback, goalkeeper substitution, blanks (zero official points), doubles (the
-official points supplied for the gameweek), and explicit hit costs. It refuses
-missing/future data and requires an explicitly official owner actual. Results
-are weekly decision comparisons, not a season-long causal transfer-policy
-backtest.
-
-Run targeted tests with:
+Private durable state defaults to `~/.local/state/fpl-hybrid-review` (directories0700, JSON0600), not scratch or git. Files are atomically written under a file lock. Snapshots/reviews/results cannot be retrospectively replaced by the runtime commands.
 
 ```sh
-python -m pytest -q engine/tests/test_fpl_hybrid_review.py
+python3 automation/fpl_hybrid_review.py monitor
+python3 automation/fpl_hybrid_review.py collect
+python3 automation/fpl_hybrid_review.py status
+python3 automation/fpl_hybrid_review.py record --input /private/review.json
+python3 automation/fpl_review_bridge.py
 ```
 
-## Cron bridge schema
+`--state-dir` selects isolated state for tests. The bridge reads its job ID from private `<state>/review-job.json` (`{"job_id":"..."}`); cron outputs are under `~/.hermes/cron/output/<job_id>/*.md`. `--output-dir` and `--no-evaluate` support offline tests. SSH host/user/key can be configured through `FPL_REVIEW_SSH_HOST`, `FPL_REVIEW_SSH_USER`, `FPL_REVIEW_SSH_IDENTITY`; defaults use the existing Tailscale path. No key contents enter state or git.
 
-The web-only LLM job receives the JSON printed under `research_material` by
-`collect`. The bridge must read the cron artifact's **last** `## Response`
-section (the file is `~/.hermes/cron/output/<job_id>/YYYY-MM-DD_HH-MM-SS.md`),
-then accept only strict JSON or one exact JSON code fence. It must not search for
-the first brace in the whole artifact because the prompt can contain examples.
-The response shape is:
+The fixed SSH probe executes as the existing `fpl` service user and only reads `data/processed/{pending_plan,dashboard_plan}.json` plus authenticated `FPLClient.my_team`. The account client may rotate its existing OAuth session as usual, but **no squad/transfer/lineup/chip POST is called**. Secrets are neither requested nor printed.
 
-```json
-{
-  "event_key": "gw8:p8:1deaadf30165a73a",
-  "snapshot_id": "sha256...",
-  "verdict": "agree",
-  "suggested_action": "retain",
-  "uncertainty": 0.2,
-  "affected_players": [{"id": 9, "assumption": "news is actionable"}],
-  "evidence": [{
-    "url": "https://example.test/article",
-    "published_at": null,
-    "checked_at": "2026-10-20T00:00:00Z"
-  }]
-}
-```
+## Triggering and scheduling
 
-`event_key` and `snapshot_id` must be copied exactly from the context; the
-bridge writes the response to a private JSON file and invokes `record --input`
-only after deterministic validation. Context is a point-in-time snapshot and
-must not be reused after a later monitor event; failed or stale source reads
-are visible errors, not permission to reuse the previous context. The sidecar
-does not create a scheduler, and it is advisory rather than an execution gate.
+Do not create another VM model runner. Install two complementary Hermes jobs:
+
+1. A monitor-gated research job, checking about every30 minutes, `enabled_toolsets=["web"]`, `deliver="local"`. Monitor invokes `monitor`; pre-run script invokes `collect`. The agent returns strict review JSON only.
+2. A deterministic `no_agent=true` bridge about every5 minutes, delivered to the owner. It commits valid research and emits a concise advisory; unchanged state is silent. The same process checks finalized results once daily.
+
+Meaningful triggers include exact plan semantics/source kind/model version, account squad/C/VC/bank/free-transfer changes, relevant players' injury/news/price changes, fixture changes, completion of relevant matches, a daily UTC bucket and phase transitions around deadline−24h,−2h,−1h. Generated-at/run IDs and tiny projection drift do not independently wake the LLM. Unfinished failed reviews retry after one hour with a fresh immutable event. Identical completed events remain silent.
+
+This is **not a live press-conference subscription**. News absent from official flags may be found on the daily/deadline web review; unreported changes cannot be promised as detected immediately.
+
+The newest same-GW plan must be no more than6h old; missing/stale inputs fail visibly instead of being relabelled fresh. Sources are labelled `pending`, `pending_executed` or `dashboard_preview`. An executed plan is not a new transfer request; a preview is not executable. Review context older than1h and recording older than2h are rejected. Late reviews may be retained as advisory but are excluded from prospective scoring.
+
+## Strict review schema
+
+See the prompt for the full schema. Required fields:
+
+- exact `event_key` and `snapshot_id` copied from injected context;
+- `verdict`: agree/disagree/insufficient_evidence;
+- `suggested_action`: retain/recalculate/request_approval/hold;
+- timezone-aware `checked_at`, heuristic finite `uncertainty`0..1, human-readable `summary`;
+- `affected_players` with known numeric IDs and specific assumptions;
+- evidence HTTPS URL, nullable verified publication timestamp, and checked timestamp.
+
+An optional `alternative.picks` must reorder exactly the same model15, obey full FPL legality, and name one captain/distinct vice in the XI. It cannot change transfers, costs or chips. Without an alternative, hybrid equals model and is explicitly recorded as unadjusted. Even an adjusted alternative is **paper-only**; the owner must separately act in the FPL bot if desired.
+
+The validator rejects unknown fields/actions, future or stale evidence, wrong event bindings, invalid alternatives and retrospective record overwrites. Raw web pages are untrusted data, not instructions.
+
+## Prospective comparisons
+
+For each gameweek, choose the latest valid research record captured AND recorded before its deadline. Preserve its model baseline and same-squad LLM alternative immutably. Score only when official `finished` and `data_checked` flags are true. Fetch official event-live player outcomes and owner entry history, account for captain/vice/autosubs and explicit hits. Owner points are official realized results, **not claimed to be a separately pre-frozen counterfactual policy**.
+
+This is a weekly frozen-decision comparison, not a causal season-long transfer strategy backtest. Missing outcomes or unsupported scoring conditions must fail visibly, never become invented zero points. No results exist for GW8 until it finishes; setup tests do not demonstrate a performance edge.
+
+## Verification before calling this live
+
+- Exercise a real read-only monitor and context collection with the deployed VM schema.
+- Confirm a repeated unchanged monitor emits the identical fingerprint.
+- Run a real web-only cron review; verify its tools and local output.
+- Validate/read back the immutable review, prospective flag and owner advisory.
+- Confirm the production pending-plan hash and authenticated account are untouched by the sidecar.
+- List schedules and verify enabled state/next run. Do not claim completion solely because a cron creation call succeeded.
+- Run the targeted regression tests and full repository pytest/Ruff checks; keep source changes on the reviewed branch/PR.
