@@ -29,14 +29,15 @@ The fixed SSH probe executes as the existing `fpl` service user and only reads `
 
 ## Triggering and scheduling
 
-Do not create another VM model runner. Install two complementary Hermes jobs:
+Do not create another VM model runner. The active owner policy is **one research review per gameweek, six hours before the official FPL deadline**. Daily/change-triggered owner reviews are disabled.
 
-1. A monitor-gated research job, checking about every30 minutes, `enabled_toolsets=["web"]`, `deliver="local"`. Monitor invokes `monitor`; pre-run script invokes `collect`. The agent returns strict review JSON only.
-2. A deterministic `no_agent=true` bridge about every5 minutes, delivered to the owner. It commits valid research and emits a concise advisory; unchanged state is silent. The same process checks finalized results once daily.
+1. Research job `64db3292a611` is a native one-shot at deadline−6h, web-only, local output. Its pre-run script invokes `fpl_six_hour_review.py collect`; no change monitor or recurring LLM polling remains. The collector uses a distinct T6 identity, fresh source-bound snapshots and a ten-minute late-start tolerance.
+2. Publication job `20bc00a9c6bb` is a native deterministic one-shot five minutes after research starts. It invokes `fpl_six_hour_review.py publish`, validates only the matching T6 response, and publishes at most once per GW/deadline. Old daily artifacts are never replayed; publication is silent outside its thirty-minute deadline-review window. No daily score/evaluation messages are emitted by this job.
+3. A silent, local-only `no_agent=true` deadline planner runs hourly, reading the official event calendar and re-arming these same two existing one-shots through the native cron API for the next GW. It never creates jobs, invokes an LLM, changes the team or posts messages. A manual owner pause is respected. It does not rewrite schedules during the current research/publication window or over live run claims.
 
-Meaningful triggers include exact plan semantics/source kind/model version, account squad/C/VC/bank/free-transfer changes, relevant players' injury/news/price changes, fixture changes, completion of relevant matches, a daily UTC bucket and phase transitions around deadline−24h,−2h,−1h. Generated-at/run IDs and tiny projection drift do not independently wake the LLM. Unfinished failed reviews retry after one hour with a fresh immutable event. Identical completed events remain silent.
+The policy is implemented by `automation/fpl_six_hour_review.py`; verified next times are recorded privately in `six-hour-policy.json`. Official deadlines, not a fixed weekday/time, determine future reviews. Native one-shots may be re-armed after completion with `cron.jobs.rearm_oneshot`; do not edit jobs.json by hand or create recursive cron jobs.
 
-This is **not a live press-conference subscription**. News absent from official flags may be found on the daily/deadline web review; unreported changes cannot be promised as detected immediately.
+This is **not a live press-conference subscription**. News will be researched at the six-hour review only; no promise is made to detect later news automatically.
 
 The newest same-GW plan must be no more than6h old; missing/stale inputs fail visibly instead of being relabelled fresh. Sources are labelled `pending`, `pending_executed` or `dashboard_preview`. An executed plan is not a new transfer request; a preview is not executable. Review context older than1h and recording older than2h are rejected. Late reviews may be retained as advisory but are excluded from prospective scoring.
 
