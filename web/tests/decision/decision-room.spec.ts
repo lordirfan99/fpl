@@ -33,6 +33,13 @@ for (const width of [390, 1440]) {
     await expect(page.getByRole("heading", { name: "6 points to the top-10% cutoff" })).toBeVisible();
     await expect(page.getByText("Plan synthetic-test-plan", { exact: false })).toBeVisible();
     await expect(page.getByText("Recorded target-group captaincy: 50.0% in GW3.")).toBeVisible();
+    const checklist = page.getByRole("region", { name: "Deadline checklist" });
+    await expect(checklist).toContainText("Vice-captain");
+    await expect(checklist).toContainText("Test Player 7");
+    await expect(checklist).toContainText("Into the starting XI");
+    await expect(checklist).toContainText("Test Player 16");
+    await expect(checklist).toContainText("1. Test Player 13 → 2. Test Player 14 → 3. Test Player 15");
+    await expect(checklist).toContainText("Reserve goalkeeper: Test Player 12");
     await page.getByRole("button", { name: "Proposed squad", exact: true }).click();
     await expect(page.getByLabel("Proposed starting eleven")).toContainText("IN");
     await page.getByRole("button", { name: /Test Player 16/ }).click();
