@@ -159,3 +159,36 @@ def test_monitor_rejects_v2_homepage_after_v1_restore(monkeypatch):
     monkeypatch.setattr(monitor, "fetch", fetch)
     with pytest.raises(RuntimeError, match="Dashboard route / did not render"):
         monitor.main(lightweight=True)
+
+
+def test_monitor_follows_streamed_homepage_redirect(monkeypatch):
+    calls = []
+
+    def fetch(url, limit):
+        calls.append(url)
+        if url == monitor.SITE + "/":
+            return 200, b'<meta http-equiv="refresh" content="1;url=/this-week"/>', {}
+        return fake_success(url)
+
+    monkeypatch.setattr(monitor, "fetch", fetch)
+    assert monitor.main(lightweight=True) == 0
+    assert monitor.SITE + "/this-week" in calls
+
+
+@pytest.mark.parametrize("destination", ["/sign-in", "https://example.com/this-week", "/this-week?error=1"])
+def test_monitor_rejects_unexpected_homepage_redirect(monkeypatch, destination):
+    html = f'<meta http-equiv="refresh" content="1;url={destination}"/>'.encode()
+    monkeypatch.setattr(monitor, "fetch", lambda url, limit: (200, html, {}))
+    with pytest.raises(RuntimeError, match="did not render"):
+        monitor.check_page("/", "This gameweek", home_redirect=True)
+
+
+def test_monitor_rejects_broken_redirect_destination(monkeypatch):
+    def fetch(url, limit):
+        if url == monitor.SITE + "/":
+            return 200, b'<meta http-equiv="refresh" content="1;url=/this-week"/>', {}
+        return 200, b"We could not load this view.", {}
+
+    monkeypatch.setattr(monitor, "fetch", fetch)
+    with pytest.raises(RuntimeError, match="Dashboard route /this-week did not render"):
+        monitor.check_page("/", "This gameweek", home_redirect=True)
