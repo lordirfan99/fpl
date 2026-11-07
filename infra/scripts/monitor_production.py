@@ -7,6 +7,7 @@ import json
 import os
 import re
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from urllib.request import Request, urlopen
 
 API = os.getenv("FPL_API_BASE_URL", "https://sportmania.duckdns.org/fpl-scout-api").rstrip("/")
@@ -24,11 +25,28 @@ def fetch(url: str, limit: int) -> tuple[int, bytes, dict[str, str]]:
 
 
 
-def check_page(path: str, expected_text: str, limit: int = 750_000) -> None:
+def check_page(path: str, expected_text: str, limit: int = 750_000, *, home_redirect: bool = False) -> None:
     # A 200 status alone is not a working App Router page; error boundaries
     # and redirect shells can also be HTTP 200. Check useful SSR content.
     status, body, _ = fetch(f"{SITE}{path}", limit)
     html = body.decode("utf-8", errors="replace")
+    if home_redirect and status == 200 and expected_text not in html:
+        # Next.js can stream a redirect as HTTP 200 plus a refresh meta tag.
+        # Accept only the intended homepage destination, then verify its content.
+        class RedirectParser(HTMLParser):
+            destination_ok = False
+
+            def handle_starttag(self, tag, attrs):
+                values = dict(attrs)
+                if tag == "meta" and (values.get("http-equiv") or "").lower() == "refresh":
+                    content = values.get("content") or ""
+                    self.destination_ok |= bool(re.fullmatch(r"\s*\d+\s*;\s*url=/this-week\s*", content))
+
+        redirect = RedirectParser()
+        redirect.feed(html)
+        if redirect.destination_ok:
+            check_page("/this-week", expected_text, limit)
+            return
     if (status != 200 or expected_text not in html or
             any(error in html for error in ("We could not load this view.", "This view could not load", "Application error", "Recorded evidence is unavailable"))):
         raise RuntimeError(f"Dashboard route {path} did not render its expected content")
@@ -108,7 +126,7 @@ def main(*, lightweight: bool = False) -> int:
             raise RuntimeError(f"League {league_id} integrity failed")
 
     # V1 is the default homepage; explicit V2 research routes remain available.
-    check_page("/", "This gameweek", 1_500_000)
+    check_page("/", "This gameweek", 1_500_000, home_redirect=True)
     check_page("/v2/league?league=131997", "Complete standings", 1_500_000)
     check_page("/v2/elite?league=131997", "The top five percent", 1_500_000)
     if lightweight:
