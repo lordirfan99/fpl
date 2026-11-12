@@ -2,7 +2,11 @@ import importlib.util
 import hashlib
 import json
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
+from unittest.mock import Mock, call
+from urllib.error import HTTPError, URLError
+from urllib.response import addinfourl
 
 import pytest
 
@@ -12,6 +16,44 @@ SPEC = importlib.util.spec_from_file_location(
 )
 monitor = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(monitor)
+
+
+@pytest.mark.parametrize("failure", ["http", "read_timeout", "connect_timeout"])
+def test_fetch_retries_temporary_service_failures(monkeypatch, failure):
+    url = f"{monitor.API}/v1/leagues/131997/live/status"
+    body = b'{"ready":true}'
+    if failure == "http":
+        errors = [HTTPError(url, 503, "Service Unavailable", {}, BytesIO()) for _ in range(2)]
+    elif failure == "read_timeout":
+        errors = [TimeoutError("read timed out")]
+    else:
+        errors = [URLError(TimeoutError("connection timed out"))]
+    urlopen = Mock(side_effect=[*errors, addinfourl(BytesIO(body), {}, url, 200)])
+    sleep = Mock()
+    monkeypatch.setattr(monitor, "urlopen", urlopen)
+    monkeypatch.setattr(monitor, "sleep", sleep)
+
+    assert monitor.fetch(url, 50_000) == (200, body, {})
+    assert urlopen.call_count == len(errors) + 1
+    assert sleep.call_args_list == [call(2), call(32)][:len(errors)]
+
+
+@pytest.mark.parametrize("status,attempts", [(503, 3), (404, 1)])
+def test_fetch_reports_endpoint_and_request_id_on_failure(monkeypatch, status, attempts):
+    url = f"{monitor.API}/v1/leagues/58005/live/status"
+    headers = {"X-Request-ID": "test-request"}
+    urlopen = Mock(side_effect=[HTTPError(url, status, "error", headers, BytesIO()) for _ in range(attempts)])
+    sleep = Mock()
+    monkeypatch.setattr(monitor, "urlopen", urlopen)
+    monkeypatch.setattr(monitor, "sleep", sleep)
+
+    with pytest.raises(HTTPError, match="test-request") as failure:
+        monitor.fetch(url, 50_000)
+    assert failure.value.code == status
+    assert failure.value.__notes__ == [f"GET {url} (request ID test-request)"]
+    assert urlopen.call_count == attempts
+    assert sleep.call_count == attempts - 1
+
 
 def fake_success(url):
     pages = {
