@@ -8,20 +8,43 @@ import os
 import re
 from datetime import datetime, timezone
 from html.parser import HTMLParser
+from time import sleep
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 API = os.getenv("FPL_API_BASE_URL", "https://sportmania.duckdns.org/fpl-scout-api").rstrip("/")
 SITE = os.getenv("FPL_SITE_URL", "https://fpl-scout-intelligence.netlify.app").rstrip("/")
 PUBLIC_DATA = os.getenv("FPL_PUBLIC_DATA_URL", "https://lordirfan99.github.io/fpl").rstrip("/")
+RETRYABLE_HTTP_STATUS = {502, 503, 504}
 
 
 def fetch(url: str, limit: int) -> tuple[int, bytes, dict[str, str]]:
     request = Request(url, headers={"User-Agent": "FPLScoutMonitor/1.0"})
-    with urlopen(request, timeout=60) as response:
-        body = response.read(limit + 1)
-        if len(body) > limit:
-            raise RuntimeError(f"payload budget exceeded: {url} > {limit} bytes")
-        return response.status, body, dict(response.headers)
+    # Wait past the API's 30-second failed snapshot cache before the final try.
+    retry_delays = iter((2, 32))
+    while True:
+        try:
+            with urlopen(request, timeout=60) as response:
+                body = response.read(limit + 1)
+                if len(body) > limit:
+                    raise RuntimeError(f"payload budget exceeded: {url} > {limit} bytes")
+                return response.status, body, dict(response.headers)
+        except (URLError, TimeoutError) as error:
+            context = f"GET {url}"
+            if isinstance(error, HTTPError):
+                request_id = error.headers.get("X-Request-ID") if error.headers is not None else None
+                error.close()
+                if request_id:
+                    context += f" (request ID {request_id})"
+                transient = error.code in RETRYABLE_HTTP_STATUS
+            else:
+                transient = isinstance(error, TimeoutError) or isinstance(error.reason, TimeoutError)
+            delay = next(retry_delays, None)
+            if not transient or delay is None:
+                error.add_note(context)
+                raise
+            print(f"{context}: {error}. Retrying in {delay}s.", flush=True)
+        sleep(delay)
 
 
 
